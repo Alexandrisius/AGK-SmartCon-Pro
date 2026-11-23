@@ -42,6 +42,10 @@ public sealed partial class ExecutePlanTool : IAgentTool
         Name = "execute_plan",
         Description =
             "Validates and runs a multi-step plan (1–20 steps) as one reviewable unit. " +
+            "Every step must be an object with the required keys in this order: " +
+            "{\"stepId\":\"s1\",\"toolName\":\"set_view_template\",\"arguments\":{...}} " +
+            "(toolName names the tool to run; dependsOn is optional and only for steps whose " +
+            "arguments actually read an earlier step's result). " +
             "With dryRun=true (default) every write step is executed as a rollback-only dry run " +
             "and the aggregated diff (changed/skipped/failed per step) is returned; nothing " +
             "changes. Show that diff to the user. Call again with dryRun=false and the " +
@@ -51,12 +55,22 @@ public sealed partial class ExecutePlanTool : IAgentTool
             "exact arguments, planDigest may be omitted: it is derived from those arguments " +
             "(planDigestAutoFilled=true) and the apply runs without a separate preview. Steps " +
             "that depend on an earlier write are marked preview_skipped in the preview and run " +
-            "only during apply. Never include execute_plan as a step. readBackExpectations.path " +
-            "is dot-addressed from the read-back tool's data object (for example " +
-            "views.byId[123].templateName). For arrays use byId[<id>] when the row has an id, " +
-            "or byName[<name>] when it does not: get_family_parameters returns a flat " +
-            "parameters[] with id/name, so parameters.byName[Ширина].name and " +
-            "parameters.byName[Ширина].valuesByType.byName[Тип 1].displayValue are valid. " +
+            "only during apply — use dependsOn only when the step really consumes the earlier " +
+            "result, otherwise you lose its preview. Never include execute_plan as a step. " +
+            "readBackExpectations.path is dot-addressed from the read-back tool's data object " +
+            "(for example views.byId[123].templateName or views.byName[View 1.2].templateName — " +
+            "a dot inside a bracketed key does not split the path). For arrays use byId[<id>] " +
+            "when the row has an id, or byName[<name>] when it does not; for flat value maps " +
+            "(list_family_types types[].values) address the key: " +
+            "types.byId[123].values.byName[param name].displayValue or the bracket form " +
+            "types.byId[123].values.[param name]. A path the resolver does not recognize is " +
+            "reported as notVerifiable with the reason, never as a mismatch. " +
+            "expectedChanges/expectedChangesAtLeast are optional; when set they must equal the " +
+            "length of changed[] in the step's preview — the mismatch message lists what the " +
+            "tool actually counted, so take the number from the preview instead of guessing. " +
+            "In the preview report ids of objects a step would create are renamed with a " +
+            "preview prefix (previewScheduleId): a dry run rolls back, so those ids are not " +
+            "real element ids — address created objects by name or re-read them after apply. " +
             "Family write tools already do their own read-back after LoadFamily; the apply " +
             "answer counts it as planReadBack.toolVerified, so verified is not zero just " +
             "because no plan-level expectation was declared.",
@@ -230,7 +244,10 @@ public sealed partial class ExecutePlanTool : IAgentTool
                   result.PlanDigest + " only after explicit approval."
                 : "Nothing was changed. Show this diff to the user and call execute_plan with " +
                   "the same steps, dryRun=false and planDigest=" + result.PlanDigest +
-                  " only after explicit approval. Per-step dryRun flags do not affect the digest."
+                  " only after explicit approval. Per-step dryRun flags do not affect the digest. " +
+                  "Ids renamed with a preview prefix (previewViewId, created.previewScheduleId) " +
+                  "are provisional: the dry run rolled back, so the apply will create new ids — " +
+                  "do not reuse them in later steps."
         }, SerializerOptions);
 
         return ToolResult.Ok(

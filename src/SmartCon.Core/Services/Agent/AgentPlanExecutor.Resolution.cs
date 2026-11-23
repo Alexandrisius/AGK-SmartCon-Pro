@@ -50,11 +50,43 @@ public sealed partial class AgentPlanExecutor
             : 0;
     }
 
-    private static string? ResolvePath(JsonElement element, string path)
+    /// <summary>
+    /// Outcome of a read-back path: either a resolved value (including an
+    /// explicit JSON null) or an unresolved path with the reason why. An
+    /// unresolved path must not be reported as a mismatch — a mismatch with
+    /// actual 'null' on an apply that succeeded is exactly the false negative
+    /// the live runs hit (C4-10/C9-04).
+    /// </summary>
+    private sealed class PathResolution
+    {
+        public bool Resolved { get; }
+
+        public string? Value { get; }
+
+        public string? Reason { get; }
+
+        private PathResolution(bool resolved, string? value, string? reason)
+        {
+            Resolved = resolved;
+            Value = value;
+            Reason = reason;
+        }
+
+        public static PathResolution Ok(string value) => new(true, value, null);
+
+        public static PathResolution ExplicitNull => new(true, null, null);
+
+        public static PathResolution Unresolved(string reason) => new(false, null, reason);
+    }
+
+    private static PathResolution ResolvePath(JsonElement element, string path)
     {
         var current = element;
-        foreach (var segment in path.Split('.'))
+        foreach (var segment in TokenizePath(path))
         {
+            if (segment.Length == 0)
+                continue;
+
             if (TryResolveById(current, segment, out var byId))
             {
                 current = byId;
@@ -79,6 +111,14 @@ public sealed partial class AgentPlanExecutor
                 continue;
             }
 
+            // A bracketed literal key: values.["Width.2"] keeps a dot inside the
+            // key as part of one segment (C4-10).
+            if (TryResolveBracketKey(current, segment, out var bracketed))
+            {
+                current = bracketed;
+                continue;
+            }
+
             if (current.ValueKind == JsonValueKind.Object
                 && current.TryGetProperty(segment, out var property))
             {
@@ -96,18 +136,65 @@ public sealed partial class AgentPlanExecutor
                 continue;
             }
 
-            return null;
+            return PathResolution.Unresolved(
+                "path form not supported or no match: segment '" + segment +
+                "' does not address the read-back payload (supported: key, key[index], " +
+                "[key], byId[id], byName[name])");
         }
 
         return current.ValueKind switch
         {
-            JsonValueKind.String => current.GetString(),
-            JsonValueKind.Number => current.GetRawText(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            JsonValueKind.Null => null,
-            _ => current.GetRawText()
+            JsonValueKind.String => PathResolution.Ok(current.GetString() ?? string.Empty),
+            JsonValueKind.Number => PathResolution.Ok(current.GetRawText()),
+            JsonValueKind.True => PathResolution.Ok("true"),
+            JsonValueKind.False => PathResolution.Ok("false"),
+            JsonValueKind.Null => PathResolution.ExplicitNull,
+            _ => PathResolution.Ok(current.GetRawText())
         };
+    }
+
+    /// <summary>
+    /// Splits a read-back path into dot segments while keeping bracketed parts
+    /// intact: "views.byName[View 1.2].templateName" is three segments because
+    /// the dot inside the brackets belongs to the name key. A naive
+    /// Split('.') shattered such keys and resolved the path to null (C4-10).
+    /// </summary>
+    private static List<string> TokenizePath(string path)
+    {
+        var segments = new List<string>();
+        var current = new System.Text.StringBuilder();
+        var depth = 0;
+        foreach (var character in path)
+        {
+            switch (character)
+            {
+                case '[':
+                    depth++;
+                    current.Append(character);
+                    break;
+                case ']':
+                    if (depth > 0)
+                        depth--;
+                    current.Append(character);
+                    break;
+                case '.' when depth == 0:
+                    if (current.Length > 0)
+                    {
+                        segments.Add(current.ToString());
+                        current.Clear();
+                    }
+
+                    break;
+                default:
+                    current.Append(character);
+                    break;
+            }
+        }
+
+        if (current.Length > 0)
+            segments.Add(current.ToString());
+
+        return segments;
     }
 
     /// <summary>
@@ -150,7 +237,58 @@ public sealed partial class AgentPlanExecutor
         if (raw.Length == 0)
             return false;
 
-        return TryFindByName(current, raw, out found);
+        if (TryFindByName(current, raw, out found))
+            return true;
+
+        // Flat value maps (list_family_types values{}) are dictionaries keyed by
+        // the parameter name, not arrays of cards: values.byName[param] must
+        // address the key itself (C9-04).
+        if (current.ValueKind == JsonValueKind.Object
+            && current.TryGetProperty(raw, out var mapped))
+        {
+            found = mapped;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A bracketed literal key segment: <c>values.["Width.2"]</c> addresses an
+    /// object key (or an array index) verbatim, so keys containing dots stay
+    /// within one segment instead of shattering the path (C4-10).
+    /// </summary>
+    private static bool TryResolveBracketKey(JsonElement current, string segment, out JsonElement found)
+    {
+        found = default;
+        if (!segment.StartsWith("[", StringComparison.Ordinal)
+            || !segment.EndsWith("]", StringComparison.Ordinal)
+            || segment.Length < 3)
+        {
+            return false;
+        }
+
+        var raw = segment.Substring(1, segment.Length - 2).Trim().Trim('"', '\'');
+        if (raw.Length == 0)
+            return false;
+
+        if (current.ValueKind == JsonValueKind.Object
+            && current.TryGetProperty(raw, out var property))
+        {
+            found = property;
+            return true;
+        }
+
+        if (current.ValueKind == JsonValueKind.Array
+            && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index)
+            && index >= 0
+            && index < current.GetArrayLength())
+        {
+            found = current[index];
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>A segment like <c>categories[0]</c>: property name plus array index.</summary>
@@ -220,7 +358,10 @@ public sealed partial class AgentPlanExecutor
         string.Equals(name, "id", StringComparison.OrdinalIgnoreCase)
         || string.Equals(name, "viewId", StringComparison.OrdinalIgnoreCase)
         || string.Equals(name, "elementId", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(name, "levelId", StringComparison.OrdinalIgnoreCase);
+        || string.Equals(name, "levelId", StringComparison.OrdinalIgnoreCase)
+        // list_family_types rows identify themselves as typeId (C9-04): without
+        // it types.byId[<typeId>] never matched and degraded to actual 'null'.
+        || string.Equals(name, "typeId", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryFindByName(JsonElement element, string name, out JsonElement found)
     {

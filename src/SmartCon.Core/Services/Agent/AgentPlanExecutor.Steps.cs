@@ -158,7 +158,9 @@ public sealed partial class AgentPlanExecutor
                         (step.ExpectedChanges.HasValue
                             ? step.ExpectedChanges.Value + " change(s)"
                             : "at least " + step.ExpectedChangesAtLeast!.Value + " change(s)") +
-                        ", the dry run produced " + result.Changed);
+                        ", the tool counted " + result.Changed + " change(s)" +
+                        DescribeCountedItems(dryResult) +
+                        ". The counter is the length of changed[] in the step's preview items");
                 }
             }
         }
@@ -176,6 +178,80 @@ public sealed partial class AgentPlanExecutor
         }
 
         await WriteAuditAsync(null, "plan#fidelity", "match", 0, execution, ct).ConfigureAwait(false);
+        return null;
+    }
+
+    /// <summary>
+    /// Short listing of what the tool actually counted as changes, so the model
+    /// can correct expectedChanges on the first try instead of guessing the
+    /// tool's counting rule (C7-04).
+    /// </summary>
+    private static string DescribeCountedItems(ToolResult result, int max = 3)
+    {
+        if (result.Data is not { ValueKind: JsonValueKind.Object } data
+            || !data.TryGetProperty("changed", out var changed)
+            || changed.ValueKind != JsonValueKind.Array
+            || changed.GetArrayLength() == 0)
+        {
+            return string.Empty;
+        }
+
+        var described = new List<string>();
+        foreach (var item in changed.EnumerateArray())
+        {
+            if (described.Count >= max)
+                break;
+
+            described.Add(DescribeChangedItem(item));
+        }
+
+        var rest = changed.GetArrayLength() - described.Count;
+        return ": " + string.Join("; ", described)
+               + (rest > 0 ? "; +" + rest + " more" : string.Empty);
+    }
+
+    private static string DescribeChangedItem(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+            return item.ValueKind == JsonValueKind.String
+                ? "'" + item.GetString() + "'"
+                : item.GetRawText();
+
+        var label = FirstStringProperty(item, "name", "viewName", "parameterName",
+            "familyName", "typeName", "scheduleName", "fieldName");
+        var action = FirstStringProperty(item, "action", "status", "detail");
+        var id = FirstStringProperty(item, "id", "viewId", "elementId");
+
+        var parts = new List<string>(3);
+        if (label is not null)
+            parts.Add("'" + label + "'");
+        if (action is not null && !string.Equals(action, label, StringComparison.Ordinal))
+            parts.Add(action);
+        if (parts.Count == 0 && id is not null)
+            parts.Add("id " + id);
+
+        return parts.Count switch
+        {
+            0 => "(unnamed)",
+            1 => parts[0],
+            _ => parts[0] + " (" + string.Join(", ", parts.Skip(1)) + ")"
+        };
+    }
+
+    private static string? FirstStringProperty(JsonElement item, params string[] properties)
+    {
+        foreach (var property in properties)
+        {
+            if (item.TryGetProperty(property, out var value))
+            {
+                if (value.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(value.GetString()))
+                    return value.GetString();
+                if (value.ValueKind == JsonValueKind.Number)
+                    return value.GetRawText();
+            }
+        }
+
         return null;
     }
 
@@ -350,15 +426,18 @@ public sealed partial class AgentPlanExecutor
         return false;
     }
 
-    private async Task<(IReadOnlyList<string> Verified, IReadOnlyList<string> Mismatches)>
-        RunReadBackAsync(
-            IReadOnlyList<AgentPlanStep> steps,
-            IReadOnlyList<AgentPlanStepResult> results,
-            AgentPlanExecutionContext execution,
-            CancellationToken ct)
+    private async Task<(
+        IReadOnlyList<string> Verified,
+        IReadOnlyList<string> Mismatches,
+        IReadOnlyList<string> NotVerifiable)> RunReadBackAsync(
+        IReadOnlyList<AgentPlanStep> steps,
+        IReadOnlyList<AgentPlanStepResult> results,
+        AgentPlanExecutionContext execution,
+        CancellationToken ct)
     {
         var verified = new List<string>();
         var mismatches = new List<string>();
+        var notVerifiable = new List<string>();
 
         foreach (var step in steps)
         {
@@ -393,7 +472,19 @@ public sealed partial class AgentPlanExecutor
             result.ExpectationsChecked = step.ReadBackExpectations.Count;
             foreach (var expectation in step.ReadBackExpectations)
             {
-                var actual = ResolvePath(data, expectation.Path);
+                var resolution = ResolvePath(data, expectation.Path);
+                if (!resolution.Resolved)
+                {
+                    // A path that does not address the payload shape is not a value
+                    // mismatch: reporting actual 'null' made successful applies look
+                    // broken (C4-10/C9-04).
+                    result.NotVerifiableCount++;
+                    notVerifiable.Add(step.StepId + ": " + expectation.Path +
+                                      " — not verifiable (" + resolution.Reason + ")");
+                    continue;
+                }
+
+                var actual = resolution.Value;
                 if (actual is null
                     || !string.Equals(actual, expectation.Expected, StringComparison.Ordinal))
                 {
@@ -413,7 +504,7 @@ public sealed partial class AgentPlanExecutor
                 verified.Add(step.StepId + ": read-back executed");
         }
 
-        return (verified, mismatches);
+        return (verified, mismatches, notVerifiable);
     }
 
     private static bool PlanContainsDiscard(AgentPlan plan) =>

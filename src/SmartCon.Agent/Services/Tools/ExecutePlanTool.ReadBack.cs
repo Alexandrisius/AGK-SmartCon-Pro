@@ -29,6 +29,7 @@ public sealed partial class ExecutePlanTool
             }
         }
 
+        var verificationRequested = result.ExpectationsChecked > 0 || tool.Expected > 0;
         var payload = JsonSerializer.SerializeToElement(new
         {
             dryRun = false,
@@ -39,6 +40,11 @@ public sealed partial class ExecutePlanTool
             affected = result.AffectedCount,
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,
+            warning = result.PreviewIncomplete
+                ? "Steps " + string.Join(", ", result.NotPreviewed) +
+                  " were applied without a preview: they depend on earlier write steps, so " +
+                  "the dry run could not exercise them. Verify their result with a read tool."
+                : null,
             steps = Steps(result, apply: true),
             planReadBack = new
             {
@@ -46,22 +52,37 @@ public sealed partial class ExecutePlanTool
                 expectationsChecked = result.ExpectationsChecked,
                 verified = result.Verified.Count,
                 mismatches = result.Mismatches.Count,
+                notVerifiable = result.NotVerifiable.Count,
                 toolExpectationsChecked = tool.Expected,
                 toolVerified = tool.Verified,
                 toolMismatched = tool.Mismatched
             },
             verified,
             mismatches,
+            notVerifiable = result.NotVerifiable,
             verifiedTotal = verified.Count,
             mismatchesTotal = mismatches.Count,
+            notVerifiableTotal = result.NotVerifiable.Count,
             hint = BuildApplyHint(result, tool, digestAutoFilled)
         }, SerializerOptions);
 
+        // "0 verified" on an apply without read-back expectations read as "checked
+        // and confirmed nothing" — the honest wording is that verification was not
+        // requested at all (C4-18).
+        var verificationText = verificationRequested
+            ? verified.Count + " verified (" + tool.Verified + " tool-level), " +
+              mismatches.Count + " mismatch(es)" +
+              (result.NotVerifiable.Count > 0
+                  ? ", " + result.NotVerifiable.Count + " not verifiable"
+                  : string.Empty)
+            : "verification not requested";
+
         return ToolResult.Ok(
             payload,
-            "Plan applied: " + result.AffectedCount + " change(s); " +
-            verified.Count + " verified (" + tool.Verified + " tool-level), " +
-            mismatches.Count + " mismatch(es)." +
+            "Plan applied: " + result.AffectedCount + " change(s); " + verificationText + "." +
+            (result.PreviewIncomplete
+                ? " " + result.NotPreviewed.Count + " step(s) applied without preview."
+                : string.Empty) +
             (digestAutoFilled ? " Applied without a separate preview." : string.Empty),
             result.AffectedCount);
     }
@@ -79,6 +100,14 @@ public sealed partial class ExecutePlanTool
                 "(planDigestAutoFilled=true), so this apply ran without a separate dry-run preview.");
         }
 
+        if (result.PreviewIncomplete)
+        {
+            parts.Add(
+                "Steps " + string.Join(", ", result.NotPreviewed) + " ran without a preview " +
+                "(they depend on earlier write steps). Confirm their result with the matching " +
+                "read tool.");
+        }
+
         if (result.Mismatches.Count + tool.Mismatched > 0)
         {
             parts.Add(
@@ -88,8 +117,8 @@ public sealed partial class ExecutePlanTool
         else if (result.ExpectationsChecked == 0 && tool.Expected == 0)
         {
             parts.Add(
-                "No plan read-back expectations and no tool-internal read-back were declared, " +
-                "so there are no verified values; read the model back with the matching list_* " +
+                "No plan read-back expectations and no tool-internal read-back were declared " +
+                "(verification not requested); read the model back with the matching list_* " +
                 "or get_* tool.");
         }
         else if (result.ExpectationsChecked == 0)
@@ -99,6 +128,14 @@ public sealed partial class ExecutePlanTool
                 (tool.NotVerifiable > 0 ? " (" + tool.NotVerifiable + " not verifiable)" : "") +
                 ". No plan-level readBackExpectations were declared; add them to verify extra " +
                 "conditions with a separate read tool.");
+        }
+        else if (result.NotVerifiable.Count > 0)
+        {
+            parts.Add(
+                result.Verified.Count + " expectation(s) verified, " +
+                result.NotVerifiable.Count + " could not be verified: their path did not " +
+                "address the read-back payload (see notVerifiable[]). Re-check those values " +
+                "with a corrected path.");
         }
         else
         {
@@ -170,22 +207,25 @@ public sealed partial class ExecutePlanTool
             changed = step.Changed,
             skipped = step.Skipped,
             failed = step.Failed,
-            items = StepItems(step, apply),
+            items = apply ? StepItems(step, apply) : MarkPreviewIds(StepItems(step, apply)),
             toolReadBack = ToolReadBack(step, apply),
             planReadBack = new
             {
                 executed = step.ReadBackExecuted,
                 expectationsChecked = step.ExpectationsChecked,
                 verified = step.VerifiedCount,
-                mismatches = step.MismatchCount
+                mismatches = step.MismatchCount,
+                notVerifiable = step.NotVerifiableCount
             },
             fidelity = step.FidelityChecked
                 ? new
                 {
                     expected = step.FidelityExpected,
-                    matched = step.FidelityMatched
+                    matched = step.FidelityMatched,
+                    note = step.FidelityNote
                 }
                 : null,
+            error = StepError(step, apply),
             preflightSkipped = step.PreflightSkipped,
             preflightDeferred = step.PreflightDeferred,
             previewSkipped = step.PreviewSkipped,
@@ -242,6 +282,159 @@ public sealed partial class ExecutePlanTool
         }
 
         return data;
+    }
+
+    /// <summary>
+    /// Nested tool failure details for a failed step: the tool's error code,
+    /// message and the first failed[] reasons. Without them a step error says
+    /// only "dry_run_failed" and the model has to re-run the tool to learn the
+    /// cause (C4-08).
+    /// </summary>
+    private static object? StepError(AgentPlanStepResult step, bool apply)
+    {
+        var result = apply
+            ? step.ApplyResult ?? step.DryRunResult
+            : step.DryRunResult ?? step.ApplyResult;
+        if (result is null || result.Success)
+            return null;
+
+        return new
+        {
+            code = result.ErrorCode,
+            message = result.Message,
+            failed = FirstFailedReasons(result, max: 3)
+        };
+    }
+
+    private static IReadOnlyList<string> FirstFailedReasons(ToolResult result, int max)
+    {
+        var reasons = new List<string>();
+        if (result.Data is not { ValueKind: JsonValueKind.Object } data
+            || !data.TryGetProperty("failed", out var failed)
+            || failed.ValueKind != JsonValueKind.Array)
+        {
+            return reasons;
+        }
+
+        foreach (var item in failed.EnumerateArray())
+        {
+            if (reasons.Count >= max)
+                break;
+
+            var reason = item.ValueKind switch
+            {
+                JsonValueKind.String => item.GetString(),
+                JsonValueKind.Object when item.TryGetProperty("reason", out var reasonValue)
+                    && reasonValue.ValueKind == JsonValueKind.String => reasonValue.GetString(),
+                JsonValueKind.Object when item.TryGetProperty("message", out var messageValue)
+                    && messageValue.ValueKind == JsonValueKind.String => messageValue.GetString(),
+                _ => null
+            };
+
+            // net48 BCL has no [NotNullWhen] on IsNullOrWhiteSpace: the explicit
+            // null check keeps the nullable analysis happy on both TFMs.
+            if (reason is not null && !string.IsNullOrWhiteSpace(reason))
+                reasons.Add(reason);
+        }
+
+        if (reasons.Count < max && failed.GetArrayLength() > max)
+            reasons.Add("+" + (failed.GetArrayLength() - max) + " more");
+
+        return reasons;
+    }
+
+    /// <summary>
+    /// Marks ids of objects a dry-run step would create as preliminary: every
+    /// <c>*Id</c> key inside <c>created*</c> blocks (and every
+    /// <c>wouldCreate*Id</c>/<c>new*Id</c>/<c>preview*Id</c> key) is renamed with a
+    /// <c>preview</c> prefix, so the model does not read a rolled-back dry-run id
+    /// as a real element id (C7-05/C4-11). Applied to the preview report only;
+    /// the apply report keeps the real ids.
+    /// </summary>
+    private static JsonElement? MarkPreviewIds(JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object })
+            return data;
+
+        System.Text.Json.Nodes.JsonNode? node;
+        try
+        {
+            node = System.Text.Json.Nodes.JsonNode.Parse(data.Value.GetRawText());
+        }
+        catch (JsonException)
+        {
+            return data;
+        }
+
+        if (node is not System.Text.Json.Nodes.JsonObject root)
+            return data;
+
+        var changed = false;
+        var renamed = RenameNode(root, insideCreatedBlock: false, ref changed)
+            as System.Text.Json.Nodes.JsonObject;
+        if (!changed || renamed is null)
+            return data;
+
+        return JsonSerializer.SerializeToElement(renamed, SerializerOptions);
+    }
+
+    /// <summary>
+    /// Builds renamed copies bottom-up (JsonNode cannot live in two parents at
+    /// once, so mutating while enumerating is off-limits).
+    /// </summary>
+    private static System.Text.Json.Nodes.JsonNode? RenameNode(
+        System.Text.Json.Nodes.JsonNode? node,
+        bool insideCreatedBlock,
+        ref bool changed)
+    {
+        switch (node)
+        {
+            case System.Text.Json.Nodes.JsonObject obj:
+                var renamed = new System.Text.Json.Nodes.JsonObject();
+                foreach (var pair in obj)
+                {
+                    var key = pair.Key;
+                    var childCreated = insideCreatedBlock
+                                       || key.StartsWith("created", StringComparison.OrdinalIgnoreCase);
+                    if (IsProvisionalIdKey(key, childCreated))
+                    {
+                        key = "preview" + char.ToUpperInvariant(key[0]) + key.Substring(1);
+                        changed = true;
+                    }
+
+                    renamed[key] = RenameNode(pair.Value, childCreated, ref changed);
+                }
+
+                return renamed;
+
+            case System.Text.Json.Nodes.JsonArray array:
+                var renamedArray = new System.Text.Json.Nodes.JsonArray();
+                foreach (var item in array)
+                    renamedArray.Add(RenameNode(item, insideCreatedBlock, ref changed));
+
+                return renamedArray;
+
+            default:
+                return CloneLeaf(node);
+        }
+    }
+
+    private static System.Text.Json.Nodes.JsonNode? CloneLeaf(System.Text.Json.Nodes.JsonNode? node) =>
+        node is null
+            ? null
+            : System.Text.Json.Nodes.JsonNode.Parse(node.ToJsonString());
+
+    private static bool IsProvisionalIdKey(string key, bool insideCreatedBlock)
+    {
+        if (!key.EndsWith("Id", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (key.StartsWith("preview", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return insideCreatedBlock
+               || key.StartsWith("wouldCreate", StringComparison.OrdinalIgnoreCase)
+               || key.StartsWith("new", StringComparison.OrdinalIgnoreCase);
     }
 
 }

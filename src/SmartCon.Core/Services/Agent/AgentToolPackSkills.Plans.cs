@@ -18,7 +18,9 @@ public static partial class AgentToolPackSkills
 - `execute_plan` — `goal` + `steps[]`; `planDigest` связывает превью с применением.
 
 ### Формат шага
-`{stepId, toolName, arguments, dependsOn[], dryRun, expectedChanges|expectedChangesAtLeast,
+Минимальный скелет (обязательные ключи, `toolName` первым):
+`{""stepId"":""s1"",""toolName"":""set_view_template"",""arguments"":{""viewId"":123,""templateId"":45}}`.
+Полная форма: `{stepId, toolName, arguments, dependsOn[], dryRun, expectedChanges|expectedChangesAtLeast,
 readBackTool, readBackArguments, readBackExpectations[{path,expected}], rationale}`.
 До 20 шагов. `dependsOn` задаёт порядок; по умолчанию шаги идут как перечислены.
 
@@ -45,17 +47,34 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
 - `planDigest` считается по шагам (id, toolName, аргументы без `dryRun`, зависимости,
   ожидаемые количества) и документу; `goal` и `rationale` в него не входят — их можно
   уточнять, не ломая подтверждение.
+- `dependsOn` — только когда аргументы шага реально читают результат предыдущего шага
+  (например id созданного элемента). Ложный `dependsOn` исключает шаг из превью
+  (`preview_skipped`), и apply выполнит его вслепую — отчёт пометит это предупреждением.
+  Для простого порядка шагов `dependsOn` не нужен: шаги идут как перечислены.
 - В превью шаги, зависящие от ещё не применённой записи, пропускаются (`preview_skipped`,
   reason `depends_on_unapplied_step:<stepId>(<tool>)`); в apply они выполнятся. Флаг
-  `previewIncomplete` = такие шаги есть.
+  `previewIncomplete` = такие шаги есть; отчёт apply явно предупредит о них.
 - Apply: первый упавший шаг останавливает план (`plan_apply_failed`); зависевшие от него шаги
   получают `upstream_step_failed`, прочие последующие — `not_run`. **Автоотката плана нет** —
   `undo_last` по шагам или `rollback_job`.
-- `readBackExpectations` — обязательный способ доказать, что шаг сделал заявленное: путь +
-  ожидаемое значение читаются после шага. Несовпадение попадает в `mismatches[]`, но общий
-  `success` остаётся true — **сверяйте `mismatches`, а не только `success`**.
-- `expectedChanges`/`expectedChangesAtLeast` — контракт количества; расхождение даёт
-  `plan_fidelity_mismatch` ещё на превью.
+- `readBackExpectations` — способ доказать, что шаг сделал заявленное: путь + ожидаемое
+  значение читаются после шага. Несовпадение попадает в `mismatches[]`, но общий `success`
+  остаётся true — **сверяйте `mismatches`, а не только `success`**. Если ожиданий не задано,
+  отчёт прямо скажет «verification not requested» — это не «проверено и пусто».
+- Пути `readBackExpectations.path` адресуются по данным read-тура: `views.byId[123].templateName`,
+  `views.byName[View 1.2].templateName` (точка внутри скобок не разрывает путь),
+  `types.byId[123].values.byName[имя параметра]` (плоский словарь значений) или
+  `values.[""имя.с.точкой""]` (скобки = литеральный ключ). Нераспознанный путь даёт
+  `notVerifiable[]` с причиной — это не `mismatch`; сверяй путь с фактической формой
+  ответа read-тура.
+- `expectedChanges`/`expectedChangesAtLeast` — необязательный контракт количества: это длина
+  `changed[]` из превью шага. Расхождение даёт `plan_fidelity_mismatch` ещё на превью; текст
+  ошибки перечисляет, что тул фактически посчитал. Если не уверен в числе — не задавай или
+  посмотри превью, а не угадывай: один тул может считать «объект + каждое поле» отдельными
+  изменениями.
+- Превью-отчёт переименовывает id создаваемых объектов с префиксом `preview`
+  (`created.previewScheduleId`): dry-run откатывается, эти id не существуют в модели —
+  создавай зависимые шаги по имени или перечитывай после apply.
 - Шаг с `toolName`, которого нет в наборе доступных тулов, отклоняется на валидации: сначала
   `load_tool_pack`. `execute_plan` внутри шага запрещён.
 - `allowDestructive=true` требуется для шагов, удаляющих данные; конфликт шаблон/настройки
@@ -72,6 +91,8 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
 ### Что нельзя
 - Смешивать в одном шаге несколько несвязанных тулов — один шаг = один toolName.
 - Заявлять успех по `success=true` без чтения `readBackExpectations`.
+- Ставить `dependsOn` «для порядка» — потеряешь превью шага.
+- Реиспользовать preview-id из превью-отчёта как реальные id элементов.
 - Обещать откат Revit-овским Undo: откат делает `undo_last` (наши change sets) или
   `rollback_job`, и об этом надо сказать прямо.
 ";

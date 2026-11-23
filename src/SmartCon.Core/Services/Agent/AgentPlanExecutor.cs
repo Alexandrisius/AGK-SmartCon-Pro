@@ -55,6 +55,12 @@ public sealed class AgentPlanStepResult
     public int VerifiedCount { get; set; }
 
     public int MismatchCount { get; set; }
+
+    /// <summary>
+    /// Expectations whose path did not address the read-back payload: neither
+    /// verified nor mismatched (C4-10).
+    /// </summary>
+    public int NotVerifiableCount { get; set; }
 }
 
 public sealed class AgentPlanExecutionResult
@@ -75,6 +81,13 @@ public sealed class AgentPlanExecutionResult
     public IReadOnlyList<string> Verified { get; init; } = Array.Empty<string>();
 
     public IReadOnlyList<string> Mismatches { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Read-back expectations that could not be verified because their path did
+    /// not address the read-back payload. Not failures: the plan applied, but
+    /// these conditions must be re-checked with a proper path (C4-10).
+    /// </summary>
+    public IReadOnlyList<string> NotVerifiable { get; init; } = Array.Empty<string>();
 
     /// <summary>
     /// Total read-back expectations checked. Zero with empty Verified/Mismatches
@@ -164,7 +177,8 @@ public sealed partial class AgentPlanExecutor
         if (applyFailure is not null)
             return applyFailure;
 
-        var (verified, mismatches) = await RunReadBackAsync(steps, results, execution, ct).ConfigureAwait(false);
+        var (verified, mismatches, notVerifiable) = await RunReadBackAsync(
+                steps, results, execution, ct).ConfigureAwait(false);
 
         if (mismatches.Count > 0)
         {
@@ -186,6 +200,7 @@ public sealed partial class AgentPlanExecutor
             Steps = results,
             Verified = verified,
             Mismatches = mismatches,
+            NotVerifiable = notVerifiable,
             ExpectationsChecked = results.Sum(item => item.ExpectationsChecked),
             AffectedCount = writeResults.Sum(item => item.Changed),
             PreviewIncomplete = results.Any(item => item.PreviewSkipped),
