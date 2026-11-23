@@ -132,12 +132,12 @@ public sealed partial class SetSharedParameterFileTool
         {
             var entries = new SharedParameterFileParser().ParseFile(path);
             preview.DefinitionsCount = entries.Count;
-            preview.GroupNames = entries
-                .Select(entry => entry.GroupName ?? string.Empty)
-                .Where(name => name.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(MaxGroupNames)
-                .ToList();
+            preview.GroupNames.AddRange(
+                entries
+                    .Select(entry => entry.GroupName ?? string.Empty)
+                    .Where(name => name.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(MaxGroupNames));
         }
         catch (InvalidDataException)
         {

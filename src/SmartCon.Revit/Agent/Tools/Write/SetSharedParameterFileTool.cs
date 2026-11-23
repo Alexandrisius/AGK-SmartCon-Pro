@@ -165,7 +165,7 @@ public sealed partial class SetSharedParameterFileTool : IAgentTool
             : Apply(application, path, previousPath, fileExists, preview, warnings);
     }
 
-    private static ToolResult ReadCurrentSetting(Application application, out ToolResult? failure)
+    private static string ReadCurrentSetting(Application application, out ToolResult? failure)
     {
         failure = null;
         try
@@ -331,8 +331,9 @@ public sealed partial class SetSharedParameterFileTool : IAgentTool
             var inventory = ReadInventory(application);
             if (inventory.ErrorCode is not null)
             {
-                var reason = inventory.Message;
-                RollBack(application, previousPath, path, createdFile, reason);                return ToolResult.Fail(
+                var reason = inventory.Message ?? "OpenSharedParameterFile failed";
+                RollBack(application, previousPath, path, createdFile, reason);
+                return ToolResult.Fail(
                     inventory.ErrorCode,
                     "Revit refused '" + fileName + "' as a shared parameter file: " + reason +
                     " The previous setting was restored; nothing else was changed. " +
