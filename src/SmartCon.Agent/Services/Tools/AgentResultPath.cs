@@ -66,6 +66,7 @@ internal static class AgentResultPath
         node is null
             ? "null"
             : node is JsonValue value && value.TryGetValue<string>(out var text)
-                ? text
+                // net48 ref assemblies lack [NotNullWhen] on TryGetValue.
+                ? text!
                 : node.ToJsonString();
 }
