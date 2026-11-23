@@ -1,17 +1,21 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace SmartCon.IntegrationTests.Agent;
 
 /// <summary>
 /// Case 13 verdict (v2 case 8): (а) the batch summary numbers match the seed
-/// truth (Name 10/2, Mark 11/1, Unit 8/4 before the safe fill or 12/0 after,
-/// Count 12/0); (б) the bait field «Комментарий» never enters the audited
-/// parameter set; (в) culprits name the exact families of the holes;
-/// (г) the safe holes (fittings unit) are filled with an explanation;
-/// (д) meaningful holes stay empty; (е) etalons keep their values. 0.0 when
-/// the bait was audited or etalons were touched. Red flags: per-element read
-/// loops instead of the batch audit, writes into meaningful parameters.
+/// truth (filled/empty per parameter derived from the seed truth table —
+/// Name/Mark/Unit holes stay empty until the safe fill, Count is filled);
+/// (б) the bait field «Комментарий» never enters the audited parameter set;
+/// (в) culprits name the exact families of the holes; (г) the safe holes
+/// (fittings unit) are filled with an explanation; (д) meaningful holes stay
+/// empty; (е) etalons keep their values. 0.0 when the bait was audited or
+/// etalons were touched. Red flags: per-element read loops instead of the
+/// batch audit, writes into meaningful parameters. All truth numbers and
+/// culprit names are DERIVED from the seed truth table, never hardcoded and
+/// never matched as raw substrings of the case text (ORCH-4).
 /// Partial of <see cref="AgentRealCasesBenchmarkTests"/>.
 /// </summary>
 public sealed partial class AgentRealCasesBenchmarkTests
@@ -67,34 +71,47 @@ public sealed partial class AgentRealCasesBenchmarkTests
             redFlags.Add("приманка «" + Case13BaitScheduleName + "» аудирована: поле «" +
                          Case13BaitParameter + "» попало в обязательный набор");
 
-        // (а) Сводка: числа filled/empty совпадают с истиной. Успешный прогон
-        // audit_fill_rate — достаточный, но НЕ обязательный путь (ORCH-4: тул
-        // не назван текстом кейса — модель может собрать ту же сводку
-        // вручную; сверяются и числа в ответе модели).
+        // (а) Сводка: числа filled/empty совпадают с истиной сида. Успешный
+        // прогон audit_fill_rate — достаточный, но НЕ обязательный путь
+        // (ORCH-4: тул не назван текстом кейса — модель может собрать ту же
+        // сводку вручную; числа в ответе разбираются строго по сегментам).
         var responseText = answerText + "\n" +
                            string.Join("\n", _lastRunIntermediateAnswers);
         var summaryOk = audits.Any(Case13AuditMatchesTruth) ||
                         Case13AnswerSummaryMatchesTruth(responseText);
         var bestAudit = audits.FirstOrDefault(Case13AuditMatchesTruth);
+        var (truthTotal, truthNameEmpty, truthMarkEmpty, truthUnitEmpty) = Case13TruthShape();
         if (audits.Count > 0 && !summaryOk)
-            notes.Add("ни один прогон аудита не совпал с истиной (Name 10/2, Mark 11/1, " +
-                      "Unit 8/4 или 12/0, Count 12/0)");
+            notes.Add("ни один прогон аудита не совпал с истиной (Name " +
+                      (truthTotal - truthNameEmpty) + "/" + truthNameEmpty + ", Mark " +
+                      (truthTotal - truthMarkEmpty) + "/" + truthMarkEmpty + ", Unit " +
+                      (truthTotal - truthUnitEmpty) + "/" + truthUnitEmpty + " или " +
+                      truthTotal + "/0, Count " + truthTotal + "/0)");
 
         // (в) Виновники точны: семейства дырок совпадают с истиной сида —
-        // точным множеством из аудита ИЛИ всеми именами в ответе (ORCH-4).
+        // точным множеством из аудита ИЛИ всеми именами в ответе (ORCH-4:
+        // ожидаемые семейства выводятся из таблицы истины, не литералы).
         var culpritsOk = (bestAudit is not null &&
                           Case13SameFamilies(Case13RowOf(bestAudit, Case13NameGuid),
-                              "Вентустановка В-1", "Кондиционер К-2") &&
+                              Case13TruthCulpritsOf(Case13NameGuid)) &&
                           Case13SameFamilies(Case13RowOf(bestAudit, Case13UnitGuid),
-                              "Отвод 90", "Тройник", "Переход", "Крестовина") &&
-                          Case13SameFamilies(Case13RowOf(bestAudit, Case13MarkGuid), "Труба")) ||
+                              Case13TruthCulpritsOf(Case13UnitGuid)) &&
+                          Case13SameFamilies(Case13RowOf(bestAudit, Case13MarkGuid),
+                              Case13TruthCulpritsOf(Case13MarkGuid))) ||
                          Case13AnswerNamesAllCulprits(responseText);
 
-        // (г) Безопасные дырки заполнены (ед.изм. фитингов), с объяснением в ответе.
+        // (г) Безопасные дырки заполнены (ед.изм. фитингов), с объяснением в
+        // ответе; ожидаемое значение — единицы equipment-строк истины сида.
         var fittings = _case13Items.Where(item => item.Kind == "fitting").ToList();
         var safeFilled = fittings.Count == 4 &&
                          fittings.All(item => !Case13IsEmpty(item, Case13UnitGuid));
-        var explainsFill = ContainsText(answerText, "шт") ||
+        var safeUnitValues = Case13Truth()
+            .Where(row => Case13Kinds().TryGetValue(row.Family, out var kind) &&
+                          kind == "equipment" && row.Unit is not null)
+            .Select(row => row.Unit!)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var explainsFill = safeUnitValues.Any(value => ContainsText(answerText, value)) ||
                            ContainsText(answerText, "единиц") ||
                            ContainsText(answerText, "ед.");
         if (!safeFilled)
@@ -180,6 +197,33 @@ public sealed partial class AgentRealCasesBenchmarkTests
         return new CaseVerdict(false, 0.0, detail, redFlags);
     }
 
+    // ── Истина сида (ORCH-4: критерии выводятся из сида, не из литералов) ─
+
+    /// <summary>
+    /// Форма истины сида кейса 13: всего позиций и числа дырок по параметрам.
+    /// Выводится из таблицы истины сида, не хардкодом.
+    /// </summary>
+    internal static (int Total, int NameEmpty, int MarkEmpty, int UnitEmpty)
+        Case13TruthShape()
+    {
+        var truth = Case13Truth();
+        return (truth.Length,
+            truth.Count(row => row.Name is null),
+            truth.Count(row => row.Mark is null),
+            truth.Count(row => row.Unit is null));
+    }
+
+    /// <summary>
+    /// Семейства-виновники дырок (объединение по всем параметрам) из истины
+    /// сида; отвечает и за «имена объектов кейса» в критериях вердиктора.
+    /// </summary>
+    internal static string[] Case13TruthCulpritFamilies() =>
+        Case13Truth()
+            .Where(row => row.Name is null || row.Mark is null || row.Unit is null)
+            .Select(row => row.Family)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
     private string DumpCase13State()
     {
         var builder = new StringBuilder();
@@ -206,40 +250,133 @@ public sealed partial class AgentRealCasesBenchmarkTests
             row.Guid, guid.ToString("D"), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// Сводка в ответе модели совпадает с истиной (ORCH-4: ручная сводка без
-    /// audit_fill_rate): числа пустых «N из 12» / «N/12» для четырёх
-    /// параметров — Name 2, Mark 1, Unit 4 (до безопасного заполнения) или 0
-    /// (после), Count 0.
+    /// Стемы-псевдонимы параметров сида для атрибуции строк сводки
+    /// (словарные основы русских названий; канонические имена — константы
+    /// сида Case13*Parameter).
+    /// </summary>
+    private static readonly (Guid Guid, string[] Stems)[] Case13SummaryStems =
+    {
+        (Case13NameGuid, new[] { "наименован" }),
+        (Case13MarkGuid, new[] { "марк", "марок" }),
+        (Case13UnitGuid, new[] { "единиц", "ед.изм", "ед. изм" }),
+        (Case13CountGuid, new[] { "количеств" })
+    };
+
+    /// <summary>
+    /// Сводка в ответе модели совпадает с истиной сида (ORCH-4: ручная сводка
+    /// без audit_fill_rate). Строгий разбор: текст делится на строки, строки —
+    /// на сегменты (, ; |), сегмент засчитывается, если называет РОВНО ОДИН
+    /// параметр и несёт пару «N из M» / «N/M» с M = размеру истины; N — число
+    /// пустых. «12 из 12» — это 12, а не «2 из 12» подстрокой. По истины сида:
+    /// Name = имя дырок, Mark = марки дырок, Unit = единицы дырок (или 0 после
+    /// безопасного заполнения), Count = 0.
     /// </summary>
     internal static bool Case13AnswerSummaryMatchesTruth(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return false;
 
-        var found = new HashSet<int>();
-        foreach (var number in new[] { 0, 1, 2, 4 })
+        var (total, nameEmpty, markEmpty, unitEmpty) = Case13TruthShape();
+        var counts = new Dictionary<Guid, int>();
+        foreach (var rawLine in text.Split('\n'))
         {
-            if (text.Contains(number + " из 12", StringComparison.Ordinal) ||
-                text.Contains(number + "/12", StringComparison.Ordinal) ||
-                text.Contains(number + " / 12", StringComparison.Ordinal))
-                found.Add(number);
+            foreach (var rawSegment in rawLine.Split(',', ';'))
+            {
+                var segment = rawSegment.Trim();
+                if (segment.Length == 0)
+                    continue;
+
+                var parameter = Case13SegmentParameter(segment);
+                if (parameter is null)
+                    continue;
+
+                var empty = Case13SegmentEmptyCount(segment, total);
+                if (empty is not null)
+                    counts[parameter.Value] = empty.Value;
+            }
         }
 
-        // Name 2 и Mark 1 обязательны; Unit — 4 (до) или 0 (после заполнения);
-        // Count 0 обязателен (совпадает с Unit-после).
-        return found.Contains(2) && found.Contains(1) &&
-               (found.Contains(4) || found.Contains(0));
+        return counts.TryGetValue(Case13NameGuid, out var name) && name == nameEmpty &&
+               counts.TryGetValue(Case13MarkGuid, out var mark) && mark == markEmpty &&
+               counts.TryGetValue(Case13UnitGuid, out var unit) &&
+               (unit == unitEmpty || unit == 0) &&
+               counts.TryGetValue(Case13CountGuid, out var count) && count == 0;
     }
 
-    /// <summary>Ответ называет ВСЕХ виновников дырок истины сида (ORCH-4).</summary>
+    /// <summary>
+    /// Параметр сида, названный в сегменте; null — не назван или названо
+    /// несколько (неоднозначный сегмент не засчитывается).
+    /// </summary>
+    private static Guid? Case13SegmentParameter(string segment)
+    {
+        Guid? found = null;
+        foreach (var (guid, stems) in Case13SummaryStems)
+        {
+            if (!stems.Any(stem => ContainsText(segment, stem)))
+                continue;
+
+            if (found is not null && found != guid)
+                return null;
+
+            found = guid;
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// Первая пара «N из M» / «N/M» (лат. of тоже принимается) сегмента, где
+    /// M = размеру истины; N — число пустых. Числа берутся целыми токенами:
+    /// «12 из 12» даёт N=12, а не 2.
+    /// </summary>
+    private static int? Case13SegmentEmptyCount(string segment, int total)
+    {
+        foreach (Match match in Regex.Matches(
+                     segment,
+                     @"(\d+)\s*(?:из|/|of)\s*(\d+)",
+                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            if (!int.TryParse(match.Groups[1].Value, out var empty) ||
+                !int.TryParse(match.Groups[2].Value, out var of) ||
+                of != total)
+                continue;
+
+            return empty;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Ответ называет ВСЕХ виновников дырок истины сида (ORCH-4: семейства
+    /// выводятся из таблицы истины, не из литералов вердиктора).
+    /// </summary>
     internal static bool Case13AnswerNamesAllCulprits(string text)
     {
-        var culprits = new[]
+        foreach (var family in Case13TruthCulpritFamilies())
         {
-            "Вентустановка В-1", "Кондиционер К-2",
-            "Отвод", "Тройник", "Переход", "Крестовина", "Труба"
-        };
-        return culprits.All(name => ContainsText(text, name));
+            if (!ContainsText(text, family))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Семейства-виновники дырок КОНКРЕТНОГО параметра (guid) из истины сида.
+    /// </summary>
+    private static string[] Case13TruthCulpritsOf(Guid guid)
+    {
+        var truth = Case13Truth();
+        return truth
+            .Where(row => guid == Case13NameGuid
+                ? row.Name is null
+                : guid == Case13MarkGuid
+                    ? row.Mark is null
+                    : guid == Case13UnitGuid && row.Unit is null)
+            .Select(row => row.Family)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static bool Case13SameFamilies(Case13AuditRow? row, params string[] expected)
@@ -260,12 +397,14 @@ public sealed partial class AgentRealCasesBenchmarkTests
         if (name is null || mark is null || unit is null || count is null)
             return false;
 
-        // Name/Mark содержательные — числа стабильны; Unit — 8/4 до заполнения
-        // или 12/0 после безопасного; Count заполнен у всех.
-        return name.Filled == 10 && name.EmptyTotal == 2 &&
-               mark.Filled == 11 && mark.EmptyTotal == 1 &&
-               unit.Total == Case13ItemCount && (unit.Filled == 8 || unit.Filled == 12) &&
-               count.Filled == Case13ItemCount && count.EmptyTotal == 0;
+        // Числа — из истины сида: Name/Mark содержательные — стабильны; Unit —
+        // дырки до безопасного заполнения или все заполнены после; Count полон.
+        var (total, nameEmpty, markEmpty, unitEmpty) = Case13TruthShape();
+        return name.Filled == total - nameEmpty && name.EmptyTotal == nameEmpty &&
+               mark.Filled == total - markEmpty && mark.EmptyTotal == markEmpty &&
+               unit.Total == total &&
+               (unit.Filled == total - unitEmpty || unit.Filled == total) &&
+               count.Filled == total && count.EmptyTotal == 0;
     }
 
     private static List<Case13AuditRow> Case13ParseAuditResult(string resultJson)

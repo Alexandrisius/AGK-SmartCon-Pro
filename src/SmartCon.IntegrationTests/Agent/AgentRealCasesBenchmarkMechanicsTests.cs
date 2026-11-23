@@ -27,7 +27,7 @@ public sealed class AgentRealCasesBenchmarkMechanicsTests
     public async Task ArtifactJsonField_LongValueStaysParseableJson()
     {
         var inner = new string('x', AgentRealCasesBenchmarkTests.ArtifactFieldLimitChars + 5000);
-        var args = "{\"data\":\"" + inner + "\"";
+        var args = "{\"data\":\"" + inner + "\"}";
         var oversized = new List<(string RelativePath, string Text)>();
         var field = AgentRealCasesBenchmarkTests.ArtifactJsonField(
             args, "r-calls/001-args.json", oversized);
@@ -42,10 +42,13 @@ public sealed class AgentRealCasesBenchmarkMechanicsTests
         await Assert.That(document.RootElement.GetProperty("prefix").GetString()!.Length)
             .IsEqualTo(AgentRealCasesBenchmarkTests.ArtifactFieldLimitChars);
 
-        // Полный текст уходит файлом рядом с артефактом — без потерь.
+        // Полный текст уходит файлом рядом с артефактом — без потерь:
+        // префикс обёртки + хвост собираются обратно в исходный args.
         await Assert.That(oversized.Count).IsEqualTo(1);
         await Assert.That(oversized[0].Text).IsEqualTo(args);
-        using var full = JsonDocument.Parse(oversized[0].Text);
+        var restored = document.RootElement.GetProperty("prefix").GetString() +
+                       args[AgentRealCasesBenchmarkTests.ArtifactFieldLimitChars..];
+        using var full = JsonDocument.Parse(restored);
         await Assert.That(full.RootElement.GetProperty("data").GetString()!.Length).IsEqualTo(inner.Length);
     }
 
@@ -170,9 +173,33 @@ public sealed class AgentRealCasesBenchmarkMechanicsTests
     }
 
     [Test]
-    public async Task Case13ManualSummary_CountsHoleNumbers()
+    public async Task Case13ManualSummary_StrictNumberAttribution()
     {
-        // ORCH-4: ручная сводка модели без audit_fill_rate зачитывается.
+        // ORCH-4: сводка разбирается по сегментам с точным числом, а не
+        // подстрокой: «12 из 12» — это 12 пустых, а не «2 из 12».
+        const string twelveEmpty =
+            "Наименование: 12 из 12 пустых\n" +
+            "Марка: 1 из 12\n" +
+            "Единица измерения: 4 из 12\n" +
+            "Количество: 0 из 12";
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(twelveEmpty))
+            .IsFalse();
+
+        // Числа не из истины сида — не зачитываются.
+        const string wrongNumbers =
+            "Наименование: 5 из 12; Марка: 1 из 12; " +
+            "Единица измерения: 4 из 12; Количество: 0 из 12";
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(wrongNumbers))
+            .IsFalse();
+
+        // «заполнено 10 из 12» — число 10, а не «0 из 12»/«1 из 12» подстрокой.
+        const string filledCounts =
+            "Наименование: заполнено 10 из 12; Марка: 11 из 12; " +
+            "Единица измерения: 8 из 12; Количество: 12 из 12";
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(filledCounts))
+            .IsFalse();
+
+        // Построчная таблица с числами истины — зачитывается.
         const string deepseekStyle =
             "| Наименование | 2 из 12 | 10 |\n" +
             "| Марка | 1 из 12 | 11 |\n" +
@@ -180,20 +207,35 @@ public sealed class AgentRealCasesBenchmarkMechanicsTests
             "| Количество | 0 из 12 | 12 |";
         await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(deepseekStyle))
             .IsTrue();
+
+        // Компактная одна строка: атрибуция по сегментам (параметр в сегменте
+        // рядом с «N из M»).
         await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(
-                "Сводка: 2/12 пустых Наименований, 1/12 марок, 4/12 единиц"))
+                "Сводка: 2/12 пустых Наименований, 1/12 марок, 4/12 единиц, 0/12 количеств"))
             .IsTrue();
+
         await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerSummaryMatchesTruth(
                 "Я всё заполнил, всё хорошо."))
             .IsFalse();
+    }
 
-        const string culprits =
-            "Дырки: Вентустановка В-1 и Кондиционер К-2 (Наименование), Труба (Марка), " +
-            "Отвод 90/Тройник/Переход/Крестовина (Ед.изм.)";
-        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(culprits))
+    [Test]
+    public async Task Case13Culprits_DerivedFromSeedTruth()
+    {
+        // ORCH-4: список виновников выводится из истины сида, не из литералов
+        // вердиктора; ответ обязан назвать КАЖДОГО виновника.
+        var culprits = AgentRealCasesBenchmarkTests.Case13TruthCulpritFamilies();
+        await Assert.That(culprits.Length).IsGreaterThanOrEqualTo(4);
+
+        var full = "Виновники: " + string.Join(", ", culprits);
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(full))
             .IsTrue();
+
+        var missingOne = string.Join(", ", culprits.Skip(1));
+        await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(missingOne))
+            .IsFalse();
         await Assert.That(AgentRealCasesBenchmarkTests.Case13AnswerNamesAllCulprits(
-                "Нашёл дырки у Вентустановка В-1"))
+                "Нашёл дырки у " + culprits[0]))
             .IsFalse();
     }
 
