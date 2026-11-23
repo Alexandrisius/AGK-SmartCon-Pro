@@ -236,9 +236,13 @@ public sealed partial class AgentClassificationMatcher
         // Stage 3: single-code families with types that differ by more than
         // size may earn per-type codes from the siblings of the chosen code.
         // The stage is optional by contract: its calls count, its failures and
-        // leftovers are warnings - the family codes already stand.
-        var differentiation = await RunTypeDifferentiationAsync(
-            staged, table, codesByFamily, chainScores, options, run, ct).ConfigureAwait(false);
+        // leftovers are warnings - the family codes already stand. A run a
+        // stage already errored keeps its typed failure and fails as a whole:
+        // the optional stage does not spend decision calls on it.
+        var differentiation = run.FirstError is null
+            ? await RunTypeDifferentiationAsync(
+                staged, table, codesByFamily, chainScores, options, run, ct).ConfigureAwait(false)
+            : new Dictionary<long, TypeStageAnswer>();
 
         return BuildResult(
             families, staged, table, options, typeOutcome, typesByQuery,
