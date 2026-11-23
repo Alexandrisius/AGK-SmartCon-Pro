@@ -107,6 +107,10 @@ public static partial class AgentToolPackSkills
   `guid`, `storageType`, `formula`, `canSetValue`.
 - `valuesByType[]` — `typeName`, `value` (внутренние единицы), `displayValue` (с единицей),
   `unit`, `hasValue`.
+- Тул читает **документ семейства** (FamilyManager): видны только family-параметры.
+  Проектный общий параметр, привязанный к категории, в ответе отсутствует, даже когда у типов
+  проекта есть его значение; читайте его там — `list_family_types(familyId, parameterNames,
+  valueScope:`""type""`)`.
 - В `execute_plan.readBackExpectations` адресуйте параметр как
   `parameters.byName[""Ширина""].valuesByType.byName[""Тип 1""].displayValue`; `byName`
   сравнивает без учёта регистра.

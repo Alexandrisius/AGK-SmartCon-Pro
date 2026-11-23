@@ -42,7 +42,7 @@ public sealed class AuditFillRateTool : AgentReadToolBase
             "filled / emptyNoValue / emptyString / missingParameter, emptyPct and the culprits " +
             "list (elementId, family, type, levelName). Use it for a quick 'what is empty where' " +
             "report; it never writes anything.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleIds"":{""type"":""array"",""items"":{""type"":""integer""}},""onlyOnSheets"":{""type"":""boolean""},""categories"":{""type"":""array"",""items"":{""type"":""string""}},""includeTypeParameters"":{""type"":""boolean"",""default"":true},""maxCulpritsPerParameter"":{""type"":""integer"",""default"":20,""maximum"":200},""limit"":{""type"":""integer"",""default"":30,""maximum"":200},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""scheduleIds"":{""type"":""array"",""items"":{""type"":""integer""}},""onlyOnSheets"":{""type"":""boolean""},""categories"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Only narrows the audit: these categories are intersected with the categories of the source schedules and never add sources""},""includeTypeParameters"":{""type"":""boolean"",""default"":true},""maxCulpritsPerParameter"":{""type"":""integer"",""default"":20,""maximum"":200},""limit"":{""type"":""integer"",""default"":30,""maximum"":200},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

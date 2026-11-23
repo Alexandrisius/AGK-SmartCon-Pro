@@ -32,7 +32,7 @@ public sealed class GetSheetContentTool : AgentReadToolBase
             "Coordinates are paper-space millimetres from the sheet's bottom-left corner.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""sheetId"":{""type"":""integer""},""sheetIds"":{""type"":""array"",""description"":""Batch read: up to 50 sheet ids; returns sheets[]"",""items"":{""type"":""integer""}},""number"":{""type"":""string""},""name"":{""type"":""string""},""includeSchedules"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""sheetId"":{""type"":""integer""},""sheetIds"":{""type"":""array"",""description"":""Batch read: up to 50 sheet ids; returns sheets[]"",""items"":{""type"":""integer""}},""number"":{""type"":""string""},""name"":{""type"":""string""},""includeSchedules"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

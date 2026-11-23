@@ -36,7 +36,7 @@ public sealed class ListMaterialsTool : AgentReadToolBase
             "set_parameters writes them by materialId.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""nameContains"":{""type"":""string""},""fields"":{""type"":""array"",""description"":""Allowed: materialId,id,name,uniqueId,materialClass,class,category,color,transparency,shininess. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""nameContains"":{""type"":""string""},""fields"":{""type"":""array"",""description"":""Allowed: materialId,id,name,uniqueId,materialClass,class,category,color,transparency,shininess. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

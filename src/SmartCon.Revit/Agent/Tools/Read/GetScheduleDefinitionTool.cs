@@ -40,7 +40,7 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             "schedule is issued documentation (placed on a sheet) or a draft, and to verify " +
             "changes made by the schedule write tools (add_schedule_field, set_schedule_filter, " +
             "set_schedule_sort, set_schedule_field_format, set_schedule_style, clone_schedule).",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""scheduleId"":{""type"":""integer""},""scheduleName"":{""type"":""string""}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

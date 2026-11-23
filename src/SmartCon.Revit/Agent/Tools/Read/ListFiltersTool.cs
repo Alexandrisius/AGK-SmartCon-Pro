@@ -38,7 +38,7 @@ public sealed class ListFiltersTool : AgentReadToolBase
             "what does it do'. Rules are then omitted unless includeRules=true. " +
             "includeAppliedViews=false skips the view scan (appliedViewCount is then " +
             "\"notComputed\"). Use get_filter_details for the full rule tree of one filter.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""nameContains"":{""type"":""string""},""viewId"":{""type"":""integer""},""includeAppliedViews"":{""type"":""boolean"",""default"":true},""includeDuplicateGroups"":{""type"":""boolean"",""default"":true},""includeRules"":{""type"":""boolean"",""description"":""Default true without viewId, false with viewId""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""nameContains"":{""type"":""string""},""viewId"":{""type"":""integer""},""includeAppliedViews"":{""type"":""boolean"",""default"":true},""includeDuplicateGroups"":{""type"":""boolean"",""default"":true},""includeRules"":{""type"":""boolean"",""description"":""Default true without viewId, false with viewId""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)

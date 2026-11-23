@@ -15,9 +15,12 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 /// <see cref="Application.OpenDocumentFile"/> opens the document at the DB
 /// level without any UI frame: the active document and the view the user sees
 /// are not touched, no OnDocumentOpen-style UI noise happens. The returned
-/// documentId is then accepted by every read tool through the optional
-/// <c>documentId</c> argument (see <see cref="AgentReadToolBase"/>). The model
-/// itself is never modified — read-only donor (owner decision 2026-11-22).
+/// documentId is then accepted by every read tool that declares the optional
+/// <c>documentId</c> argument (see <see cref="AgentReadToolBase"/>); session
+/// and UI tools (selection, current view, change sets) never route. The model
+/// itself is never modified — read-only donor (owner decision 2026-11-22), and
+/// the answer states that harness policy in <c>agentPolicy</c> next to the
+/// Revit flag <c>isReadOnly</c>.
 /// </summary>
 public sealed class OpenModelBackgroundTool : IAgentTool
 {
@@ -33,10 +36,10 @@ public sealed class OpenModelBackgroundTool : IAgentTool
         Name = "open_model_background",
         Description =
             "Opens a .rvt model invisibly in the background (no UI, the active document " +
-            "stays active) and returns its documentId. Pass that documentId to any read " +
-            "tool (list_views, query_elements, get_element_details...) through their " +
-            "optional documentId argument to read the donor model instead of the active " +
-            "one. The opened model is a read-only donor: nothing is written to it and it " +
+            "stays active) and returns its documentId. Pass that documentId to read tools " +
+            "that declare a documentId argument (list_views, query_elements, " +
+            "get_element_details...) to read the donor model instead of the active one. " +
+            "The opened model is a read-only donor (agentPolicy read_only_donor): nothing is written to it and it " +
             "is never saved; close it with close_model when done. Expensive: only open a " +
             "model when the user explicitly named its path.",
         Risk = AgentToolRisk.Read,
@@ -128,12 +131,13 @@ public sealed class OpenModelBackgroundTool : IAgentTool
                 isOpen = true,
                 wasAlreadyOpen = true,
                 isActive,
+                agentPolicy = isActive ? AgentDocumentPolicy.ActiveDocument : AgentDocumentPolicy.ReadOnlyDonor,
                 isReadOnly = SafeFlag(openDoc, doc => doc.IsReadOnly),
                 isWorkshared = SafeFlag(openDoc, doc => doc.IsWorkshared),
                 elementCountPreview = SafeCount(openDoc),
                 viewsPreview = BuildViewsPreview(openDoc),
                 familiesPreview = BuildFamiliesPreview(openDoc),
-                hint = "To read THIS model, pass documentId in the call, e.g. list_views({fields:[viewId,name],documentId:'" + id + "'}) — without it every read returns the ACTIVE document."
+                hint = "To read THIS model, pass documentId in the call, e.g. list_views({fields:[viewId,name],documentId:'" + id + "'}) — without it a read tool returns the ACTIVE document."
             });
 
             return ToolResult.Ok(
@@ -219,12 +223,13 @@ public sealed class OpenModelBackgroundTool : IAgentTool
             isOpen = true,
             wasAlreadyOpen = false,
             isActive = false,
+            agentPolicy = AgentDocumentPolicy.ReadOnlyDonor,
             isReadOnly = SafeFlag(document, doc => doc.IsReadOnly),
             isWorkshared = SafeFlag(document, doc => doc.IsWorkshared),
             elementCountPreview = SafeCount(document),
             viewsPreview = BuildViewsPreview(document),
             familiesPreview = BuildFamiliesPreview(document),
-            hint = "To read THIS model, pass documentId in the call, e.g. list_views({fields:[viewId,name],documentId:'" + documentId + "'}) — without it every read returns the ACTIVE document."
+            hint = "To read THIS model, pass documentId in the call, e.g. list_views({fields:[viewId,name],documentId:'" + documentId + "'}) — without it a read tool returns the ACTIVE document."
         });
 
         return ToolResult.Ok(
@@ -232,6 +237,20 @@ public sealed class OpenModelBackgroundTool : IAgentTool
             "Model opened in the background (invisible, active document unchanged). Pass " +
             "documentId to read tools to inspect the donor model; close it with " +
             "close_model when done.");
+    }
+
+    /// <summary>
+    /// Harness policy for an opened model, as opposed to the Revit flag
+    /// <c>isReadOnly</c> (which is false for a normal modifiable document):
+    /// what the agent may do with it, enforced by the tools, not by Revit.
+    /// </summary>
+    internal static class AgentDocumentPolicy
+    {
+        /// <summary>Background donor: read through documentId only, never written, never saved.</summary>
+        internal const string ReadOnlyDonor = "read_only_donor";
+
+        /// <summary>The user's active document: regular write tools and confirmation flow.</summary>
+        internal const string ActiveDocument = "active_document";
     }
 
     internal const string AlreadyActiveWarning =
