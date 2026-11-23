@@ -71,8 +71,7 @@ public static class AgentToolSchemaValidator
     {
         if (arguments.ValueKind != JsonValueKind.Object
             || !arguments.TryGetProperty(AgentDocumentRoutingArgument.Name, out _)
-            || schema.ValueKind != JsonValueKind.Object
-            || schema.TryGetProperty("anyOf", out _))
+            || schema.ValueKind != JsonValueKind.Object)
         {
             return;
         }

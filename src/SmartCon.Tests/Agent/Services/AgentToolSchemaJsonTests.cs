@@ -7,10 +7,12 @@ using System.Reflection.PortableExecutable;
 using System.Text.Json;
 using SmartCon.Agent;
 using SmartCon.Agent.Services;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Tools;
 using SmartCon.Revit.Agent.Tools.Read;
+using SmartCon.Revit.Agent.Tools.Write;
 using Xunit;
 
 namespace SmartCon.Tests.Agent.Services;
@@ -140,6 +142,71 @@ public sealed class AgentToolSchemaJsonTests
         Assert.Single(last.RootElement.GetProperty("properties").EnumerateObject());
         Assert.Equal(firstProperty.GetRawText(), lastProperty.GetRawText());
         Assert.Equal("string", lastProperty.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public void RootAnyOfWriteTools_UndeclaredDocumentId_IsFlaggedNotSilent()
+    {
+        // Review r1 P2: a schema with a root anyOf used to skip the routing
+        // flag, and ValidateObject excludes the root documentId from unknown
+        // properties - remove_viewports and renumber_sheets accepted a stray
+        // documentId with zero errors and the write landed in the ACTIVE
+        // document (C9-01). Combat schemas straight from the tool IL, the same
+        // reader as above.
+        var cases = new (Type Tool, string Arguments)[]
+        {
+            (typeof(RemoveViewportsTool), """{"viewportIds":[123456],"documentId":"donor"}"""),
+            (typeof(RenumberSheetsTool), """{"sheetIds":[123456],"numbers":["A-1"],"documentId":"donor"}""")
+        };
+
+        using var metadata = new CatalogMetadata();
+        foreach (var (tool, arguments) in cases)
+        {
+            var schema = metadata.ReadSchemaLiteral(tool, out var status);
+            Assert.Equal(SchemaReadStatus.Literal, status);
+            Assert.NotNull(schema);
+
+            // Repair must keep the argument, so the validator is the one to speak.
+            using var parsed = JsonDocument.Parse(arguments);
+            var repaired = AgentToolInputRepair.Repair(schema!, parsed.RootElement);
+            Assert.True(
+                repaired.Arguments.ValueKind == JsonValueKind.Object
+                && repaired.Arguments.TryGetProperty("documentId", out var kept)
+                && kept.GetString() == "donor",
+                tool.Name + ": repair dropped documentId");
+
+            var errors = AgentToolSchemaValidator.Validate(schema!, arguments);
+            Assert.Contains("$.documentId: " + AgentDocumentRoutingArgument.UndeclaredError, errors);
+        }
+    }
+
+    [Fact]
+    public void AnyOfSchemas_LegitimateArguments_ValidateAsBefore()
+    {
+        // No false rejections: every anyOf schema of the catalog stays
+        // error-free on legitimate arguments, documentId included where the
+        // schema declares it (list_type_parameter_candidates) and absent where
+        // it is not (the two write tools, list_families with a nested anyOf).
+        var cases = new (Type Tool, string Arguments)[]
+        {
+            (typeof(RemoveViewportsTool), """{"viewportIds":[123456],"dryRun":true}"""),
+            (typeof(RemoveViewportsTool), """{"sheetId":123456,"viewIds":[123457],"dryRun":true}"""),
+            (typeof(RenumberSheetsTool), """{"sheetIds":[123456],"numbers":["A-1"]}"""),
+            (typeof(RenumberSheetsTool), """{"sheetIds":[123456,123457],"startNumber":"ОВ-5"}"""),
+            (typeof(ListTypeParameterCandidatesTool), """{"categories":["Rooms"],"documentId":"donor"}"""),
+            (typeof(ListTypeParameterCandidatesTool), """{"categoryIds":[123456]}"""),
+            (typeof(ListFamiliesTool), """{"category":["OST_Doors"],"nameContains":"двер"}"""),
+            (typeof(ListFamiliesTool), """{"documentId":"donor"}""")
+        };
+
+        using var metadata = new CatalogMetadata();
+        foreach (var (tool, arguments) in cases)
+        {
+            var schema = metadata.ReadSchemaLiteral(tool, out var status);
+            Assert.Equal(SchemaReadStatus.Literal, status);
+            Assert.NotNull(schema);
+            Assert.Empty(AgentToolSchemaValidator.Validate(schema!, arguments));
+        }
     }
 
     private static string Describe(SchemaReadStatus status) => status switch

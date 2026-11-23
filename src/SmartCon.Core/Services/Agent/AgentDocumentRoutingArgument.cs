@@ -15,10 +15,12 @@ internal static class AgentDocumentRoutingArgument
 
     /// <summary>
     /// Validator text for a call that carries the argument while the tool's
-    /// schema does not declare it.
+    /// schema does not declare it. Says "does not accept", not "does not
+    /// read": write, job and core tools do not read documents at all, but the
+    /// contract is the same for every tool (review r1, P3).
     /// </summary>
     internal const string UndeclaredError =
-        "unknown property - this tool does not read documents by documentId; omit it";
+        "unknown property - this tool does not accept documentId; omit it";
 
     internal static bool IsName(string memberName) =>
         string.Equals(memberName, Name, StringComparison.Ordinal);

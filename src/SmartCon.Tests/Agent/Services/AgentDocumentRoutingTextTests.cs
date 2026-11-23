@@ -82,6 +82,17 @@ public sealed class AgentDocumentRoutingTextTests
     }
 
     [Fact]
+    public void UndeclaredErrorText_IsAccurateForWriteAndSessionTools()
+    {
+        // Review r1 P3: "does not read documents by documentId" misled for
+        // write tools (they are not supposed to read); the accurate contract
+        // is that the tool does not accept the argument at all.
+        Assert.Equal(
+            "unknown property - this tool does not accept documentId; omit it",
+            AgentDocumentRoutingArgument.UndeclaredError);
+    }
+
+    [Fact]
     public async Task Executor_DocumentIdForToolWithoutIt_FailsTypedBeforeTheToolRuns()
     {
         var tool = new ScriptedTool(

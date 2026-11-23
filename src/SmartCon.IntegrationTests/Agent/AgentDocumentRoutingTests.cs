@@ -46,7 +46,7 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
 
     private Document? _document;
     private List<Document>? _openBefore;
-    private Document? _donor;
+    private List<Document>? _donors;
     private string? _donorPath;
     private string? _tempDirectory;
     private FamilySeed? _seed;
@@ -75,13 +75,17 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
     {
         AgentBackgroundDocuments.ClearForTests();
 
-        // The donor is closed by ITS OWN test, never left to the host: an open
-        // background document survives into every later test of the session
-        // and fails their "only the project document is open" assertions
-        // (night run 2 R0: two leaked donors broke the family job tests).
-        var donor = _donor;
-        _donor = null;
-        CloseDocument(donor);
+        // The donors are closed by THEIR OWN test, never left to the host: an
+        // open background document survives into every later test of the
+        // session and fails their "only the project document is open"
+        // assertions (night run 2 R0: two leaked donors broke the family job
+        // tests). Lazy list, no field initializer: a Revit-typed initializer
+        // crashes the injector (see #78).
+        var donors = _donors;
+        _donors = null;
+        if (donors is not null)
+            foreach (var donor in donors)
+                CloseDocument(donor);
 
         _seed?.Dispose();
         _sharedFile?.Dispose();
@@ -254,7 +258,7 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
         await Assert.That(read.Message ?? string.Empty)
             .Contains("tool 'get_selected_elements'");
         await Assert.That(read.Message ?? string.Empty)
-            .Contains("does not read documents by documentId");
+            .Contains("does not accept documentId");
 
         // Write tool: the most dangerous variant - a write the model aimed at a
         // donor must not land in the user's active document.
@@ -269,10 +273,55 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
             CancellationToken.None);
         await Assert.That(write.Success).IsFalse();
         await Assert.That(write.ErrorCode).IsEqualTo("invalid_arguments");
-        await Assert.That(write.Message ?? string.Empty).Contains("does not read documents by documentId");
+        await Assert.That(write.Message ?? string.Empty).Contains("does not accept documentId");
         await Assert.That(host.ReadAuditEntries()
             .Any(entry => entry.Tool.StartsWith("rename_views", StringComparison.Ordinal)))
             .IsFalse();
+
+        // Root-anyOf write tool (review r1, P2): the routing flag used to skip
+        // schemas with a root anyOf, so remove_viewports accepted a stray
+        // documentId silently and the write landed in the ACTIVE document.
+        var anyOfWrite = await host.Executor.ExecuteAsync(
+            "remove_viewports",
+            Parse(new
+            {
+                viewportIds = new[] { 123456 },
+                dryRun = true,
+                documentId = "any-donor"
+            }),
+            CancellationToken.None);
+        await Assert.That(anyOfWrite.Success).IsFalse();
+        await Assert.That(anyOfWrite.ErrorCode).IsEqualTo("invalid_arguments");
+        await Assert.That(anyOfWrite.Message ?? string.Empty).Contains("does not accept documentId");
+        await Assert.That(host.ReadAuditEntries()
+            .Any(entry => entry.Tool.StartsWith("remove_viewports", StringComparison.Ordinal)))
+            .IsFalse();
+    }
+
+    [Test]
+    public async Task TwoBackgroundModels_NoteNamesBothDonors_RoutedCallGetsNoNote()
+    {
+        // Review r1, P3-2: with more than one background model open, the NOTE
+        // names every donor's documentId; a call that passes one of them gets
+        // no NOTE and reads THAT model.
+        var first = await OpenDonor();
+        var second = await OpenDonor();
+
+        var plain = await Run(new ListCategoriesTool(new StubRevitContext(Doc)), new { });
+        await Assert.That(plain.Success).IsTrue();
+        var message = plain.Message ?? string.Empty;
+        await Assert.That(message).Contains("2 background models are open");
+        await Assert.That(message).Contains("documentId='" + first + "'");
+        await Assert.That(message).Contains("documentId='" + second + "'");
+
+        var routed = await Run(new ListLevelsTool(new StubRevitContext(Doc)),
+            new { documentId = second });
+        await Assert.That(routed.Success).IsTrue();
+        await Assert.That(Lacks(routed.Message, "NOTE: documentId")).IsTrue();
+        await Assert.That(routed.Data!.Value.GetProperty("document").GetProperty("scope").GetString())
+            .IsEqualTo("background");
+        await Assert.That(routed.Data!.Value.GetProperty("document").GetProperty("documentId").GetString())
+            .IsEqualTo(second);
     }
 
     [Test]
@@ -443,8 +492,10 @@ public sealed class AgentDocumentRoutingTests : RevitApiTest
         if (!AgentBackgroundDocuments.TryResolve(documentId, out var opened))
             Skip.Test("Открытый донор не найден в реестре фоновых моделей: " + open.Message);
 
-        // Handed to [After(Test)]: the document is closed with the test.
-        _donor = opened;
+        // Handed to [After(Test)]: every donor opened by this test is closed
+        // with the test.
+        _donors ??= new List<Document>();
+        _donors.Add(opened);
         return documentId;
     }
 
