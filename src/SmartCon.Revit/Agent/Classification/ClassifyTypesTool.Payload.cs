@@ -16,18 +16,24 @@ public sealed partial class ClassifyTypesTool
               " calls of at most 500 items), items={\"$result\":\"<resultHandle>\"," +
               "\"path\":\"data/setParameters/calls/0/items\"}.");
 
+    private const int NotProcessedNamesCap = 100;
+
     private static ClassifyPayload BuildPayload(
         ClassifySnapshot snapshot,
         IReadOnlyList<ClassifyFamilyGroup> groups,
         ClassifyMatchResult result,
         bool truncated,
-        int familiesSkipped)
+        int familiesTotal,
+        List<(string Family, int TypeCount)> notProcessed)
     {
         var proposed = CountOf(result, ClassifyTypeStatus.Proposed);
         var lowConfidence = CountOf(result, ClassifyTypeStatus.LowConfidence);
         var noConfidence = CountOf(result, ClassifyTypeStatus.NoConfidence);
         var noCandidates = CountOf(result, ClassifyTypeStatus.NoCandidates);
         var alreadySet = CountOf(result, ClassifyTypeStatus.AlreadySet);
+        var uncertainGroups = UncertainGroups(result);
+        var uncertainTypes = lowConfidence + noConfidence + noCandidates;
+        var processedTypes = groups.Sum(group => group.Types.Count);
 
         // set_parameters takes at most 500 items per call: {items} for one
         // call, {calls:[{items}…]} above. The note travels NEXT TO the
@@ -44,8 +50,11 @@ public sealed partial class ClassifyTypesTool
             ["selection"] = new
             {
                 typesTotal = snapshot.TypesTotal,
-                selected = snapshot.Types.Count,
+                skippedNotWritable = snapshot.SkippedNotWritable,
                 skippedAlreadySet = snapshot.SkippedAlreadySet,
+                selected = snapshot.Types.Count,
+                processed = processedTypes,
+                familiesTotal,
                 truncated
             },
             ["summary"] = new
@@ -55,8 +64,11 @@ public sealed partial class ClassifyTypesTool
                 noConfidence,
                 noCandidates,
                 alreadySet,
+                uncertainTypes,
+                uncertainFamilies = uncertainGroups.Count,
+                familiesSelected = groups.Count,
                 familiesProcessed = result.FamiliesProcessed,
-                familiesSkipped,
+                familiesSkipped = notProcessed.Count,
                 decisionCalls = result.DecisionCalls
             },
             ["alreadySet"] = result.AlreadySetItems.Select(item => new
@@ -67,7 +79,8 @@ public sealed partial class ClassifyTypesTool
                 currentCode = item.Type.CurrentCode
             }).ToList(),
             // The report to the user: a family with its code and the path in the
-            // table. Type ids live in setParameters only.
+            // table. typeIds let the model correct single types without reading
+            // setParameters; the values to write live in setParameters only.
             ["assignments"] = result.Assignments.Select(group => new
             {
                 family = group.Family,
@@ -75,9 +88,9 @@ public sealed partial class ClassifyTypesTool
                 code = group.Code,
                 breadcrumb = group.Breadcrumb,
                 score = System.Math.Round(group.Score, 4),
-                typeCount = group.TypeIdCount
+                typeIds = group.TypeIds
             }).ToList(),
-            ["uncertain"] = UncertainGroups(result),
+            ["uncertain"] = uncertainGroups,
             ["setParameters"] = setParameters,
             ["setParametersNote"] = setParameters is null
                 ? null
@@ -87,36 +100,59 @@ public sealed partial class ClassifyTypesTool
 
         if (truncated)
         {
-            payload["hint"] = "The selection was cut by maxTypes/maxFamilies. Narrow it with " +
-                              "categories or familyIds and classify the rest in another call.";
+            // The families left out by the budgets, named: the next call takes
+            // them by categories/typeIds. Types are summed before the cap.
+            payload["notProcessed"] = new
+            {
+                families = notProcessed.Count,
+                types = notProcessed.Sum(family => family.TypeCount),
+                familyNames = notProcessed.Take(NotProcessedNamesCap)
+                    .Select(family => family.Family)
+                    .ToList(),
+                namesTruncated = notProcessed.Count > NotProcessedNamesCap
+            };
+            payload["hint"] = "The selection was cut by maxTypes/maxFamilies; the families left " +
+                              "out are listed in notProcessed. Raise the limits or pass their " +
+                              "categories/typeIds and classify them in another call.";
         }
 
         string? note = null;
         if (snapshot.Types.Count == 0)
         {
-            note = snapshot.SkippedAlreadySet > 0
-                ? "Nothing to classify: every selected type already has a classification code " +
-                  "(pass onlyEmpty=false to re-classify them; their current codes are reported)."
-                : "Nothing to classify: no element type with the Assembly Code parameter " +
-                  "matches the selection filters. Loosen categories/familyIds/typeIds/nameContains.";
+            note = snapshot.SkippedNotWritable > 0 && snapshot.SkippedAlreadySet == 0
+                ? "Nothing to classify: every matching type (" + snapshot.SkippedNotWritable +
+                  ") cannot store the Assembly Code - tags, view types, styles and the like never " +
+                  "carry a code. Tell the user these elements are not classified."
+                : snapshot.SkippedAlreadySet > 0
+                    ? "Nothing to classify: every selected type already has a classification code " +
+                      "(pass onlyEmpty=false to re-classify them; their current codes are reported)."
+                    : "Nothing to classify: no element type that can store the Assembly Code " +
+                      "matches the selection filters. Loosen categories/familyIds/typeIds/nameContains.";
             payload["note"] = note;
         }
 
         if (result.Incomplete)
         {
             payload["incomplete"] = true;
-            payload["notProcessed"] = result.NotProcessed;
+            payload["notProcessedByDecision"] = result.NotProcessed;
         }
 
-        var uncertain = lowConfidence + noConfidence + noCandidates;
-        var message = "Proposed a code for " + proposed + " of " + snapshot.Types.Count +
-                      " selected type(s) across " + groups.Count +
-                      (groups.Count == 1 ? " family" : " families") + "; " + uncertain +
-                      " uncertain.";
+        var message = "Proposed a code for " + proposed + " of " + processedTypes +
+                      " type(s) across " + groups.Count +
+                      (groups.Count == 1 ? " family" : " families") + "; " + uncertainTypes +
+                      " uncertain type(s) in " + uncertainGroups.Count +
+                      (uncertainGroups.Count == 1 ? " family" : " families") +
+                      " (uncertain is grouped by family).";
         if (alreadySet > 0)
         {
             message += " " + alreadySet +
                        " type(s) already carry the proposed code (status already_set).";
+        }
+
+        if (snapshot.SkippedNotWritable > 0)
+        {
+            message += " Left out: " + snapshot.SkippedNotWritable +
+                       " type(s) that cannot store the Assembly Code (tags, view types, styles).";
         }
 
         if (result.Incomplete)
@@ -124,6 +160,14 @@ public sealed partial class ClassifyTypesTool
             message += " INCOMPLETE: the decision layer did not answer " +
                        result.NotProcessed.Count + " question(s) - do not report the result " +
                        "as complete.";
+        }
+
+        if (truncated)
+        {
+            message += " TRUNCATED: " + notProcessed.Count + " of " + familiesTotal +
+                       " families (" + notProcessed.Sum(family => family.TypeCount) +
+                       " type(s)) were not classified - see notProcessed; raise " +
+                       "maxFamilies/maxTypes or classify them in another call.";
         }
 
         if (note is not null)
@@ -162,6 +206,7 @@ public sealed partial class ClassifyTypesTool
                     ["familyId"] = items[0].Type.FamilyId,
                     ["family"] = items[0].Type.FamilyName,
                     ["typeCount"] = items.Count,
+                    ["typeIds"] = items.Select(item => item.Type.ElementId).ToList(),
                     ["types"] = items.Select(item => item.Type.TypeName).Take(3).ToList(),
                     ["reason"] = group.Key.Reason,
                     ["current"] = items[0].Type.CurrentCode,

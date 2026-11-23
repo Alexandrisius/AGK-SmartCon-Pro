@@ -78,6 +78,38 @@ internal static class AgentParameterResolver
             ["assembly_description"] = AssemblyDescriptionBuiltIn
         };
 
+    /// <summary>
+    /// The built-ins the requested names stand for: an enum id (UNIFORMAT_CODE)
+    /// or one of the aliases above. Read tools filter parameters by the same
+    /// names the write tools accept - by display name alone a filter with the
+    /// enum id returned an empty list that looked like "nothing is written".
+    /// </summary>
+    internal static HashSet<BuiltInParameter> BuiltInsOf(IEnumerable<string> names)
+    {
+        var builtIns = new HashSet<BuiltInParameter>();
+        foreach (var raw in names)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                continue;
+
+            var name = raw.Trim();
+            if (Enum.TryParse<BuiltInParameter>(name, ignoreCase: true, out var parsed)
+                && Enum.IsDefined(typeof(BuiltInParameter), parsed))
+            {
+                builtIns.Add(parsed);
+            }
+
+            if (BuiltInAliases.TryGetValue(name, out var alias))
+                builtIns.Add(alias);
+            if (LocalizedBuiltInFallbacks.TryGetValue(name, out var localized))
+                builtIns.Add(localized);
+            if (RenamedBuiltInAliases.TryGetValue(name, out var renamed))
+                builtIns.Add(renamed);
+        }
+
+        return builtIns;
+    }
+
     internal static Parameter? Find(
         Document doc,
         Element element,

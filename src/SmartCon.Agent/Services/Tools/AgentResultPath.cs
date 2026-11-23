@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -11,6 +12,14 @@ namespace SmartCon.Agent.Services.Tools;
 /// </summary>
 internal static class AgentResultPath
 {
+    // Non-ASCII text (Cyrillic system names, view names) must reach the model as
+    // plain text: the default escaper turns every letter into \uXXXX, six
+    // characters per letter, and the model misread the names.
+    private static readonly JsonSerializerOptions TextOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
+
     /// <summary>
     /// The node at <paramref name="path"/>, or null with <paramref name="error"/>
     /// set when the result is not JSON or the path does not exist.
@@ -68,5 +77,5 @@ internal static class AgentResultPath
             : node is JsonValue value && value.TryGetValue<string>(out var text)
                 // net48 ref assemblies lack [NotNullWhen] on TryGetValue.
                 ? text!
-                : node.ToJsonString();
+                : node.ToJsonString(TextOptions);
 }

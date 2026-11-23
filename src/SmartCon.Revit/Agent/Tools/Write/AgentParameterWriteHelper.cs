@@ -47,7 +47,7 @@ internal static class AgentParameterWriteHelper
                 {
                     ErrorCode = "parameter_not_found",
                     Reason = "No parameter with GUID " + guid + " found on element " + element.Id.GetValue() +
-                             " or its type."
+                             " or its type. Address the parameter by its name (list_project_parameters shows it)."
                 };
             }
 
@@ -164,6 +164,9 @@ internal static class AgentParameterWriteHelper
             case StorageType.String:
                 if (!parameter.Set(text))
                 {
+                    if (!IsExposed(parameter))
+                        return NotSupported(out errorCode, out reason, parameter);
+
                     errorCode = "set_failed";
                     reason = "Revit rejected the value '" + text + "'.";
                     return false;
@@ -388,9 +391,55 @@ internal static class AgentParameterWriteHelper
         Parameter parameter,
         string value)
     {
+        if (!IsExposed(parameter))
+            return NotSupported(out errorCode, out reason, parameter);
+
         errorCode = "set_failed";
         reason = "Revit rejected the value '" + value + "' for parameter '" +
                  parameter.Definition?.Name + "'.";
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the element lists the parameter among its own. Revit hands some
+    /// built-in parameters to elements that cannot store them (the Assembly
+    /// Code on tags, view types and styles); <c>Set</c> returns false there.
+    /// </summary>
+    private static bool IsExposed(Parameter parameter)
+    {
+        var element = parameter.Element;
+        if (element is null)
+            return true;
+
+        try
+        {
+            foreach (Parameter candidate in element.Parameters)
+            {
+                if (candidate.Id == parameter.Id)
+                    return true;
+            }
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    // A refusal of the VALUE looks exactly like a type that has no such field
+    // unless the two are told apart: only the second one is final.
+    private static bool NotSupported(
+        out string errorCode,
+        out string reason,
+        Parameter parameter)
+    {
+        var category = parameter.Element?.Category?.Name;
+        errorCode = "parameter_not_supported";
+        reason = "Parameter '" + parameter.Definition?.Name + "' cannot be written on this " +
+                 "element" + (string.IsNullOrEmpty(category) ? string.Empty : " (category '" + category + "')") +
+                 ": Revit exposes no such value on this kind of element. Skip it and tell the " +
+                 "user that these elements do not carry this parameter.";
         return false;
     }
 
@@ -518,9 +567,12 @@ internal static class AgentParameterWriteHelper
         Guid guid,
         bool includeTypeParameters)
     {
+        // GUID exists only on shared parameters: reading it on a built-in or
+        // family parameter throws, so a plain scan died on the first non-shared
+        // parameter and no guid ever resolved.
         foreach (Parameter parameter in element.Parameters)
         {
-            if (parameter.GUID == guid)
+            if (parameter.IsShared && parameter.GUID == guid)
                 return parameter;
         }
 
@@ -537,7 +589,7 @@ internal static class AgentParameterWriteHelper
 
         foreach (Parameter parameter in type.Parameters)
         {
-            if (parameter.GUID == guid)
+            if (parameter.IsShared && parameter.GUID == guid)
                 return parameter;
         }
 

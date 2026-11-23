@@ -31,6 +31,9 @@ public sealed class SetParametersTool : AgentWriteToolBase
             "parameter GUID. scope: \"instance\" (default) or \"type\" (changes every instance of " +
             "the type). Numeric values REQUIRE unit: \"mm\" (or \"m\", \"ft\", \"m2\", \"m3\"), " +
             "or \"raw\" for internal Revit units. Read-only and formula parameters are refused. " +
+            "An element that cannot carry the parameter at all (tags, view types and styles " +
+            "for the Assembly Code) is refused with parameter_not_supported - not a value " +
+            "problem, nothing can be written there. " +
             "A classification code (Assembly Code) is refused unless it is present in the " +
             "classification table loaded in the document; with no table loaded any code is " +
             "refused. Pass allowUnverifiedClassification=true only when the user dictated the " +
@@ -71,6 +74,9 @@ public sealed class SetParametersTool : AgentWriteToolBase
         outcome.Description = "Set " + items.Count + " parameter value(s)";
         var typeIds = new HashSet<long>();
         var unverifiedCodes = new HashSet<string>(StringComparer.Ordinal);
+        var readBackExpected = 0;
+        var readBackVerified = 0;
+        var readBackMismatched = 0;
 
         // Read once per call, and only when an item targets the Assembly Code.
         AgentClassificationTable? classificationTable = null;
@@ -164,6 +170,19 @@ public sealed class SetParametersTool : AgentWriteToolBase
             outcome.Batch.Changed.Add(report);
             outcome.AffectedCount++;
 
+            // The value read back right after the write must be the one asked
+            // for. Only text compares without the unit conversion (a
+            // classification code is always text); the rest is checked for
+            // having changed at all.
+            readBackExpected++;
+            var holds = parameter.StorageType == StorageType.String
+                ? string.Equals(rawAfter, item.Value ?? string.Empty, StringComparison.Ordinal)
+                : !string.Equals(rawBefore, rawAfter, StringComparison.Ordinal);
+            if (holds)
+                readBackVerified++;
+            else
+                readBackMismatched++;
+
             if (resolution.IsTypeScope && parameter.Element is not null)
                 typeIds.Add(parameter.Element.Id.GetValue());
 
@@ -194,6 +213,18 @@ public sealed class SetParametersTool : AgentWriteToolBase
                 NewValue = rawAfter,
                 Status = ChangeStatus.Applied
             });
+        }
+
+        if (readBackExpected > 0)
+        {
+            // execute_plan sums this block as the tool-level read-back.
+            outcome.Data["readBack"] = new
+            {
+                expected = readBackExpected,
+                verified = readBackVerified,
+                mismatched = readBackMismatched,
+                notVerifiable = 0
+            };
         }
 
         if (typeIds.Count > 0)

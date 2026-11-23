@@ -34,7 +34,9 @@ bash tools/bench/lane.sh <worktree> <lane> opencode-go deepseek-v4.1-flash synth
 ## Артефакты
 
 `SMARTCON_BENCH_RESULTS_DIR` (по умолчанию `%LOCALAPPDATA%\Temp\smartcon-bench\results`):
-`<provider>/<model>/<base>/<caseN>/r<время>.json` + `.md` (транскрипт). В JSON: вердикт по состоянию модели,
+`<provider>/<model>/<base>/<caseN>/r<время>.json` + `.md` (транскрипт) + `.db` (база сессии агента:
+messages/tool_calls/audit_log — открывается любым SQLite-браузером; `SMARTCON_BENCH_KEEP_DB=0` отключает).
+В JSON: вердикт по состоянию модели,
 время, раунды, вызовы тулов (по именам и по одному), токены (в т.ч. reasoning и кэш), `stopReason`, ошибки по кодам.
 
 Сводная таблица по модели:

@@ -68,7 +68,11 @@ public sealed class ReadToolResultTool : IAgentTool
         }
 
         var offset = Math.Max(0, GetInt(args, "offset", 0));
-        var limit = Math.Max(1, Math.Min(GetInt(args, "limit", DefaultLimit), MaxLimit));
+        // The schema no longer rejects a large limit: it is cut to the maximum
+        // here and the answer says so, instead of costing the model a round.
+        var requestedLimit = GetInt(args, "limit", DefaultLimit);
+        var limit = Math.Max(1, Math.Min(requestedLimit, MaxLimit));
+        var limitCappedTo = requestedLimit > MaxLimit ? MaxLimit : (int?)null;
         if (offset >= content.Length)
         {
             return ToolResult.Fail(
@@ -84,6 +88,7 @@ public sealed class ReadToolResultTool : IAgentTool
             path,
             offset,
             limit,
+            limitCappedTo,
             total = content.Length,
             returned = length,
             nextOffset,
@@ -112,7 +117,8 @@ public sealed class ReadToolResultTool : IAgentTool
                 "results that exceed the context budget are trimmed and carry resultHandle; use " +
                 "this tool with offset/limit (and an optional path inside the JSON) instead of " +
                 "re-running the original tool. offset/limit are measured in characters " +
-                "(default 8000 ≈ 2–3k tokens), not tokens. To PASS a part of a stored result to " +
+                "(default 8000 ≈ 2–3k tokens), not tokens; limit is at most 20000 - larger " +
+                "values are cut to 20000. To PASS a part of a stored result to " +
                 "another tool, do not read it: put the reference object " +
                 "{\"$result\":\"<handle>\",\"path\":\"<path>\"} in place of that argument.",
             Risk = AgentToolRisk.Read,
@@ -122,7 +128,7 @@ public sealed class ReadToolResultTool : IAgentTool
             InputSchemaJson = @"{""type"":""object"",""properties"":{" +
                 @"""handle"":{""type"":""string"",""minLength"":1}," +
                 @"""offset"":{""type"":""integer"",""minimum"":0,""default"":0}," +
-                @"""limit"":{""type"":""integer"",""minimum"":1,""maximum"":20000,""default"":8000}," +
+                @"""limit"":{""type"":""integer"",""minimum"":1,""default"":8000,""description"":""At most 20000; larger values are cut to 20000 (see limitCappedTo in the result)""}," +
                 @"""path"":{""type"":""string"",""description"":""Dot/slash path inside the JSON, e.g. data.views or data/views""}}," +
                 @"""required"":[""handle""],""additionalProperties"":false}"
         };

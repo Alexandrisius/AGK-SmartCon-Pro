@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.IO;
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
@@ -378,6 +379,102 @@ public sealed class AgentWriteParameterUndoTests : RevitApiTest
         var wall = Doc.GetElement(ElementIdCompat.Create(_wallId))!;
         await Assert.That(wall.get_Parameter(BuiltInParameter.ALL_MODEL_MARK)!.AsString())
             .IsEqualTo(Comments);
+    }
+
+    [Test]
+    public async Task SetParameters_GuidOfATypeBoundSharedParameter_WritesAndReadsBack()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены");
+
+        var previousFile = Application.SharedParametersFilename;
+        var sharedFile = Path.Combine(
+            Path.GetTempPath(), "smartcon-guid-probe-" + Guid.NewGuid().ToString("N") + ".txt");
+        File.WriteAllText(sharedFile, string.Empty);
+        Application.SharedParametersFilename = sharedFile;
+        try
+        {
+            // A shared parameter bound to the wall types: the instance itself
+            // carries it only through its type.
+            var file = Application.OpenSharedParameterFile();
+            var group = file!.Groups.get_Item("SmartConTests")
+                       ?? file.Groups.Create("SmartConTests");
+            group!.Definitions.Create(new ExternalDefinitionCreationOptions(
+                "SC_GuidProbe", SpecTypeId.String.Text));
+            var bound = new AddProjectSharedParameterTool(
+                    new StubRevitContext(Doc), _transactions!, _changeSets!)
+                .ExecuteForTests(
+                    Parse(
+                        "{\"name\":\"SC_GuidProbe\",\"spec\":\"text\"," +
+                        "\"categories\":[\"OST_Walls\"],\"binding\":\"type\",\"dryRun\":false}"),
+                    approved: true,
+                    CancellationToken.None);
+            await Assert.That(bound.Success).IsTrue();
+
+            var wall = Doc.GetElement(ElementIdCompat.Create(_wallId))!;
+            var type = (ElementType)Doc.GetElement(wall.GetTypeId())!;
+            Guid? guid = null;
+            foreach (Parameter parameter in type.Parameters)
+            {
+                if (parameter.IsShared
+                    && string.Equals(
+                        parameter.Definition?.Name,
+                        "SC_GuidProbe",
+                        StringComparison.Ordinal))
+                {
+                    guid = parameter.GUID;
+                    break;
+                }
+            }
+
+            await Assert.That(guid is not null).IsTrue();
+
+            // The instance parameters are scanned first and are all non-shared:
+            // the scan must skip them instead of throwing on .GUID and reach the
+            // type-bound shared parameter.
+            var written = CreateSetParametersTool().ExecuteForTests(
+                Parse(
+                    "{\"items\":[{\"elementId\":" + _wallId + ",\"guid\":\"" + guid!.Value.ToString("D") +
+                    "\",\"scope\":\"type\",\"value\":\"ByGuid\"}],\"dryRun\":false}"),
+                approved: true,
+                CancellationToken.None);
+
+            await Assert.That(written.Success).IsTrue();
+            await Assert.That(type.get_Parameter(guid.Value)!.AsString()).IsEqualTo("ByGuid");
+
+            var unknown = CreateSetParametersTool().ExecuteForTests(
+                Parse(
+                    "{\"items\":[{\"elementId\":" + _wallId + ",\"guid\":\"" +
+                    Guid.NewGuid().ToString("D") +
+                    "\",\"scope\":\"type\",\"value\":\"X\"}],\"dryRun\":false}"),
+                approved: true,
+                CancellationToken.None);
+
+            await Assert.That(unknown.Success).IsFalse();
+            await Assert.That(unknown.ErrorCode).IsEqualTo("parameter_not_found");
+            await Assert.That(unknown.Message).Contains("list_project_parameters");
+        }
+        finally
+        {
+            try
+            {
+                Application.SharedParametersFilename = previousFile ?? string.Empty;
+            }
+            catch (Exception)
+            {
+                // Best effort in the test host.
+            }
+
+            try
+            {
+                if (File.Exists(sharedFile))
+                    File.Delete(sharedFile);
+            }
+            catch (IOException)
+            {
+                // Best effort.
+            }
+        }
     }
 
     private SetParametersTool CreateSetParametersTool() =>

@@ -402,6 +402,8 @@ public sealed partial class AgentRealCasesBenchmarkTests
         };
 
         var (jsonPath, markdownPath) = BenchRunArtifactWriter.Write(artifact, transcript);
+        // On dispose the session database lands next to the artifact (r<stamp>.db).
+        host.ArtifactJsonPath = jsonPath;
 
         return new ProductionCaseRun(
             overall, stateVerdict, answer, calls, callsPerRound, llmRounds, llmRounds,

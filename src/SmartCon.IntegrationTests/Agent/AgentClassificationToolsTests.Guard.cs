@@ -305,6 +305,50 @@ public sealed partial class AgentClassificationToolsTests
         await Assert.That(DescriptionOf(WallTypeId) ?? string.Empty).IsEqualTo(string.Empty);
     }
 
+    [Test]
+    public async Task Set_ValidCodeOnATypeThatCannotStoreIt_IsParameterNotSupported()
+    {
+        // A type Revit hands the Assembly Code parameter object to while its kind
+        // stores no value (view family types, dimension styles): the write must
+        // refuse the ELEMENT, not the value.
+        var type = new FilteredElementCollector(Doc)
+            .OfClass(typeof(ElementType))
+            .Cast<ElementType>()
+            .FirstOrDefault(candidate =>
+            {
+                var codeParameter = candidate.get_Parameter(AgentParameterResolver.AssemblyCodeBuiltIn);
+                if (codeParameter is null || codeParameter.IsReadOnly)
+                    return false;
+                foreach (Parameter parameter in candidate.Parameters)
+                {
+                    if (parameter.Id == codeParameter.Id)
+                        return false;
+                }
+
+                return true;
+            });
+        if (type is null)
+            Skip.Test("В шаблоне проекта по умолчанию нет типов, не способных хранить код классификации");
+
+        await Assert.That(Load(SampleFile("guard-not-supported.txt"), dryRun: false).Success).IsTrue();
+
+        var result = Set("[" + CodeItem(type!.Id.GetValue(), "20.10.10") + "]");
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("parameter_not_supported");
+        await Assert.That(Failed(result).GetProperty("errorCode").GetString())
+            .IsEqualTo("parameter_not_supported");
+        var reason = Failed(result).GetProperty("reason").GetString()!;
+        await Assert.That(reason).Contains("cannot be written");
+        // The category is named when the type carries one.
+        if (type.Category is not null)
+            await Assert.That(reason).Contains(type.Category.Name);
+        // Not a value problem and not a plain refusal: the two look deceptively alike.
+        await Assert.That(Failed(result).GetProperty("errorCode").GetString()).IsNotEqualTo(CodeNotFound);
+        await Assert.That(Failed(result).GetProperty("errorCode").GetString()).IsNotEqualTo("set_failed");
+        await Assert.That(result.Message).Contains("parameter_not_supported");
+    }
+
     // ── one argument for every Revit version ────────────────────────────
 
     [Test]

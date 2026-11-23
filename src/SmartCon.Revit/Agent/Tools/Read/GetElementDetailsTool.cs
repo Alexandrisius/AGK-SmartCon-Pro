@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Agent.Query;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -27,14 +28,18 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             "(category, family, type, typeId, familyId, familyKind, level, room), a compact " +
             "essence of key built-in values, and its instance parameters. Each distinct type is " +
             "returned once in types[] with its own essence and, when includeTypeParameters=true, " +
-            "its type parameters. Parameters are classified as system, shared or family: by " +
+            "its type parameters - except an element type asked for by its own typeId, whose " +
+            "parameters are always returned. Parameters are classified as system, shared or family: by " +
             "default only system and shared are returned, and the number of omitted family-local " +
             "geometry parameters is reported in familyParametersOmitted; pass " +
             "parameterClasses=[\"family\"] to include them. instanceParametersTotal/Returned/" +
             "Truncated and parametersTotal/Returned/Truncated describe the caps (the cap applies " +
             "per scope). readOnlyReason is set for parameters the agent cannot write. Narrow the " +
             "payload with parameterNames, parameterNameContains, excludeDerived; onlyNonEmpty " +
-            "defaults to true (empty values are hidden, pass false to list them).",
+            "defaults to true (empty values are hidden, pass false to list them). A name of " +
+            "parameterNames that the element itself does not carry is looked up on its type " +
+            "(the type parameters join the answer for that element); names found nowhere are " +
+            "listed in parameterNamesNotFound.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":10},""parameterClasses"":{""type"":""array"",""items"":{""type"":""string"",""enum"":[""system"",""shared"",""family""]}},""includeTypeParameters"":{""type"":""boolean"",""default"":false},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""}},""parameterNameContains"":{""type"":""string""},""onlyNonEmpty"":{""type"":""boolean"",""default"":true},""excludeDerived"":{""type"":""boolean"",""default"":false},""maxParametersPerElement"":{""type"":""integer"",""minimum"":1,""maximum"":200,""default"":50}},""required"":[""elementIds""],""additionalProperties"":false}"
     };
 
@@ -86,14 +91,20 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             Math.Min(
                 AgentJson.GetInt(args, "maxParametersPerElement", DefaultMaxParametersPerElement),
                 HardMaxParametersPerElement));
-        var parameterNames = new HashSet<string>(
-            AgentJson.GetStringArray(args, "parameterNames"),
-            StringComparer.OrdinalIgnoreCase);
+        var requestedNames = AgentJson.GetStringArray(args, "parameterNames");
+        var parameterNames = new HashSet<string>(requestedNames, StringComparer.OrdinalIgnoreCase);
+        var nameBuiltIns = parameterNames.Count > 0
+            ? AgentParameterResolver.BuiltInsOf(parameterNames.Where(name => !string.IsNullOrEmpty(name))!)
+            : new HashSet<BuiltInParameter>();
 
         var elements = new List<ElementDetails>();
         var types = new List<ElementTypeDetails>();
         var typesById = new Dictionary<long, ElementTypeDetails>();
         var missing = new List<long>();
+        // The requested names that matched no parameter of any element or its
+        // type (reported at the end): a name that lives only on the type pulls
+        // the type parameters in for that element instead of disappearing.
+        var namesFound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var id in elementIds)
         {
@@ -118,6 +129,39 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 EssenceProfile = AgentElementEssence.ProfileFor(element.Category)
             };
 
+            var needTypeParameters = false;
+            if (parameterNames.Count > 0 && type is not null)
+            {
+                var ownParameters = element is ElementType ? type.Parameters : element.Parameters;
+                foreach (var name in requestedNames)
+                {
+                    if (namesFound.Contains(name)
+                        || !HasParameterNamed(ownParameters, name, nameBuiltIns))
+                    {
+                        continue;
+                    }
+
+                    namesFound.Add(name);
+                }
+
+                if (element is not ElementType)
+                {
+                    // Names the element itself does not carry may live on its
+                    // type: include the type parameters for this element.
+                    foreach (var name in requestedNames)
+                    {
+                        if (namesFound.Contains(name)
+                            || !HasParameterNamed(type.Parameters, name, nameBuiltIns))
+                        {
+                            continue;
+                        }
+
+                        namesFound.Add(name);
+                        needTypeParameters = true;
+                    }
+                }
+            }
+
             if (type is not null)
             {
                 var typeId = type.Id.GetValue();
@@ -127,9 +171,17 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                         doc,
                         type,
                         filter,
-                        includeTypeParameters);
+                        // A type asked for by its own id is the element: its
+                        // parameters are what the call is about, flag or not.
+                        includeTypeParameters || element is ElementType || needTypeParameters);
                     typesById[typeId] = typeDetails;
                     types.Add(typeDetails);
+                }
+                else if (needTypeParameters && typeDetails.Parameters is null)
+                {
+                    var rebuilt = AgentElementDetailsBuilder.BuildType(doc, type, filter, true);
+                    types[types.IndexOf(typeDetails)] = rebuilt;
+                    typesById[typeId] = rebuilt;
                 }
             }
 
@@ -143,12 +195,19 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 "None of the requested element ids exist in this document.");
         }
 
+        var parameterNamesNotFound = requestedNames.Count == 0
+            ? null
+            : requestedNames.Where(name => !namesFound.Contains(name)).ToList();
+        if (parameterNamesNotFound is { Count: 0 })
+            parameterNamesNotFound = null;
+
         var payload = new
         {
             total = elements.Count,
             missing,
             parameterClasses = classes.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
             includeTypeParameters,
+            parameterNamesNotFound,
             types,
             elements
         };
@@ -157,6 +216,35 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             AgentJson.Serialize(payload),
             "Returned details for " + elements.Count + " element(s) and " + types.Count +
             " type(s).");
+    }
+
+    /// <summary>
+    /// Whether the parameter set carries the requested name: by display name or
+    /// by the built-in id the name stands for (an enum id or an alias), the same
+    /// two ways the write tools resolve names.
+    /// </summary>
+    private static bool HasParameterNamed(
+        ParameterSet parameters,
+        string name,
+        HashSet<BuiltInParameter> nameBuiltIns)
+    {
+        foreach (Parameter parameter in parameters)
+        {
+            var displayName = parameter.Definition?.Name;
+            if (!string.IsNullOrEmpty(displayName)
+                && string.Equals(displayName, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (AgentParameterClassifier.IsBuiltIn(parameter, out var builtIn)
+                && nameBuiltIns.Contains(builtIn))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static ElementType? ResolveType(Document doc, Element element)

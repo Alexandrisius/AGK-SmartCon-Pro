@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
+using Microsoft.Data.Sqlite;
 using Nice3point.TUnit.Revit;
 using SmartCon.Agent.Services;
 using SmartCon.Agent.Services.Llm;
@@ -40,7 +41,9 @@ public sealed class AgentBenchHarnessPlumbingTests : RevitApiTest
         var resultsRoot = Path.Combine(
             Path.GetTempPath(), "smartcon-bench-plumbing-" + Guid.NewGuid().ToString("N"));
         var previousRoot = Environment.GetEnvironmentVariable("SMARTCON_BENCH_RESULTS_DIR");
+        var previousKeep = Environment.GetEnvironmentVariable("SMARTCON_BENCH_KEEP_DB");
         Environment.SetEnvironmentVariable("SMARTCON_BENCH_RESULTS_DIR", resultsRoot);
+        Environment.SetEnvironmentVariable("SMARTCON_BENCH_KEEP_DB", "1");
         try
         {
             // RunProductionCase-equivalent: production host + fake client + one
@@ -54,59 +57,76 @@ public sealed class AgentBenchHarnessPlumbingTests : RevitApiTest
                 });
             fake.EnqueueAssistant("Готово: уровни перечислены.");
 
-            using var host = ProductionAgentHost.Create(Doc, fake);
-            var conversationId = host.CreateConversation("plumbing");
-
-            var result = await host.Orchestrator.RunTurnAsync(
-                conversationId,
-                "Покажи уровни проекта.",
-                Array.Empty<AgentAttachment>(),
-                progress: null,
-                CancellationToken.None);
-
-            var toolRecords = host.ReadToolCalls(conversationId);
-            var messages = host.ReadConversation(conversationId);
-
-            var artifact = new BenchRunArtifact
+            string jsonPath;
+            string markdownPath;
+            int toolCallCount;
+            string firstToolName;
+            using (var host = ProductionAgentHost.Create(Doc, fake))
             {
-                CaseNumber = 0,
-                CaseKey = "plumbing",
-                Title = "Plumbing",
-                Base = BenchRunArtifactWriter.BaseLabel(),
-                Provider = host.Settings.Provider,
-                Model = fake.Model,
-                Reasoning = host.Settings.ReasoningEffort + "/" + host.Settings.EffectiveReasoningFormat,
-                MaxOutputTokens = host.Settings.MaxOutputTokens,
-                MaxRounds = 48,
-                MaxSeconds = 900,
-                StartedUtc = DateTime.UtcNow.AddSeconds(-2),
-                EndedUtc = DateTime.UtcNow,
-                Rounds = messages.Count(message =>
-                    message.Role == AgentRole.Assistant && message.ToolCalls.Count > 0),
-                ToolCalls = toolRecords.Count,
-                PromptTokens = result.Usage.PromptTokens,
-                CompletionTokens = result.Usage.CompletionTokens,
-                StopReason = "ok",
-                Answer = result.FinalText,
-                Verdict = new BenchVerdictArtifact
-                {
-                    Label = "PASS",
-                    Score = 1.0,
-                    Detail = "plumbing verdict"
-                },
-                Calls = toolRecords.Select((record, index) => new BenchCallArtifact
-                {
-                    Round = 1,
-                    Seq = index + 1,
-                    Tool = record.ToolName,
-                    Args = record.ArgumentsJson ?? string.Empty,
-                    Success = string.Equals(record.Status, "ok", StringComparison.Ordinal),
-                    ErrorCode = record.Error,
-                    DurationMs = record.DurationMs
-                }).ToList()
-            };
+                var conversationId = host.CreateConversation("plumbing");
 
-            var (jsonPath, markdownPath) = BenchRunArtifactWriter.Write(artifact, "# transcript");
+                var result = await host.Orchestrator.RunTurnAsync(
+                    conversationId,
+                    "Покажи уровни проекта.",
+                    Array.Empty<AgentAttachment>(),
+                    progress: null,
+                    CancellationToken.None);
+
+                var toolRecords = host.ReadToolCalls(conversationId);
+                var messages = host.ReadConversation(conversationId);
+
+                var artifact = new BenchRunArtifact
+                {
+                    CaseNumber = 0,
+                    CaseKey = "plumbing",
+                    Title = "Plumbing",
+                    Base = BenchRunArtifactWriter.BaseLabel(),
+                    Provider = host.Settings.Provider,
+                    Model = fake.Model,
+                    Reasoning = host.Settings.ReasoningEffort + "/" + host.Settings.EffectiveReasoningFormat,
+                    MaxOutputTokens = host.Settings.MaxOutputTokens,
+                    MaxRounds = 48,
+                    MaxSeconds = 900,
+                    StartedUtc = DateTime.UtcNow.AddSeconds(-2),
+                    EndedUtc = DateTime.UtcNow,
+                    Rounds = messages.Count(message =>
+                        message.Role == AgentRole.Assistant && message.ToolCalls.Count > 0),
+                    ToolCalls = toolRecords.Count,
+                    PromptTokens = result.Usage.PromptTokens,
+                    CompletionTokens = result.Usage.CompletionTokens,
+                    StopReason = "ok",
+                    Answer = result.FinalText,
+                    Verdict = new BenchVerdictArtifact
+                    {
+                        Label = "PASS",
+                        Score = 1.0,
+                        Detail = "plumbing verdict"
+                    },
+                    Calls = toolRecords.Select((record, index) => new BenchCallArtifact
+                    {
+                        Round = 1,
+                        Seq = index + 1,
+                        Tool = record.ToolName,
+                        Args = record.ArgumentsJson ?? string.Empty,
+                        Success = string.Equals(record.Status, "ok", StringComparison.Ordinal),
+                        ErrorCode = record.Error,
+                        DurationMs = record.DurationMs
+                    }).ToList()
+                };
+
+                (jsonPath, markdownPath) = BenchRunArtifactWriter.Write(artifact, "# transcript");
+                // RunProductionCase does the same: dispose copies r<stamp>.db next to it.
+                host.ArtifactJsonPath = jsonPath;
+
+                // The tool call really went through the production loop.
+                toolCallCount = toolRecords.Count;
+                firstToolName = toolRecords[0].ToolName;
+                await Assert.That(toolRecords.Count).IsEqualTo(1);
+                await Assert.That(toolRecords[0].ToolName).IsEqualTo("list_levels");
+                await Assert.That(toolRecords[0].Status).IsEqualTo("ok");
+                await Assert.That(result.ToolCallCount).IsEqualTo(1);
+                await Assert.That(result.Rounds).IsEqualTo(2);
+            }
 
             await Assert.That(File.Exists(jsonPath)).IsTrue();
             await Assert.That(File.Exists(markdownPath)).IsTrue();
@@ -115,27 +135,34 @@ public sealed class AgentBenchHarnessPlumbingTests : RevitApiTest
             var json = await File.ReadAllTextAsync(jsonPath);
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
-            await Assert.That(root.GetProperty("toolCalls").GetInt32()).IsEqualTo(toolRecords.Count);
+            await Assert.That(root.GetProperty("toolCalls").GetInt32()).IsEqualTo(toolCallCount);
             await Assert.That(root.GetProperty("maxSeconds").GetInt32()).IsEqualTo(900);
             await Assert.That(root.GetProperty("stopReason").GetString()).IsEqualTo("ok");
             await Assert.That(root.GetProperty("verdict").GetProperty("label").GetString())
                 .IsEqualTo("PASS");
             await Assert.That(root.GetProperty("calls").GetArrayLength())
-                .IsEqualTo(toolRecords.Count);
+                .IsEqualTo(toolCallCount);
             await Assert.That(root.GetProperty("calls")[0].GetProperty("tool").GetString())
-                .IsEqualTo("list_levels");
+                .IsEqualTo(firstToolName);
             await Assert.That(root.GetProperty("transcriptPath").GetString()).IsEqualTo(markdownPath);
 
-            // The tool call really went through the production loop.
-            await Assert.That(toolRecords.Count).IsEqualTo(1);
-            await Assert.That(toolRecords[0].ToolName).IsEqualTo("list_levels");
-            await Assert.That(toolRecords[0].Status).IsEqualTo("ok");
-            await Assert.That(result.ToolCallCount).IsEqualTo(1);
-            await Assert.That(result.Rounds).IsEqualTo(2);
+            // The session database survived the host: next to the artifact, openable,
+            // with the tool call of the turn persisted.
+            var databasePath = BenchRunArtifactWriter.DatabasePathFor(jsonPath);
+            await Assert.That(File.Exists(databasePath)).IsTrue();
+            using (var connection = new SqliteConnection("Data Source=" + databasePath))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT COUNT(*) FROM tool_calls;";
+                var rows = Convert.ToInt64(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+                await Assert.That(rows).IsEqualTo(toolCallCount);
+            }
         }
         finally
         {
             Environment.SetEnvironmentVariable("SMARTCON_BENCH_RESULTS_DIR", previousRoot);
+            Environment.SetEnvironmentVariable("SMARTCON_BENCH_KEEP_DB", previousKeep);
             try
             {
                 if (Directory.Exists(resultsRoot))
