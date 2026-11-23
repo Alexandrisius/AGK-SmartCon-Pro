@@ -372,15 +372,17 @@ public sealed partial class AgentPlanExecutor
                 continue;
 
             var readBackToolName = step.ReadBackTool!;
+            var result = results.First(item => item.StepId == step.StepId);
+            result.ExpectationsDeclared = step.ReadBackExpectations.Count;
             var tool = GetTool(readBackToolName);
             if (tool is null)
             {
+                result.ReadBackFailed = true;
                 mismatches.Add(step.StepId + ": read-back tool '" + readBackToolName +
                                "' is not registered");
                 continue;
             }
 
-            var result = results.First(item => item.StepId == step.StepId);
             var readBack = await ExecuteToolAsync(
                     tool, step.ArgumentsReadBackJson, false, execution, ct)
                 .ConfigureAwait(false);
@@ -389,6 +391,10 @@ public sealed partial class AgentPlanExecutor
 
             if (!readBack.Success || readBack.Data is not { } data)
             {
+                // Nothing was compared: the report must say that verification
+                // was requested but could not run, not that none was requested
+                // (review r1 #1).
+                result.ReadBackFailed = true;
                 mismatches.Add(step.StepId + ": read-back failed (" +
                                (readBack.ErrorCode ?? "unknown") + ")" +
                                DescribeAppliedCreatedIds(result.ApplyResult));

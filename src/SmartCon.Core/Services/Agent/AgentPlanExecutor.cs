@@ -49,7 +49,16 @@ public sealed class AgentPlanStepResult
     /// <summary>True when a read-back tool was actually called for this step.</summary>
     public bool ReadBackExecuted { get; set; }
 
-    /// <summary>Number of read-back expectations checked for this step.</summary>
+    /// <summary>
+    /// True when the step's read-back tool was called and failed, or is not
+    /// registered: nothing of this step was verified (review r1 #1).
+    /// </summary>
+    public bool ReadBackFailed { get; set; }
+
+    /// <summary>Read-back expectations declared on the step.</summary>
+    public int ExpectationsDeclared { get; set; }
+
+    /// <summary>Number of read-back expectations actually compared for this step.</summary>
     public int ExpectationsChecked { get; set; }
 
     public int VerifiedCount { get; set; }
@@ -57,8 +66,8 @@ public sealed class AgentPlanStepResult
     public int MismatchCount { get; set; }
 
     /// <summary>
-    /// Expectations whose path did not address the read-back payload: neither
-    /// verified nor mismatched (C4-10).
+    /// Expectations whose path form the resolver does not understand: nothing
+    /// was compared, so they are neither verified nor mismatched (C4-10).
     /// </summary>
     public int NotVerifiableCount { get; set; }
 }
