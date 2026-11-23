@@ -30,17 +30,8 @@ internal sealed partial class AgentFamilySession
         sourceBackupPath = null;
         var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
 
-        if (projectDoc.IsModifiable)
+        if (!TryEnterEditableProject(projectDoc, family.Name, outcome))
         {
-            Fail(outcome, "permission_denied",
-                "The project document is modified by another transaction. Close it and retry.");
-            return false;
-        }
-
-        if (projectDoc.IsReadOnly)
-        {
-            Fail(outcome, "permission_denied",
-                "The project document is read-only, so its families cannot be edited.");
             return false;
         }
 

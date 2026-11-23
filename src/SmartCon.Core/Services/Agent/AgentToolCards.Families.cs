@@ -284,7 +284,10 @@ public static partial class AgentToolCards
             WhenNotToUse =
                 "Когда параметр уже существует — set_family_parameter_values / " +
                 "rename_family_parameter; когда нужно добавить параметр проекта — " +
-                "set_parameters не создаёт определения.",
+                "set_parameters не создаёт определения. Для ведомости/спецификации: не общий " +
+                "(обычный) параметр семейства никогда не бывает полем спецификации — нужен " +
+                "проектный общий параметр (add_project_shared_parameter) или встроенный типовой " +
+                "параметр (map_family_parameters).",
             Examples = new[]
             {
                 "Добавь в семейство текстовый параметр Заказчик",

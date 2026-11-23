@@ -236,6 +236,19 @@ internal static partial class AgentScheduleWriteHelper
         return false;
     }
 
+    /// <summary>
+    /// Reason of a field that is not schedulable for the category. A family
+    /// parameter that is not shared never becomes a schedule field — this is a
+    /// Revit rule, not a naming problem — so the reason says which parameters can.
+    /// </summary>
+    internal static string FieldNotAvailableReason(string fieldName) =>
+        "No schedulable field '" + fieldName + "' for the schedule category. A family parameter " +
+        "that is not shared is never a schedule field: Revit schedules only built-in " +
+        "parameters and shared parameters bound to the category. To schedule the value, bind a " +
+        "project (shared) parameter to the category (add_project_shared_parameter) or map the " +
+        "value into a built-in type parameter (map_family_parameters), then add the field by " +
+        "the display name get_schedule_definition reports.";
+
     internal static IReadOnlyList<string> AvailableFieldNames(
         Document doc,
         ScheduleDefinition definition,

@@ -352,37 +352,57 @@ public sealed class StartJobTool : IAgentTool
         }
 
         var job = result.Job;
+
+        // A short job (a family preview of a few units) normally settles within a
+        // second or two. The pump is raised at once and the call waits a bounded
+        // time for the settled state, so the answer carries the finished preview
+        // instead of costing two more rounds (get_job_status, get_job_report).
+        if (JobStateMachine.NeedsPump(job.State))
+        {
+            _scheduler.EnsurePump();
+            job = await WaitForSettledAsync(job.JobId, ct).ConfigureAwait(false) ?? job;
+        }
+
         var preview = JobToolPayloads.Preview(job);
-        var payload = JobToolPayloads.Describe(job, includeSample: includeSample);
+        var failedItems = await JobToolPayloads.LoadFailedItemsAsync(_store, job, ct).ConfigureAwait(false);
+        var payload = JobToolPayloads.Describe(job, includeSample: includeSample, failedItems: failedItems);
         var failed = preview?.FailedCount ?? 0;
+        var totals = JobToolPayloads.Totals(job);
+        var causes = JobToolPayloads.CausesLine(failedItems);
 
         var message = job.State switch
         {
             JobState.PreviewReady =>
                 "Preview ready: " + preview?.Count + " unit(s), " + preview?.WillChangeCount +
-                " will change, " + preview?.SkipCount + " already match, " + failed + " failed. " +
-                (failed > 0
-                    ? "Failed units will not be applied; see sample/errorCode. "
-                    : string.Empty) +
-                "Apply with dryRun=false and previewDigest.",
+                " will change, " + preview?.SkipCount + " already match, " + failed + " failed." +
+                (failed == 0
+                    ? " Apply with dryRun=false and previewDigest."
+                    : " " + JobToolPayloads.PreviewReadyHint(job)),
             JobState.PreviewRunning =>
-                "Preview started" +
-                (preview is null ? string.Empty : ": " + preview.Count + " unit(s)") +
-                ". Call get_job_status to follow progress.",
+                "Preview still running after " + (SettleWaitMs / 1000) +
+                " s. Call get_job_status (waitSeconds=10) to follow progress.",
             JobState.Running =>
-                "Job started. Call get_job_status (waitSeconds=10) until the state is terminal " +
-                "and mustVerify=false; do not report it as finished before that.",
+                "Job still running: " + totals.Done + " done, " + totals.Failed + " failed, " +
+                totals.Mismatch + " mismatch. Call get_job_status (waitSeconds=10) until the state " +
+                "is terminal and mustVerify=false; do not report it as finished before that.",
             JobState.Completed or JobState.CompletedWithFailures or JobState.CompletedUnverified =>
-                "Job finished: " + job.State + ". Call get_job_report for the per-item diff.",
+                "Job finished: " + job.State + " — " + totals.Done + " done, " + totals.Skipped +
+                " skipped, " + totals.Failed + " failed, " + totals.Mismatch + " mismatch." +
+                (failedItems is { Count: > 0 }
+                    ? causes + " Fix the causes, then retry_failed_items or call get_job_report."
+                    : " Call get_job_report for the per-item diff."),
+            JobState.Failed =>
+                "Job failed: " + job.ErrorCode + ": " + job.ErrorDetail,
             _ => "Job state: " + job.State
         };
 
-        var warnings = failed > 0 && preview is not null
-            ? preview.Sample
-                .Where(sample => !string.IsNullOrWhiteSpace(sample.ErrorDetail))
-                .Select(sample =>
-                    (sample.Label ?? sample.UnitKey ?? "unit") + ": " +
-                    (sample.ErrorCode ?? JobErrorCodes.ItemFailed) + " — " + sample.ErrorDetail)
+        var warnings = failedItems is { Count: > 0 }
+            ? failedItems
+                .Take(5)
+                .Where(item => !string.IsNullOrWhiteSpace(item.ErrorDetail))
+                .Select(item =>
+                    (item.Label ?? item.UnitKey ?? "unit") + ": " +
+                    (item.ErrorCode ?? JobErrorCodes.ItemFailed) + " — " + item.ErrorDetail)
                 .ToArray()
             : null;
 
@@ -391,6 +411,23 @@ public sealed class StartJobTool : IAgentTool
             message,
             affectedCount: preview?.Count ?? 0,
             warnings: warnings);
+    }
+
+    /// <summary>Upper bound for waiting until the started job settles inside start_job.</summary>
+    private const int SettleWaitMs = 8000;
+
+    private async Task<JobRecord?> WaitForSettledAsync(Guid jobId, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(SettleWaitMs);
+        while (true)
+        {
+            await Task.Delay(100, ct).ConfigureAwait(false);
+            var job = await _store.GetAsync(jobId, ct).ConfigureAwait(false);
+            if (job is null || !JobStateMachine.NeedsPump(job.State) || DateTime.UtcNow >= deadline)
+            {
+                return job;
+            }
+        }
     }
 
     private static (JobOptions Options, JobOptionsOverride? Overrides, ToolResult? Error) ReadOptions(

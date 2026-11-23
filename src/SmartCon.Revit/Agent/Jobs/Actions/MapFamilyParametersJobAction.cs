@@ -303,11 +303,6 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         return state;
     }
 
-    private static string DescribeOutcome(WriteOutcome outcome) =>
-        (outcome.ErrorCode ?? "family_edit_failed") + ": " +
-        (outcome.Message ?? "The family document could not be prepared.") +
-        " [Action: close the Family Editor for that family and retry]";
-
     private static JobUnitApply ApplyFail(string code, string detail) => new()
     {
         ErrorCode = code,

@@ -146,7 +146,7 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
             }
 
             report.ErrorCode = "field_not_available";
-            report.Reason = "No schedulable field '" + fieldName + "' for this category.";
+            report.Reason = AgentScheduleWriteHelper.FieldNotAvailableReason(fieldName);
             outcome.Batch.Failed.Add(report);
             if (!outcome.Data.ContainsKey("availableFields"))
             {
