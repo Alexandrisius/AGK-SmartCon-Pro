@@ -115,7 +115,8 @@ internal static class AgentFamilyReader
         }
 
         var matches = new List<RevitFamily>();
-        foreach (var family in LoadableFamilies(doc))
+        var loaded = LoadableFamilies(doc);
+        foreach (var family in loaded)
         {
             if (string.Equals(family.Name, familyName!.Trim(), StringComparison.OrdinalIgnoreCase))
                 matches.Add(family);
@@ -132,8 +133,9 @@ internal static class AgentFamilyReader
         }
 
         errorCode = "family_not_found";
-        message = "No loaded family named '" + familyName + "'. Use list_families to see " +
-                  "the loaded families.";
+        message = "No loaded family named '" + familyName + "'." +
+                  AgentNameSuggestions.Suffix(familyName!, loaded.Select(family => family.Name)) +
+                  " Use list_families to see the loaded families.";
         return null;
     }
 

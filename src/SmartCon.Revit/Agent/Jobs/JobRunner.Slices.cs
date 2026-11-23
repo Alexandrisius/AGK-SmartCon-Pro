@@ -82,6 +82,18 @@ public sealed partial class JobRunner
                     ErrorDetail = preview.ErrorDetail
                 });
                 processed++;
+
+                if (IsDocumentRefusal(preview.ErrorCode))
+                {
+                    Sync(_store.UpdateItemsAsync(job.JobId, updates, CancellationToken.None));
+                    return new JobSliceResult
+                    {
+                        JobId = job.JobId,
+                        State = JobState.Failed,
+                        ProcessedThisSlice = processed,
+                        Error = StopForDocumentRefusal(job, item, preview.ErrorDetail, applying: false)
+                    };
+                }
             }
 
             if (updates.Count > 0)

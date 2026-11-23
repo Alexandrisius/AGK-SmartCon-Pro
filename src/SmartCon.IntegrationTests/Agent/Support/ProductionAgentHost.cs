@@ -10,6 +10,7 @@ using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.Revit.Agent;
+using SmartCon.Revit.Agent.Jobs;
 using SmartCon.Revit.Agent.Tools;
 using SmartCon.Revit.Transactions;
 using SmartCon.IntegrationTests.Support;
@@ -94,6 +95,7 @@ internal sealed class ProductionAgentHost : IDisposable
         database.Initialize();
 
         var revitContext = new StubRevitContext(doc);
+        var revitThread = new RevitThreadEvent(doc.Application);
         var services = new ServiceCollection();
         services.AddSingleton<IRevitContext>(revitContext);
         // App-level service the agent tools resolve in production (registered
@@ -103,15 +105,21 @@ internal sealed class ProductionAgentHost : IDisposable
         var jobStore = new SqliteAgentJobStore(database);
         var jobRunner = services.AddAgentJobEngine(revitContext, jobStore);
         // The test host has no ExternalEvent pump: the tools drive the job
-        // forward on the same thread, mirroring the production pump handler.
-        jobRunner.Initialize(() => jobRunner.RunToCompletion(doc, TimeSpan.FromMinutes(10)));
+        // forward, mirroring the production pump handler. The pump callback is
+        // raised from the tools' caller thread (the orchestrator continues on the
+        // thread pool), so it is handed to the Revit thread first: production's
+        // JobPumpEventHandler.Execute runs every slice on the API thread, and off
+        // that thread Revit reports an untouched document as read-only — every
+        // unit after the first inline one of a multi-unit family job was refused
+        // with permission_denied.
+        jobRunner.Initialize(() => PumpOnRevitThread(revitThread, jobRunner, doc));
 
         services.AddRevitAgentTools();
         services.AddAgentCore(new AgentCoreOptions
         {
             Settings = settings,
             Database = database,
-            AwaitableEvent = new RevitThreadEvent(doc.Application),
+            AwaitableEvent = revitThread,
             RevitContext = revitContext
         });
         if (llmClient is not null)
@@ -136,6 +144,24 @@ internal sealed class ProductionAgentHost : IDisposable
     public IReadOnlyList<AgentMessage> ReadConversation(Guid conversationId) =>
         _conversationStore.GetMessagesAsync(conversationId, CancellationToken.None)
             .GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Pump double of <c>ExternalEvent.Raise()</c>: fire-and-forget, the slice
+    /// loop runs on the Revit thread (inline when raised there, otherwise when
+    /// the thread's dispatcher is pumped, as the benchmark loop does).
+    /// </summary>
+    private static void PumpOnRevitThread(RevitThreadEvent revitThread, JobRunner jobRunner, Document doc)
+    {
+        _ = revitThread
+            .RaiseAsync(
+                _ => jobRunner.RunToCompletion(doc, TimeSpan.FromMinutes(10)),
+                CancellationToken.None)
+            .ContinueWith(
+                task => Console.WriteLine("ProductionAgentHost job pump failed: " + task.Exception?.Message),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+    }
 
     /// <summary>
     /// New conversation the way <see cref="AgentMainViewModel"/> creates one in

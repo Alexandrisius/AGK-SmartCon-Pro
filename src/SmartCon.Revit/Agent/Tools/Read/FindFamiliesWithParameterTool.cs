@@ -42,7 +42,9 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             "call — no index; unplaced types are included. By default only type parameters are " +
             "searched. With includeInstanceParameters=true placed family instances are also " +
             "scanned, so instance-scope shared parameters (ADSK_Наименование and similar) are " +
-            "found; families with no placed instances are flagged instanceParametersUnknown=true " +
+            "found; placedInstanceCount is reported only with includeInstanceParameters=true " +
+            "(null and instancesScanned=false otherwise — not scanned, not unplaced); families " +
+            "with no placed instances are flagged instanceParametersUnknown=true " +
             "(their instance parameters can only be checked by opening the family document via " +
             "get_family_parameters). matchedTypes and matchedInstanceParameters are " +
             "capped per family by maxMatchedTypes (default 10, max 50); the totals and *Truncated " +
@@ -201,7 +203,10 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                     ? item.TypeMatches.Select(match => match["typeName"]).ToList()
                     : null,
                 ["matchedTypes"] = compact ? null : item.TypeMatches,
-                ["placedInstanceCount"] = item.PlacedInstanceCount,
+                // Null (not zero) when the instances were not scanned: a zero here
+                // read as "family has no placed instances".
+                ["placedInstanceCount"] = includeInstanceParameters ? (int?)item.PlacedInstanceCount : null,
+                ["instancesScanned"] = includeInstanceParameters,
                 ["instanceParametersUnknown"] =
                     includeInstanceParameters && item.PlacedInstanceCount == 0,
                 ["matchedInstanceParameterCount"] = item.MatchedInstanceParametersTotal,

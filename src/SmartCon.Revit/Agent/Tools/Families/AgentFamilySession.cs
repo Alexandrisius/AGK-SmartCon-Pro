@@ -50,28 +50,28 @@ internal sealed partial class AgentFamilySession : IDisposable
 
     public IReadOnlyList<SectionReport> Sections => _sections;
 
+    /// <summary>
+    /// Error code of a document-level refusal (project read-only or inside another
+    /// transaction). It is not a property of the unit: every following unit of the
+    /// same job is refused the same way, so the job runner stops the job on it.
+    /// </summary>
+    internal const string PermissionDenied = "permission_denied";
+
+    /// <summary>
+    /// Upper bound for waiting until the project accepts edits again. Revit keeps
+    /// a project read-only while one of its family documents is open; a close
+    /// normally restores writability at once, so the wait only matters for a close
+    /// that is still settling and turns a race into one honest refusal.
+    /// </summary>
+    private static readonly TimeSpan EditableWait = TimeSpan.FromSeconds(1);
+
     public static AgentFamilySession? Open(
         Document projectDoc,
         RevitFamily family,
         WriteOutcome outcome)
     {
-        if (projectDoc.IsModifiable)
+        if (!TryEnterEditableProject(projectDoc, family.Name, outcome))
         {
-            Fail(
-                outcome,
-                "permission_denied",
-                "The project document is modified by another transaction. Close it and retry.",
-                "Wait until the current operation finishes, then repeat the request.");
-            return null;
-        }
-
-        if (projectDoc.IsReadOnly)
-        {
-            Fail(
-                outcome,
-                "permission_denied",
-                "The project document is read-only, so its families cannot be edited.",
-                "Open a writable copy of the project.");
             return null;
         }
 
@@ -387,10 +387,23 @@ internal sealed partial class AgentFamilySession : IDisposable
         _disposed = true;
         // FamilyManager batch pattern (#96 / REVIT-237190): close + synchronous
         // COM release + render-thread nudge after every family document cycle.
+        // The close is confirmed, not assumed: a family document that survives
+        // keeps the project read-only for every later family operation.
         try
         {
-            AgentFamilyDocCloser.Close(FamilyDoc);
-            AddSection("close", "ok", "family document closed without saving");
+            if (AgentFamilyDocCloser.Close(FamilyDoc))
+            {
+                AddSection("close", "ok", "family document closed without saving");
+            }
+            else
+            {
+                // AgentFamilyDocCloser logged the cause together with the action.
+                AddSection(
+                    "close",
+                    "failed",
+                    "the family document is still open after Close(false); the project stays " +
+                    "read-only until it is closed");
+            }
         }
         catch (Exception ex)
         {
@@ -401,6 +414,59 @@ internal sealed partial class AgentFamilySession : IDisposable
                 "family is not left open]");
             AddSection("close", "failed", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Waits (bounded) for a project that accepts edits again and reports the
+    /// refusal with its real cause when it does not.
+    /// </summary>
+    private static bool TryEnterEditableProject(
+        Document projectDoc,
+        string familyName,
+        WriteOutcome outcome)
+    {
+        var deadline = DateTime.UtcNow + EditableWait;
+        while (true)
+        {
+            var inOtherTransaction = projectDoc.IsModifiable;
+            var readOnly = projectDoc.IsReadOnly;
+            if (!inOtherTransaction && !readOnly)
+            {
+                return true;
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                FailProjectRefusal(inOtherTransaction, familyName, outcome);
+                return false;
+            }
+
+            Thread.Sleep(50);
+        }
+    }
+
+    private static void FailProjectRefusal(
+        bool inOtherTransaction,
+        string familyName,
+        WriteOutcome outcome)
+    {
+        if (inOtherTransaction)
+        {
+            Fail(
+                outcome,
+                PermissionDenied,
+                "The project document is being modified by another transaction, so the family '" +
+                familyName + "' cannot be edited.");
+            return;
+        }
+
+        Fail(
+            outcome,
+            PermissionDenied,
+            "The project document is read-only (a family document of this project is still open, " +
+            "another operation is pending, or the file is read-only), so the family '" +
+            familyName + "' cannot be edited.",
+            "No family of this project can be edited until it accepts edits again.");
     }
 
     private static void Fail(

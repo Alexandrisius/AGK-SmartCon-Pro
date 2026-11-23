@@ -11,24 +11,51 @@ namespace SmartCon.Revit.Agent.Tools.Families;
 /// (bypassing the finalizer) and a near-invisible InfoCenter balloon forces the
 /// Win32 focus event that re-syncs the WPF render thread with the UI thread —
 /// without it a DockablePane (the agent pane) freezes non-deterministically
-/// after enough cycles. Every step is best-effort and never throws.
+/// after enough cycles. The cleanup steps are best-effort and never throw;
+/// the close itself is reported, never assumed.
 /// </summary>
 internal static class AgentFamilyDocCloser
 {
-    internal static void Close(Document? doc)
+    /// <summary>
+    /// Closes the document and returns true only when it is really gone (the
+    /// Revit wrapper is invalid afterwards). A family document that survives
+    /// Close keeps its project read-only, so a false result must reach the
+    /// caller instead of a silent "closed".
+    /// </summary>
+    internal static bool Close(Document? doc)
     {
         if (doc is null)
-            return;
+            return true;
 
+        string? failure = null;
         try
         {
             doc.Close(false);
         }
         catch (Exception ex)
         {
+            failure = ex.GetType().Name + ": " + ex.Message;
+        }
+
+        // Read before the COM release: afterwards the wrapper may be unusable.
+        bool closed;
+        try
+        {
+            closed = !doc.IsValidObject;
+        }
+        catch (Exception)
+        {
+            closed = failure is null;
+        }
+
+        if (!closed)
+        {
             SmartConLogger.Warn(
-                "Agent family document could not be closed: " + ex.GetType().Name + ": " + ex.Message +
-                " [Action: close the family document in Revit so it is not left open]");
+                "Agent family document '" + TitleOf(doc) + "' is still open after Close(false)" +
+                (failure is null ? string.Empty : ": " + failure) +
+                "; the project document stays read-only until it is closed " +
+                "[Action: close that family document in Revit (or reload the project) before the " +
+                "next family operation]");
         }
 
         // REVIT-237190: force synchronous COM cleanup of the temporary document.
@@ -51,6 +78,20 @@ internal static class AgentFamilyDocCloser
         catch (Exception)
         {
             // Best-effort: right-click on the pane still recovers the UI.
+        }
+
+        return closed;
+    }
+
+    private static string TitleOf(Document doc)
+    {
+        try
+        {
+            return doc.Title;
+        }
+        catch (Exception)
+        {
+            return "(unknown)";
         }
     }
 }

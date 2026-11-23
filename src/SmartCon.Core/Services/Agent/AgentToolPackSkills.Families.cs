@@ -19,6 +19,10 @@ public static partial class AgentToolPackSkills
 - Запись в документ семейства: `rename_family_parameter`, `add_family_parameter`,
   `set_family_parameter_values`, `set_family_formula`, `map_family_parameters`,
   `remove_family_parameter`, `replace_family_parameter`.
+- Не общий (обычный) параметр семейства **никогда не бывает полем спецификации** — это правило
+  Revit, а не ошибка имени (`add_schedule_field` вернёт `field_not_available`). Для ведомости
+  нужен проектный общий параметр (`add_project_shared_parameter`) или встроенный типовой
+  параметр; значение в него переносят `map_family_parameters` / `set_parameters`.
 - Типы проекта и файлы: `duplicate_family_type`, `rename_family_type`,
   `replace_family_type` (bulk), `load_family` (.rfa по абсолютному пути),
   `purge_families` (destructive, confirmNames), `delete_family_types`.

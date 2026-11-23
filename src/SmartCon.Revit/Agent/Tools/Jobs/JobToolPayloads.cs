@@ -22,7 +22,8 @@ internal static class JobToolPayloads
     internal static object Describe(
         JobRecord job,
         bool includeSample = false,
-        object? recentJobs = null)
+        object? recentJobs = null,
+        IReadOnlyList<JobItem>? failedItems = null)
     {
         var preview = Preview(job);
         var totals = Totals(job);
@@ -67,6 +68,11 @@ internal static class JobToolPayloads
             previewDigest = preview?.Digest,
             previewExpiresAtUtc = preview?.ExpiresAtUtc,
             sample = includeSample ? preview?.Sample : null,
+            // Failure causes are part of every status: grouped by the code of the
+            // CAUSE (the unit's errorCode), so get_job_report is not needed to
+            // learn why units failed.
+            failureCauses = FailureCauses(failedItems),
+            failedUnits = includeSample ? FailedUnits(failedItems, MaxFailedUnits) : null,
             warnings = preview?.Warnings,
             recentJobs,
             next = NextHint(job)
@@ -113,6 +119,13 @@ internal static class JobToolPayloads
                    "using the new previewDigest";
         }
 
+        if (job.ErrorCode == JobErrorCodes.DocumentReadOnly)
+        {
+            return "the project document refused edits; make it accept edits again (close the " +
+                   "Family Editor and other pending operations, or reload the project), then run " +
+                   "start_job with dryRun=true again (resumeJobId when units were applied)";
+        }
+
         if (Totals(job).Stale > 0 &&
             job.State is JobState.CompletedWithFailures or JobState.Failed)
         {
@@ -124,12 +137,7 @@ internal static class JobToolPayloads
         return job.State switch
         {
             JobState.PreviewRunning => "wait: call get_job_status (waitSeconds=10) until state=PreviewReady",
-        JobState.PreviewReady =>
-            "apply: call start_job with dryRun=false and previewDigest=" +
-            (Preview(job)?.Digest ?? "<digest>") +
-            ((Preview(job)?.Count ?? 0) > JobOptions.LargeJobThreshold
-                ? " plus allowLargeJobs=true (job above " + JobOptions.LargeJobThreshold + " units)"
-                : string.Empty),
+        JobState.PreviewReady => PreviewReadyHint(job),
         JobState.Running => "wait: call get_job_status (waitSeconds=10) until a terminal state",
         JobState.Cancelling => "wait: the runner is stopping between units",
         JobState.Interrupted =>
@@ -148,6 +156,138 @@ internal static class JobToolPayloads
         JobState.Failed => "inspect: call get_job_report and fix the cause before retrying",
             _ => "call get_job_status"
         };
+    }
+
+    /// <summary>
+    /// Next step of a finished preview. A preview whose units all failed has
+    /// nothing to apply, so it must never be presented as applicable.
+    /// </summary>
+    internal static string PreviewReadyHint(JobRecord job)
+    {
+        var preview = Preview(job);
+        var failed = preview?.FailedCount ?? 0;
+        var willChange = preview?.WillChangeCount ?? 0;
+        if (failed > 0 && willChange == 0)
+        {
+            return "nothing to apply: all " + failed +
+                   " unit(s) failed the preview. Fix the causes listed in failureCauses and run " +
+                   "start_job with dryRun=true again";
+        }
+
+        var hint = "apply: call start_job with dryRun=false and previewDigest=" +
+                   (preview?.Digest ?? "<digest>") +
+                   ((preview?.Count ?? 0) > JobOptions.LargeJobThreshold
+                       ? " plus allowLargeJobs=true (job above " + JobOptions.LargeJobThreshold + " units)"
+                       : string.Empty);
+        if (failed > 0)
+        {
+            hint += ". Only the " + willChange + " unit(s) that passed the preview are applied; the " +
+                    failed + " failed unit(s) are reported as failed, not applied (see failureCauses)";
+        }
+
+        return hint;
+    }
+
+    /// <summary>
+    /// Failed/mismatched units of a job, or null when there are none (no store
+    /// round trip for a clean job).
+    /// </summary>
+    internal static async Task<IReadOnlyList<JobItem>?> LoadFailedItemsAsync(
+        IJobStore store,
+        JobRecord job,
+        CancellationToken ct)
+    {
+        var totals = Totals(job);
+        var failed = job.StartedAt is null
+            ? Preview(job)?.FailedCount ?? 0
+            : totals.Failed + totals.Mismatch + totals.UndoFailed;
+        if (failed <= 0)
+        {
+            return null;
+        }
+
+        return await store.LoadItemsAsync(
+            job.JobId,
+            new[] { JobItemState.Failed, JobItemState.Mismatch, JobItemState.UndoFailed },
+            0,
+            1000000,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Failures grouped by the code of the cause, biggest group first.</summary>
+    private const int MaxFailedUnits = 5;
+
+    internal static object? FailureCauses(IReadOnlyList<JobItem>? items)
+    {
+        if (items is null || items.Count == 0)
+        {
+            return null;
+        }
+
+        return items
+            .GroupBy(item => item.ErrorCode ?? JobErrorCodes.ItemFailed, StringComparer.Ordinal)
+            .OrderByDescending(group => group.Count())
+            .Select(group =>
+            {
+                var ordered = group.OrderBy(item => item.Seq).ToList();
+                return new
+                {
+                    errorCode = group.Key,
+                    count = ordered.Count,
+                    exampleUnit = ordered[0].Label,
+                    exampleDetail = Clip(ordered.FirstOrDefault(item => !string.IsNullOrWhiteSpace(item.ErrorDetail))?.ErrorDetail)
+                };
+            })
+            .ToArray();
+    }
+
+    /// <summary>Compact per-unit failure list (label, code, reason) for the status payload.</summary>
+    internal static object? FailedUnits(IReadOnlyList<JobItem>? items, int max)
+    {
+        if (items is null || items.Count == 0)
+        {
+            return null;
+        }
+
+        return items
+            .OrderBy(item => item.Seq)
+            .Take(Math.Max(0, max))
+            .Select(item => new
+            {
+                seq = item.Seq,
+                label = item.Label,
+                status = item.State.ToString(),
+                errorCode = item.ErrorCode,
+                errorDetail = Clip(item.ErrorDetail)
+            })
+            .ToArray();
+    }
+
+    /// <summary>One-line cause summary for the status message: "code ×n, code ×n".</summary>
+    internal static string CausesLine(IReadOnlyList<JobItem>? items)
+    {
+        if (items is null || items.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return " Causes: " + string.Join(
+            ", ",
+            items
+                .GroupBy(item => item.ErrorCode ?? JobErrorCodes.ItemFailed, StringComparer.Ordinal)
+                .OrderByDescending(group => group.Count())
+                .Select(group => group.Key + " ×" + group.Count())) + ".";
+    }
+
+    internal static string? Clip(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
+        const int max = 400;
+        return text!.Length <= max ? text : text.Substring(0, max) + "…";
     }
 
     /// <summary>

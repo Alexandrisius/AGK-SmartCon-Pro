@@ -47,7 +47,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
             session = AgentFamilySession.Open(context.Document, family, outcome);
             if (session is null)
             {
-                return Fail(JobErrorCodes.ItemFailed, DescribeOutcome(outcome));
+                return Fail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
             }
 
             var plan = BuildPlan(
@@ -133,7 +133,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
                     out var backupPath,
                     out var sourceBackupPath))
             {
-                return ApplyFail(JobErrorCodes.ItemFailed, DescribeOutcome(outcome));
+                return ApplyFail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
             }
 
             // The backup round-trip may invalidate the Family wrapper; re-resolve by id.
@@ -149,7 +149,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
             session = AgentFamilySession.Open(context.Document, familyForEdit, outcome);
             if (session is null)
             {
-                return ApplyFail(JobErrorCodes.ItemFailed, DescribeOutcome(outcome));
+                return ApplyFail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
             }
 
             session.SetBackup(backupPath, sourceBackupPath);
@@ -236,7 +236,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
 
             if (!session.TryLoadBack(outcome))
             {
-                return ApplyFail(JobErrorCodes.ItemFailed, DescribeOutcome(outcome));
+                return ApplyFail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
             }
 
             undo.NewFamilyUniqueId = session.LoadedFamilyUniqueId;

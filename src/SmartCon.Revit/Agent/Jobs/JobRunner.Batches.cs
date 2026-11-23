@@ -80,6 +80,7 @@ public sealed partial class JobRunner
 
         var applied = new Dictionary<int, JobUnitApply>();
         var abort = false;
+        JobItem? refusal = null;
         ITransactionScope? scope = null;
 
         try
@@ -129,6 +130,13 @@ public sealed partial class JobRunner
                                  };
 
                     applied[plan.Item.Seq] = result;
+
+                    // A document-level refusal ends the batch for every later unit.
+                    if (!result.Success && IsDocumentRefusal(result.ErrorCode))
+                    {
+                        refusal = plan.Item;
+                        break;
+                    }
 
                     if (!result.Success && job.Spec.Options.OnError == JobOnError.Abort)
                     {
@@ -258,6 +266,11 @@ public sealed partial class JobRunner
 
         foreach (var plan in plans)
         {
+            if (refusal is not null && plan.Item.Seq > refusal.Seq)
+            {
+                continue;
+            }
+
             if (plan.Error is not null)
             {
                 updates.Add(new JobItemUpdate
@@ -364,6 +377,19 @@ public sealed partial class JobRunner
         if (saveError is not null)
         {
             return new ApplyBatchOutcome { Changed = changed, Saved = false, Error = saveError };
+        }
+
+        if (refusal is not null)
+        {
+            var refused = applied.TryGetValue(refusal.Seq, out var refusedResult)
+                ? refusedResult.ErrorDetail
+                : null;
+            return new ApplyBatchOutcome
+            {
+                Changed = changed,
+                Saved = saved,
+                Error = StopForDocumentRefusal(job, refusal, refused, applying: true)
+            };
         }
 
         return new ApplyBatchOutcome { Changed = changed, Saved = saved };
@@ -535,60 +561,5 @@ public sealed partial class JobRunner
             HasMoreWork = false,
             ProcessedThisSlice = processed
         };
-    }
-    private JobError? SaveNow(JobRecord job, Document document, int cursor)
-    {
-        using var _scope = SmartConLogger.BeginScope("AgentJob", ("Method", "SaveNow"));
-
-        if (job.Spec.Options.SavePolicy == JobSavePolicy.Never)
-        {
-            return null;
-        }
-
-        try
-        {
-            if (document.IsModified)
-            {
-                document.Save();
-            }
-
-            Sync(_store.UpdateCursorAsync(job.JobId, cursor, DateTime.UtcNow, CancellationToken.None));
-            return null;
-        }
-        catch (Exception ex)
-        {
-            var error = JobErrors.SaveFailed(ex.GetType().Name + ": " + ex.Message);
-            Sync(_store.AppendEventAsync(
-                job.JobId,
-                JobEventTypes.SaveFailed,
-                "{\"cursor\":" + cursor + ",\"error\":\"" + ex.GetType().Name + "\"}",
-                CancellationToken.None));
-            SmartConLogger.Error(
-                "Save failed for job " + job.JobId.ToString("D") + ": " +
-                ex.GetType().Name + ": " + ex.Message +
-                " [Action: save the document manually, then resume the job]");
-            return error;
-        }
-    }
-
-    private void PersistUndoIntent(JobRecord job, int seq, string undoJson)
-    {
-        if (string.IsNullOrWhiteSpace(undoJson))
-        {
-            return;
-        }
-
-        Sync(_store.UpdateItemsAsync(
-            job.JobId,
-            new[]
-            {
-                new JobItemUpdate
-                {
-                    Seq = seq,
-                    State = JobItemState.Applying,
-                    UndoJson = undoJson
-                }
-            },
-            CancellationToken.None));
     }
 }
