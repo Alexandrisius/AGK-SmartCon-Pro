@@ -227,7 +227,10 @@ public sealed partial class AgentOrchestrator
             var allowCheckpoint = true;
             var toolCallCount = 0;
             var loopGuard = new LoopGuard();
+            var storms = new ToolStormTracker();
             var loopAborted = false;
+            var hostTimeoutStreak = 0;
+            var hostStalled = false;
 
             // No round or time cap: the turn runs until the model stops, the user
             // presses Stop (ct) or the loop guard aborts a repeating call pattern.
@@ -426,19 +429,18 @@ public sealed partial class AgentOrchestrator
                         }
                         else
                         {
-                            result = await ExecuteToolAsync(toolCall, ct).ConfigureAwait(false);
-                            var observed = loopGuard.ObserveResult(
-                                toolCall.Name, argumentsJson, result.Success, exempt);
-                            if (observed.WarnOnly && !result.Success)
-                            {
-                                SmartConLogger.Info(
-                                    "Agent loop guard warning: tool=" + toolCall.Name +
-                                    ", identicalErrors=" + observed.IdenticalErrors);
-                                if (!string.IsNullOrEmpty(observed.Hint))
-                                    result = result.WithWarnings(new[] { observed.Hint! });
-                            }
+                            var outcome = await ExecuteObservedToolAsync(
+                                loopGuard, storms, hostTimeoutStreak, toolCall, argumentsJson,
+                                exempt, round, ct).ConfigureAwait(false);
+                            result = outcome.Result;
+                            hostTimeoutStreak = outcome.HostTimeoutStreak;
+                            hostStalled = outcome.HostStopped;
                         }
                     }
+
+                    // Defense in depth (DB-01): the wire tool message carries
+                    // only tool_call_id, so the payload names its own tool.
+                    result = result.WithToolName(toolCall.Name);
 
                     if (workingState is not null)
                         AgentWorkingStateUpdater.ObserveToolResult(workingState, toolCall.Name, result);
@@ -483,32 +485,30 @@ public sealed partial class AgentOrchestrator
                         Details = AgentToolResultFormatter.Pretty(serializedResult)
                     });
 
-                    if (loopAborted)
+                    if (loopAborted || hostStalled)
                         break;
                 }
 
-                if (loopAborted)
+                if (loopAborted || hostStalled)
                 {
-                    var abortMessage =
-                        (LanguageManager.GetString("Agent_Status_LoopAborted")
-                         ?? "Stopped: repeated tool calls were detected") +
-                        " (loop_aborted).";
+                    var stopText = StoppedTurnText(hostStalled);
+                    var stopStatus = hostStalled ? HostNotRespondingStatus : "loop_aborted";
                     progress?.Report(new AgentProgress
                     {
                         Kind = AgentProgressKind.TurnCompleted,
-                        Text = abortMessage,
+                        Text = stopText,
                         Usage = usage,
                         ToolCallCount = toolCallCount
                     });
 
                     await WriteUsageAsync(
-                        conversationId, usage, "loop_aborted", turnStartedAt,
+                        conversationId, usage, stopStatus, turnStartedAt,
                         lastRequestId, estimatedPromptTokens, lastContextTokens, lastContextLimit, ct,
                         lastCompactionId).ConfigureAwait(false);
 
                     return new AgentTurnResult
                     {
-                        FinalText = abortMessage,
+                        FinalText = stopText,
                         ToolCallCount = toolCallCount,
                         Rounds = round,
                         Usage = usage

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SmartCon.Agent.Services.Decisions;
 using SmartCon.Agent.Services.Llm;
 using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
@@ -14,7 +15,7 @@ namespace SmartCon.Agent.Services.Tools;
 /// decision-model (JEV/pplx) router when enabled — so the agent can search the
 /// catalog once it understands the concrete sub-task.
 /// </summary>
-public sealed class FindToolsTool : IAgentTool
+public sealed partial class FindToolsTool : IAgentTool
 {
     private const string CatalogHint =
         "call load_tool_pack(pack=...) or load_tool_pack(tools=[...]) to enable; " +
@@ -112,18 +113,42 @@ public sealed class FindToolsTool : IAgentTool
 
         var lexical = ToolCardRouter.TopCandidates(state, rankable, 50);
 
+        // A card that carries too little of the query shares only common
+        // wording with it (C10-03): it is not a match, whatever its rank.
+        var coverage = ToolCardRouter.QueryCoverage(query, rankable);
+        bool IsMatch(AgentToolDefinition definition) =>
+            coverage.TryGetValue(definition.Name, out var share)
+            && share >= ToolCardRouter.MinQueryCoverage;
+
+        // The tool the query names is what the model asked for: it leads the
+        // answer even when ranking puts it below the limit (C1-04).
+        var named = ExactNameMatches(query, candidates);
+        var namedNames = new HashSet<string>(
+            named.Select(definition => definition.Name), StringComparer.Ordinal);
+        var lexicalMatched = lexical.Where(IsMatch).ToList();
+        var authority = RouterIsRelevanceAuthority(_router);
+        if (!authority && named.Count == 0 && lexicalMatched.Count == 0)
+            return NoMatchResult(lexical);
+
         var chosen = new List<AgentToolDefinition>(6);
-        if (rankable.Count > 0)
+        if (rankable.Count > 0 && (authority || named.Count > 0 || lexicalMatched.Count > 0))
         {
             var decision = await _router
                 .RouteAsync(state, rankable, 6, ct)
                 .ConfigureAwait(false);
             foreach (var definition in decision.Tools)
             {
-                if (!AgentToolPacks.IsAlwaysAvailable(definition.Name))
+                if (!AgentToolPacks.IsAlwaysAvailable(definition.Name)
+                    && !namedNames.Contains(definition.Name)
+                    && (authority || IsMatch(definition)))
+                {
                     chosen.Add(definition);
+                }
             }
         }
+
+        if (authority && named.Count == 0 && chosen.Count == 0 && lexicalMatched.Count == 0)
+            return NoMatchResult(lexical);
 
         var merged = new List<AgentToolDefinition>(limit + chosen.Count);
         var names = new HashSet<string>(StringComparer.Ordinal);
@@ -133,18 +158,24 @@ public sealed class FindToolsTool : IAgentTool
                 merged.Add(definition);
         }
 
+        foreach (var definition in named)
+            Add(definition);
+
         if (string.IsNullOrWhiteSpace(packName) && HasBulkIntent(state))
         {
             var startJob = rankable.FirstOrDefault(definition =>
                 string.Equals(definition.Name, StartJobName, StringComparison.Ordinal));
-            if (startJob is not null)
+            if (startJob is not null
+                && (authority || namedNames.Contains(startJob.Name) || IsMatch(startJob)))
+            {
                 Add(startJob);
+            }
         }
 
         foreach (var definition in chosen)
             Add(definition);
 
-        foreach (var definition in lexical)
+        foreach (var definition in lexicalMatched)
             Add(definition);
 
         var returned = merged.Take(limit).ToList();
@@ -161,7 +192,7 @@ public sealed class FindToolsTool : IAgentTool
         {
             return ToolResult.Ok(
                 JsonSerializer.SerializeToElement(payload),
-                "Returned " + returned.Count + " matching tool definition(s).");
+                "Returned " + returned.Count + " matching tool definition(s.");
         }
         catch (Exception ex)
         {
@@ -171,6 +202,7 @@ public sealed class FindToolsTool : IAgentTool
             return ToolResult.Fail("tool_failed", ex.Message);
         }
     }
+
 
     private ToolResult ExecuteListing(JsonElement args, AgentToolContext context)
     {
