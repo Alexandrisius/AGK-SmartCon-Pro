@@ -4,7 +4,8 @@ using RevitFamily = Autodesk.Revit.DB.Family;
 using SmartCon.Agent.Services.Storage;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces;
-using SmartCon.Core.Services.Interfaces.Agent;using SmartCon.IntegrationTests.Agent.Support;
+using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.IntegrationTests.Agent.Support;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Jobs;
@@ -84,6 +85,62 @@ public sealed partial class AgentFamilyJobBatchTests
         await Assert.That(events.IndexOf(JobEventTypes.RollbackStarted)).IsGreaterThanOrEqualTo(0);
         await Assert.That(events.IndexOf(JobEventTypes.RollbackCompleted)).IsGreaterThan(events.IndexOf(JobEventTypes.RollbackStarted));
         await Assert.That(events.Contains(JobEventTypes.Failed)).IsFalse();
+
+        TryDeleteDatabase(databasePath);
+    }
+
+    /// <summary>
+    /// Review r2, finding 1: rollbackOnError with the refusal on the FIRST unit
+    /// — nothing was applied, so there is nothing to undo. The job stops with
+    /// the plain "Nothing was applied" refusal instead of a RolledBack record
+    /// that claims "Rolled back 0 unit(s)".
+    /// </summary>
+    [Test]
+    public async Task Runner_DocumentRefusalInApplyFirstUnit_WithRollbackOnError_StopsWithoutRollback()
+    {
+        var databasePath = NewDatabase(out var store);
+        var jobId = StartRefusingPreview(store, refuseAtSeq: 99);
+
+        var applyRunner = NewRunner(store, new RefusingJobAction { UnitCount = 4, RefuseAtSeq = 1 });
+        var apply = applyRunner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "refusing_probe",
+                Mode = JobMode.Apply,
+                SpecJson = "{}",
+                PreviewDigest = await DigestOfAsync(store, jobId),
+                Options = Options(),
+                OptionsOverride = new JobOptionsOverride { RollbackOnError = true }
+            },
+            Doc);
+        await Assert.That(apply.Success).IsTrue();
+        var result = applyRunner.RunToCompletion(Doc, TimeSpan.FromMinutes(1));
+
+        // The refusal hit the first unit inside Start's inline slice, so the
+        // trailing RunToCompletion slice is Idle; the stored record is the
+        // source of truth here (same pattern as ProjectBusyInPreview below).
+        await Assert.That(result.State).IsEqualTo(JobState.Failed);
+
+        var job = await store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(job!.State).IsEqualTo(JobState.Failed);
+        await Assert.That(job.ErrorCode).IsEqualTo(JobErrorCodes.DocumentReadOnly);
+        await Assert.That(job.ErrorDetail!.Contains("Nothing was applied", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(job.ErrorDetail.Contains("Rolled back 0 unit(s)", StringComparison.Ordinal)).IsFalse();
+
+        var items = await store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(items.Single(item => item.Seq == 1).State).IsEqualTo(JobItemState.Failed);
+        await Assert.That(items.Single(item => item.Seq == 2).State).IsEqualTo(JobItemState.Previewed);
+        await Assert.That(items.Single(item => item.Seq == 4).State).IsEqualTo(JobItemState.Previewed);
+
+        var totals = JobJson.Deserialize<JobTotals>(job.TotalsJson)!;
+        await Assert.That(totals.Done).IsEqualTo(0);
+        await Assert.That(totals.Undone).IsEqualTo(0);
+        await Assert.That(totals.Failed).IsEqualTo(1);
+
+        var events = await EventTypesAsync(store, jobId);
+        await Assert.That(events.Contains(JobEventTypes.RollbackStarted)).IsFalse();
+        await Assert.That(events.Contains(JobEventTypes.RollbackCompleted)).IsFalse();
 
         TryDeleteDatabase(databasePath);
     }

@@ -8,7 +8,8 @@ public sealed partial class ExecutePlanTool
 {
     private static ToolResult ApplyResult(
         AgentPlanExecutionResult result,
-        bool digestAutoFilled)
+        bool digestAutoFilled,
+        IReadOnlyList<string> warnings)
     {
         var tool = SumToolReadBack(result);
         var verified = new List<string>(result.Verified);
@@ -78,20 +79,32 @@ public sealed partial class ExecutePlanTool
             verifiedTotal = verified.Count,
             mismatchesTotal = mismatches.Count,
             notVerifiableTotal = result.NotVerifiable.Count,
-            hint = BuildApplyHint(result, tool, digestAutoFilled)
+            warnings,
+            hint = BuildApplyHint(result, tool, digestAutoFilled, warnings)
         }, SerializerOptions);
 
         // "0 verified" on an apply without read-back expectations read as "checked
         // and confirmed nothing" — the honest wording is that verification was not
         // requested at all (C4-18). With mismatches the verified/mismatch line is
-        // always printed, whatever was declared (review r1 #1).
-        var verificationText = verificationRequested
-            ? verified.Count + " verified (" + tool.Verified + " tool-level), " +
-              mismatches.Count + " mismatch(es)" +
-              (result.NotVerifiable.Count > 0
-                  ? ", " + result.NotVerifiable.Count + " not verifiable"
-                  : string.Empty)
-            : "verification not requested";
+        // always printed, whatever was declared (review r1 #1). A read-back that
+        // ran but had nothing to compare says so instead of "0 verified"
+        // (review r2, WA-6).
+        var nothingCompared =
+            verificationRequested
+            && verified.Count == 0
+            && mismatches.Count == 0
+            && result.NotVerifiable.Count == 0
+            && result.ExpectationsChecked == 0
+            && tool.Expected == 0;
+        var verificationText = !verificationRequested
+            ? "verification not requested"
+            : nothingCompared
+                ? "read-back executed, nothing to compare"
+                : verified.Count + " verified (" + tool.Verified + " tool-level), " +
+                  mismatches.Count + " mismatch(es)" +
+                  (result.NotVerifiable.Count > 0
+                      ? ", " + result.NotVerifiable.Count + " not verifiable"
+                      : string.Empty);
 
         return ToolResult.Ok(
             payload,
@@ -106,9 +119,10 @@ public sealed partial class ExecutePlanTool
     private static string BuildApplyHint(
         AgentPlanExecutionResult result,
         ToolReadBackTotals tool,
-        bool digestAutoFilled)
+        bool digestAutoFilled,
+        IReadOnlyList<string> warnings)
     {
-        var parts = new List<string>();
+        var parts = new List<string>(warnings);
         if (digestAutoFilled)
         {
             parts.Add(
@@ -142,9 +156,18 @@ public sealed partial class ExecutePlanTool
 
         if (valueMismatches > 0)
         {
-            parts.Add(
-                "Read-back found mismatches. Review them and offer undo_last for the " +
-                "affected step.");
+            // Mismatches that only failed to find the object point at the path or
+            // the read-back arguments, not at a wrong value in the model: there is
+            // nothing to undo yet (review r2, N3).
+            var notFoundMismatches = result.Steps.Sum(step => step.NotFoundMismatchCount);
+            parts.Add(notFoundMismatches == valueMismatches
+                ? "Every mismatch is an object the read-back did not find: nothing was " +
+                  "compared, so there is nothing to undo yet. Fix the expectation path or " +
+                  "the readBackArguments (dry-run ids do not survive apply — address the " +
+                  "created object by name or by the id from steps[].items.created*) and " +
+                  "re-check with the read tool."
+                : "Read-back found mismatches. Review them and offer undo_last for the " +
+                  "affected step.");
         }
 
         if (failedReadBacks.Count > 0 || valueMismatches > 0)

@@ -165,12 +165,26 @@ public sealed partial class ExecutePlanTool
     }
 
     /// <summary>
+    /// Id keys our creating tools use for the object a <c>created</c> entry
+    /// describes, in a fixed priority order. A bare <c>created</c> block has no
+    /// entity in its name, and picking "the first *Id of the entry" made the
+    /// choice depend on the serialization order of the tool's arguments
+    /// (review r2, N6). Keys that reference other objects (levelId, templateId,
+    /// categoryId, genLevelId…) are never in this list.
+    /// </summary>
+    private static readonly string[] OwnIdKeysInPriorityOrder =
+        { "viewId", "scheduleId", "filterId", "sheetId", "familyId", "typeId", "materialId" };
+
+    /// <summary>
     /// The key under which a created entry carries the id of the object it
     /// created: <c>&lt;entity&gt;Id</c> for a block that names its entity
-    /// (createdViews → viewId), else <c>id</c>, else the first <c>*Id</c> key.
-    /// Only this key describes the created object: levelId, templateId and the
-    /// like point at objects that already existed and survive the apply
-    /// (review r1 #3).
+    /// (createdViews → viewId), else <c>id</c>, else the first of
+    /// <see cref="OwnIdKeysInPriorityOrder"/> the entry carries, else — when
+    /// the entry has exactly one <c>*Id</c> key — that key; with several
+    /// unknown <c>*Id</c> keys no id is picked and the entry is matched by name
+    /// alone. Only this key describes the created object: levelId, templateId
+    /// and the like point at objects that already existed and survive the
+    /// apply (review r1 #3).
     /// </summary>
     private static string? TryGetCreatedIdKey(JsonObject entry, string blockKey, out long? id)
     {
@@ -179,8 +193,6 @@ public sealed partial class ExecutePlanTool
         if (noun.Length > 1 && noun.EndsWith("s", StringComparison.OrdinalIgnoreCase))
             noun = noun.Substring(0, noun.Length - 1);
 
-        string? fallbackKey = null;
-        long? fallbackId = null;
         foreach (var pair in entry)
         {
             if (string.Equals(pair.Key, noun + "Id", StringComparison.OrdinalIgnoreCase)
@@ -189,16 +201,36 @@ public sealed partial class ExecutePlanTool
                 id = ReadId(pair.Value);
                 return pair.Key;
             }
+        }
 
-            if (fallbackKey is null && pair.Key.EndsWith("Id", StringComparison.Ordinal))
+        foreach (var candidate in OwnIdKeysInPriorityOrder)
+        {
+            foreach (var pair in entry)
             {
-                fallbackKey = pair.Key;
-                fallbackId = ReadId(pair.Value);
+                if (string.Equals(pair.Key, candidate, StringComparison.OrdinalIgnoreCase))
+                {
+                    id = ReadId(pair.Value);
+                    return pair.Key;
+                }
             }
         }
 
-        id = fallbackId;
-        return fallbackKey;
+        string? singleKey = null;
+        long? singleId = null;
+        foreach (var pair in entry)
+        {
+            if (!pair.Key.EndsWith("Id", StringComparison.Ordinal))
+                continue;
+
+            if (singleKey is not null)
+                return null;
+
+            singleKey = pair.Key;
+            singleId = ReadId(pair.Value);
+        }
+
+        id = singleId;
+        return singleKey;
     }
 
     private static long? ReadId(JsonNode? node) =>

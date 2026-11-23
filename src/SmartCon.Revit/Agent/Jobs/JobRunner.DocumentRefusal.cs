@@ -43,7 +43,9 @@ public sealed partial class JobRunner
     /// rollbackOnError after a document refusal in apply: the applied units are
     /// undone first and the rolled-back job is finalized with the refusal as its
     /// cause. Finalizing before the undo left the job Failed while its units were
-    /// in fact restored.
+    /// in fact restored. When the refusal hit the very first unit nothing was
+    /// applied, so there is nothing to roll back: the plain stop says "Nothing
+    /// was applied" instead of a "Rolled back 0 unit(s)" record (review r2, 1).
     /// </summary>
     private JobSliceResult RollbackAfterDocumentRefusal(
         JobRecord job,
@@ -52,11 +54,19 @@ public sealed partial class JobRunner
         int processed)
     {
         WarnDocumentRefusal(job, refusal);
-        var cause = DocumentRefusal(
-            refusal,
-            applying: true,
-            rolledBack: true,
-            Sync(_store.LoadAllItemsAsync(job.JobId, CancellationToken.None)));
+        var items = Sync(_store.LoadAllItemsAsync(job.JobId, CancellationToken.None));
+        if (items.All(item => item.State != JobItemState.Done))
+        {
+            return new JobSliceResult
+            {
+                JobId = job.JobId,
+                State = JobState.Failed,
+                ProcessedThisSlice = processed,
+                Error = StopForDocumentRefusal(job, refusal, applying: true)
+            };
+        }
+
+        var cause = DocumentRefusal(refusal, applying: true, rolledBack: true, items);
 
         return RollbackAfterError(job, document, cause, processed);
     }

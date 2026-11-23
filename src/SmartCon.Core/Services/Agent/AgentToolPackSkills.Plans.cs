@@ -61,7 +61,9 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
   отклоняется на валидации) — способ доказать, что шаг сделал заявленное: путь + ожидаемое
   значение читаются после шага. Несовпадение попадает в `mismatches[]`, но общий `success`
   остаётся true — **сверяйте `mismatches`, а не только `success`**. Если read-back не задан,
-  отчёт прямо скажет «verification not requested» — это не «проверено и пусто».
+  отчёт прямо скажет «verification not requested» — это не «проверено и пусто». Read-back
+  без ожиданий — «read-back executed, nothing to compare»: тул вызван, ни одно значение
+  не сверено. `readBackArguments` без `readBackTool` игнорируются — отчёт предупредит.
 - Пути `readBackExpectations.path` адресуются по данным read-тура: `views.byId[123].templateName`
   (`byId` матчит собственный id строки — `id`, `viewId`, `scheduleId`…, а не ссылочные
   `levelId`/`templateId`), `views.byName[View 1.2].templateName` (точка внутри скобок не

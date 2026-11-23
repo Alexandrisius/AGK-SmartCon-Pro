@@ -341,6 +341,131 @@ public sealed class AgentPlanExecutionTests : RevitApiTest
             .Cast<View>()
             .FirstOrDefault(view => string.Equals(view.Name, name, StringComparison.Ordinal));
 
+    /// <summary>
+    /// Seeds two view templates from the plan: one with every include on (it
+    /// controls "V/G Overrides Filters") and one with the filters include
+    /// detached. Both control visibility — the default of a fresh template.
+    /// </summary>
+    private (long TemplateWithFilters, long TemplateFiltersOff) SeedTemplates()
+    {
+        long withFilters = 0;
+        long filtersOff = 0;
+        _transactions!.RunInTransaction(Doc, "Seed plan templates", doc =>
+        {
+            var plan = GetView(_planId);
+
+            var first = plan.CreateViewTemplate();
+            var second = plan.CreateViewTemplate();
+            if (first is null || second is null)
+                return;
+
+            first.Name = "SC_Plan_Tpl_WithFilters";
+            second.Name = "SC_Plan_Tpl_FiltersOff";
+            second.SetNonControlledTemplateParameterIds(
+                new List<ElementId> { new ElementId(BuiltInParameter.VIS_GRAPHICS_FILTERS) });
+
+            withFilters = first.Id.GetValue();
+            filtersOff = second.Id.GetValue();
+        });
+
+        if (withFilters == 0 || filtersOff == 0)
+        {
+            Skip.Test("CreateViewTemplate не создал шаблон в этом шаблоне проекта");
+        }
+
+        return (withFilters, filtersOff);
+    }
+
+    private AgentPlanExecutor TemplateFilterPlanExecutor(long templateId) =>
+        new(
+            new TestToolRegistry(new IAgentTool[]
+            {
+                new ApplyViewTemplateTool(new StubRevitContext(Doc), _transactions!, _changeSets!),
+                new CreateViewFilterTool(new StubRevitContext(Doc), _transactions!, _changeSets!)
+            }),
+            new ImmediateAwaitableEvent(),
+            new FixedConfirmation());
+
+    private static AgentPlan TemplateThenFilterPlan(long viewId, long templateId) => new()
+    {
+        Goal = "Template the view, then add a per-view filter",
+        Steps = new[]
+        {
+            new AgentPlanStep
+            {
+                StepId = "tpl",
+                ToolName = "apply_view_template",
+                ArgumentsJson = @"{""items"":[{""viewId"":" + viewId +
+                                @",""templateId"":" + templateId + "}]}",
+            },
+            new AgentPlanStep
+            {
+                StepId = "flt",
+                ToolName = "create_view_filter",
+                ArgumentsJson =
+                    @"{""viewIds"":[" + viewId + @"],""name"":""SC_Plan_Filter""," +
+                    @"""categories"":[""OST_Walls""],""conditions"":[{""parameter"":" +
+                    @"""ALL_MODEL_INSTANCE_COMMENTS"",""op"":""eq"",""value"":""SC_Plan_X""}]," +
+                    @"""visibility"":""hide""}",
+                DependsOn = new[] { "tpl" }
+            }
+        }
+    };
+
+    /// <summary>
+    /// F1 × WA: the skill advice "apply the template first, then create the
+    /// filters" must work when the template does NOT include "V/G Overrides
+    /// Filters" — a template that only controls visibility does not stop a
+    /// filter step (the detector used to reject the plan).
+    /// </summary>
+    [Test]
+    public async Task Plan_TemplateThenViewFilter_TemplateSkipsFilters_AppliesBoth()
+    {
+        var (_, filtersOff) = SeedTemplates();
+        var executor = TemplateFilterPlanExecutor(filtersOff);
+
+        var result = await executor.ExecuteAsync(
+            TemplateThenFilterPlan(_planId, filtersOff),
+            new AgentPlanExecutionContext { DocumentId = AgentDocumentIdentity.GetDocumentId(Doc) },
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var view = GetView(_planId);
+        await Assert.That(view.ViewTemplateId.GetValue()).IsEqualTo(filtersOff);
+        var filters = view.GetFilters();
+        await Assert.That(filters.Count).IsEqualTo(1);
+        await Assert.That(view.GetFilterVisibility(filters.First())).IsFalse();
+    }
+
+    /// <summary>
+    /// F1 × WA: a template that DOES include "V/G Overrides Filters" owns the
+    /// filter list of its views — the plan is rejected up front with the two
+    /// workable paths named, instead of failing inside the filter step with
+    /// view_controlled_by_template.
+    /// </summary>
+    [Test]
+    public async Task Plan_TemplateThenViewFilter_TemplateControlsFilters_RejectedWithEscape()
+    {
+        var (withFilters, _) = SeedTemplates();
+        var executor = TemplateFilterPlanExecutor(withFilters);
+
+        var result = await executor.ExecuteAsync(
+            TemplateThenFilterPlan(_planId, withFilters),
+            new AgentPlanExecutionContext { DocumentId = AgentDocumentIdentity.GetDocumentId(Doc) },
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("plan_step_conflict");
+        await Assert.That(result.Message!.Contains("filters", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(result.Message.Contains(
+            "parameters=[\"filters\"], included=false", StringComparison.Ordinal)).IsTrue();
+        await Assert.That(result.Message.Contains("viewIds=[" + withFilters + "]", StringComparison.Ordinal)).IsTrue();
+
+        // Rejected before any step ran: the view keeps no template.
+        await Assert.That(GetView(_planId).ViewTemplateId)
+            .IsEqualTo(ElementId.InvalidElementId);
+    }
+
     private static AgentPlanStep RenameStep(string id, long viewId, string newName) =>
         new()
         {

@@ -125,6 +125,21 @@ public sealed class ExecutePlanReadBackOutcomeTests
     }
 
     [Fact]
+    public async Task MissingKeyAfterBySelector_NamesTheCollection_NotTheSelector()
+    {
+        // Review r2, N5: after types.byId[11] the row still belongs to 'types';
+        // the reason used to say "'byId' is a single row with id '11'".
+        var result = await Run(
+            """{"types":[{"typeId":11,"name":"Type A"}]}""",
+            new AgentPlanExpectation { Path = "types.byId[11].missingKey", Expected = "x" });
+
+        var mismatch = Assert.Single(result.Mismatches);
+        Assert.Contains("no key 'missingKey'", mismatch, StringComparison.Ordinal);
+        Assert.Contains("'types' is a single row with id '11'", mismatch, StringComparison.Ordinal);
+        Assert.DoesNotContain("'byId'", mismatch, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task MissingValueMapKey_IsMismatch()
     {
         // list_family_types only fills values{} for the parameter names it was
@@ -273,6 +288,22 @@ public sealed class ExecutePlanReadBackOutcomeTests
 
         Assert.Equal(1, result.Steps[0].VerifiedCount);
         Assert.Empty(result.Mismatches);
+    }
+
+    [Fact]
+    public async Task ById_SurvivesTheImpreciseSingularOfEsCollections()
+    {
+        // Review r2, N7: 'phases'/'cases' run through the "es"-branch of
+        // Singular and yield no nounId — the row must still resolve through
+        // its plain id key / the first *Id fallback.
+        var result = await Run(
+            """{"phases":[{"id":3,"name":"New Construction"}],"cases":[{"caseId":4,"name":"Case A"}]}""",
+            new AgentPlanExpectation { Path = "phases.byId[3].name", Expected = "New Construction" },
+            new AgentPlanExpectation { Path = "cases.byId[4].name", Expected = "Case A" });
+
+        Assert.Equal(2, result.Steps[0].VerifiedCount);
+        Assert.Empty(result.Mismatches);
+        Assert.Empty(result.NotVerifiable);
     }
 
     // ── Finding 11: expectations without a read-back tool ────────────────────

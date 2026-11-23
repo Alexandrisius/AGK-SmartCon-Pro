@@ -66,6 +66,13 @@ public sealed class AgentPlanStepResult
     public int MismatchCount { get; set; }
 
     /// <summary>
+    /// Mismatches whose path addressed nothing in the read-back payload (no
+    /// such row or key): nothing to review against the model or undo — the
+    /// path or the read-back arguments are what needs fixing (review r2, N3).
+    /// </summary>
+    public int NotFoundMismatchCount { get; set; }
+
+    /// <summary>
     /// Expectations whose path form the resolver does not understand: nothing
     /// was compared, so they are neither verified nor mismatched (C4-10).
     /// </summary>

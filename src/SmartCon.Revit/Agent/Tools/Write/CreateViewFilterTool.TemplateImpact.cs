@@ -41,6 +41,10 @@ public sealed partial class CreateViewFilterTool
 
         public void Publish(WriteOutcome outcome)
         {
+            // One accumulated list for every changed template: assigning inside
+            // the loop kept only the last template's views in the data (the
+            // warnings covered all of them) — review F1-R1.
+            var replaced = new List<object>();
             foreach (var templateId in Changed.OrderBy(id => id))
             {
                 if (!_targets.TryGetValue(templateId, out var template))
@@ -59,7 +63,7 @@ public sealed partial class CreateViewFilterTool
                 if (losingViews.Count == 0)
                     continue;
 
-                outcome.Data["ownFiltersReplaced"] = losingViews
+                replaced.AddRange(losingViews
                     .Take(MaxReportedViews)
                     .Select(entry => new
                     {
@@ -67,9 +71,11 @@ public sealed partial class CreateViewFilterTool
                         viewName = entry.ViewName,
                         templateId,
                         filters = entry.Filters
-                    })
-                    .ToList();
+                    }));
             }
+
+            if (replaced.Count > 0)
+                outcome.Data["ownFiltersReplaced"] = replaced;
         }
     }
 }

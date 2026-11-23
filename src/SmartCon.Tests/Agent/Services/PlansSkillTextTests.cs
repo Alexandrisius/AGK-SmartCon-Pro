@@ -64,6 +64,18 @@ public sealed class PlansSkillTextTests
     }
 
     [Fact]
+    public void PlansSkill_DocumentsReadBackWithoutExpectations_AndIgnoredArguments()
+    {
+        // Review r2, WA-6/WA-7: a read-back that ran without expectations is
+        // not "verified" ("nothing to compare"), and readBackArguments without
+        // a readBackTool are ignored with a warning — the skill states both.
+        Assert.Contains("read-back executed, nothing to compare", Skill, StringComparison.Ordinal);
+        Assert.Contains(
+            "readBackArguments` без `readBackTool` игнорируются",
+            Skill, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PlansSkill_DocumentsExpectedChangesCounter_AfterTheDedupe()
     {
         // C7-04 + ORCH-7 (review r1 #5): the number to promise is the step

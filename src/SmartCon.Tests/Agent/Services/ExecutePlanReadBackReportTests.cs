@@ -180,10 +180,12 @@ public sealed class ExecutePlanReadBackReportTests
     }
 
     [Fact]
-    public async Task Apply_ReadBackExecutedWithoutExpectations_ReportsVerified()
+    public async Task Apply_ReadBackExecutedWithoutExpectations_ReportsNothingToCompare()
     {
         // A read-back tool was called (no expectations declared): verification
-        // was requested, so the message must not claim otherwise.
+        // was requested, so the message must not claim otherwise — but nothing
+        // was compared either, so it must not count as verified either
+        // (review r2, WA-6: it used to say "1 verified").
         var reader = new ScriptedTool(
             "get_schedule_definition",
             AgentToolRisk.Read,
@@ -199,7 +201,14 @@ public sealed class ExecutePlanReadBackReportTests
 
         Assert.True(result.Success);
         Assert.DoesNotContain("verification not requested", result.Message, StringComparison.Ordinal);
-        Assert.Contains("1 verified", result.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("verified", result.Message, StringComparison.Ordinal);
+        Assert.Contains("read-back executed, nothing to compare", result.Message, StringComparison.Ordinal);
+
+        var planReadBack = result.Data!.Value.GetProperty("planReadBack");
+        Assert.Equal(1, planReadBack.GetProperty("executedSteps").GetInt32());
+        Assert.Equal(0, planReadBack.GetProperty("verified").GetInt32());
+        Assert.Equal(0, result.Data.Value.GetProperty("verifiedTotal").GetInt32());
+        Assert.Equal(0, result.Data.Value.GetProperty("verified").GetArrayLength());
     }
 
     [Fact]
@@ -235,5 +244,121 @@ public sealed class ExecutePlanReadBackReportTests
         Assert.Equal(2, planReadBack.GetProperty("toolVerified").GetInt32());
         Assert.Equal(2, result.Data.Value.GetProperty("steps")[0]
             .GetProperty("toolReadBack").GetProperty("verified").GetInt32());
+    }
+
+    [Fact]
+    public async Task Apply_ReadBackFailed_NamesTheObjectTheApplyCreated()
+    {
+        // ORCH-6: the read-back failed on a dry-run id that was rolled back —
+        // the mismatch must name the object the apply really created. Since the
+        // S1 package create_schedule/clone_schedule answer with a
+        // created{scheduleId,name} block, the diagnostics picks it up; this
+        // pins that contract on the real response shape (review r2, N1).
+        var tool = CreateTool(ScheduleWriter(), FailingReader());
+
+        var result = await ApplyAsync(tool, PlanWithReadBack.Replace("READER", "get_schedule_definition"));
+
+        var mismatches = result.Data!.Value.GetProperty("mismatches");
+        var line = Assert.Single(mismatches.EnumerateArray()).GetString()!;
+        Assert.Contains("read-back failed (schedule_not_found)", line, StringComparison.Ordinal);
+        Assert.Contains("created 'Report' (id 1733617)", line, StringComparison.Ordinal);
+        Assert.Contains("dry-run ids were rolled back", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Apply_AllMismatchesNotFound_HintAdvisesFixingThePath_NotUndo()
+    {
+        // C9-04 shape: the value was written but never read back — the path
+        // addressed no row. Advising undo_last there rolls back a correct
+        // change; the hint must point at the path or the read-back arguments
+        // instead (review r2, N3).
+        var reader = new ScriptedTool(
+            "get_schedule_definition",
+            AgentToolRisk.Read,
+            supportsDryRun: false,
+            handler: _ => ToolResult.Ok(
+                Parse("""{"types":[{"typeId":10,"name":"Type A"}]}"""),
+                "read"),
+            schema: ReadSchema);
+        var tool = CreateTool(ScheduleWriter(), reader);
+        var plan = PlanWithReadBack
+            .Replace("READER", "get_schedule_definition")
+            .Replace("\"path\":\"sortGroupFieldCount\"", "\"path\":\"types.byId[11].values.byName[Width]\"");
+
+        var result = await ApplyAsync(tool, plan);
+
+        Assert.True(result.Success);
+        var hint = result.Data!.Value.GetProperty("hint").GetString()!;
+        Assert.Contains("nothing to undo", hint, StringComparison.Ordinal);
+        Assert.Contains("readBackArguments", hint, StringComparison.Ordinal);
+        Assert.DoesNotContain("undo_last", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Apply_ValueMismatchAmongNotFound_HintStillOffersUndo()
+    {
+        // A real differing value next to a missing object keeps the undo
+        // advice: only the all-NotFound case switches the hint.
+        var reader = new ScriptedTool(
+            "get_schedule_definition",
+            AgentToolRisk.Read,
+            supportsDryRun: false,
+            handler: _ => ToolResult.Ok(
+                Parse("""{"sortGroupFieldCount":1,"types":[{"typeId":10,"name":"Type A"}]}"""),
+                "read"),
+            schema: ReadSchema);
+        var tool = CreateTool(ScheduleWriter(), reader);
+        var plan = PlanWithReadBack
+            .Replace("READER", "get_schedule_definition")
+            .Replace(
+                "\"readBackExpectations\":[{\"path\":\"sortGroupFieldCount\",\"expected\":\"2\"}]",
+                "\"readBackExpectations\":[" +
+                "{\"path\":\"sortGroupFieldCount\",\"expected\":\"2\"}," +
+                "{\"path\":\"types.byId[11].values.byName[Width]\",\"expected\":\"1200 mm\"}]");
+
+        var result = await ApplyAsync(tool, plan);
+
+        Assert.True(result.Success);
+        var hint = result.Data!.Value.GetProperty("hint").GetString()!;
+        Assert.Contains("undo_last", hint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Apply_ReadBackArgumentsWithoutTool_WarnsTheyWereIgnored()
+    {
+        // WA-7: readBackArguments without a readBackTool and without
+        // expectations used to be dropped silently — the report must warn.
+        var tool = CreateTool(ScheduleWriter());
+        var plan = PlanWithoutReadBack.Replace(
+            "\"arguments\":{\"items\":[1]}",
+            "\"arguments\":{\"items\":[1]},\"readBackArguments\":{\"scheduleId\":1733593}");
+
+        var result = await ApplyAsync(tool, plan);
+
+        Assert.True(result.Success);
+        var warnings = result.Data!.Value.GetProperty("warnings");
+        var warning = Assert.Single(warnings.EnumerateArray()).GetString()!;
+        Assert.Contains("readBackArguments ignored: no readBackTool", warning, StringComparison.Ordinal);
+        Assert.Contains("Step '1'", warning, StringComparison.Ordinal);
+        Assert.Contains("readBackArguments ignored", result.Data.Value.GetProperty("hint").GetString()!,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Apply_ReadBackArgumentsWithoutToolButEmpty_NoWarning()
+    {
+        // An explicitly empty readBackArguments object is not a lost
+        // verification — no warning.
+        var tool = CreateTool(ScheduleWriter());
+        var plan = PlanWithoutReadBack.Replace(
+            "\"arguments\":{\"items\":[1]}",
+            "\"arguments\":{\"items\":[1]},\"readBackArguments\":{}");
+
+        var result = await ApplyAsync(tool, plan);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.Data!.Value.GetProperty("warnings").GetArrayLength());
+        Assert.DoesNotContain("readBackArguments ignored", result.Data.Value.GetProperty("hint").GetString()!,
+            StringComparison.Ordinal);
     }
 }

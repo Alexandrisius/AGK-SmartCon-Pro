@@ -403,7 +403,6 @@ public sealed partial class AgentPlanExecutor
                 continue;
             }
 
-            var stepMismatch = false;
             result.ExpectationsChecked = step.ReadBackExpectations.Count;
             foreach (var expectation in step.ReadBackExpectations)
             {
@@ -427,8 +426,9 @@ public sealed partial class AgentPlanExecutor
                     || actual is null
                     || !string.Equals(actual, expectation.Expected, StringComparison.Ordinal))
                 {
-                    stepMismatch = true;
                     result.MismatchCount++;
+                    if (!resolution.Resolved)
+                        result.NotFoundMismatchCount++;
                     mismatches.Add(step.StepId + ": " + expectation.Path + " expected '" +
                                    expectation.Expected + "', actual '" + (actual ?? "null") + "'" +
                                    (resolution.Resolved
@@ -443,8 +443,9 @@ public sealed partial class AgentPlanExecutor
                 }
             }
 
-            if (!stepMismatch && step.ReadBackExpectations.Count == 0)
-                verified.Add(step.StepId + ": read-back executed");
+            // A read-back that ran without expectations compared nothing: it is
+            // reported as "read-back executed, nothing to compare" by the apply
+            // report, never counted as verified (review r2, WA-6).
         }
 
         return (verified, mismatches, notVerifiable);

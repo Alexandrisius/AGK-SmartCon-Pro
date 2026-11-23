@@ -423,4 +423,78 @@ public sealed class AgentViewTemplateFilterTests : RevitApiTest
         await Assert.That(result.Success).IsFalse();
         await Assert.That(result.ErrorCode).IsEqualTo("view_controlled_by_template");
     }
+
+    /// <summary>
+    /// Review F1-R1: create_view_filter writing the filter into TWO
+    /// filter-controlling templates — the machine-readable ownFiltersReplaced
+    /// must keep the views of both templates, not only of the last one.
+    /// </summary>
+    [Test]
+    public async Task CreateViewFilter_TwoFilterControllingTemplates_ReportsBothInOwnFiltersReplaced()
+    {
+        long template1 = 0;
+        long template2 = 0;
+        long view2Id = 0;
+        long filterDId = 0;
+        _transactions!.RunInTransaction(Doc, "Seed second template/view pair", doc =>
+        {
+            var view2 = ModelSeed.CreateViewPlanChecked(doc, ElementIdCompat.Create(_levelId), "SC_TF_Plan2");
+            view2Id = view2.Id.GetValue();
+
+            var filterD = ParameterFilterElement.Create(
+                doc, "SC_TF_D", new List<ElementId> { new ElementId(BuiltInCategory.OST_Walls) });
+            filterDId = filterD.Id.GetValue();
+
+            // Template 1 reuses the seeded filter-controlling template; template 2
+            // is created from the second view (its filter list at creation is [A],
+            // include on).
+            view2.AddFilter(new ElementId(_filterAId));
+            var second = view2.CreateViewTemplate();
+            view2.RemoveFilter(new ElementId(_filterAId));
+            if (second is null)
+                return;
+
+            second.Name = "SC_TF_Template_Second";
+            template2 = second.Id.GetValue();
+            template1 = _templateWithFiltersId;
+        });
+        if (template2 == 0)
+        {
+            Skip.Test("CreateViewTemplate не создал шаблон в этом шаблоне проекта");
+        }
+
+        _transactions.RunInTransaction(Doc, "Assign templates and own filters", doc =>
+        {
+            GetView(_viewId).ViewTemplateId = ElementIdCompat.Create(template1);
+            GetView(view2Id).ViewTemplateId = ElementIdCompat.Create(template2);
+        });
+        AddOwnFilter("SC_TF_B");
+        _transactions.RunInTransaction(Doc, "Own filter on view 2", doc =>
+            GetView(view2Id).AddFilter(ElementIdCompat.Create(filterDId)));
+
+        var tool = new CreateViewFilterTool(new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var result = Run(tool,
+            "{\"viewIds\":[" + template1 + "," + template2 + "],\"name\":\"SC_TF_Shared\"," +
+            "\"categories\":[\"OST_Walls\"]," +
+            "\"conditions\":[{\"parameter\":\"ALL_MODEL_INSTANCE_COMMENTS\"," +
+            "\"op\":\"eq\",\"value\":\"SC_TF_X\"}],\"visibility\":\"hide\",\"dryRun\":false}");
+
+        await Assert.That(result.Success).IsTrue();
+
+        var replaced = Data(result).GetProperty("ownFiltersReplaced");
+        await Assert.That(replaced.GetArrayLength()).IsEqualTo(2);
+        await Assert.That(replaced[0].GetProperty("viewId").GetInt64()).IsEqualTo(_viewId);
+        await Assert.That(replaced[0].GetProperty("templateId").GetInt64()).IsEqualTo(template1);
+        await Assert.That(replaced[0].GetProperty("filters")[0].GetString()).IsEqualTo("SC_TF_B");
+        await Assert.That(replaced[1].GetProperty("viewId").GetInt64()).IsEqualTo(view2Id);
+        await Assert.That(replaced[1].GetProperty("templateId").GetInt64()).IsEqualTo(template2);
+        await Assert.That(replaced[1].GetProperty("filters")[0].GetString()).IsEqualTo("SC_TF_D");
+
+        var warnedFirst = result.Warnings.Any(w =>
+            w.Contains("SC_TF_Template_WithFilters", StringComparison.Ordinal));
+        var warnedSecond = result.Warnings.Any(w =>
+            w.Contains("SC_TF_Template_Second", StringComparison.Ordinal));
+        await Assert.That(warnedFirst).IsTrue();
+        await Assert.That(warnedSecond).IsTrue();
+    }
 }

@@ -132,6 +132,48 @@ public sealed class ExecutePlanItemsProjectionTests
     }
 
     [Fact]
+    public void Preview_OwnIdPrefix_DoesNotDependOnKeyOrder()
+    {
+        // Review r2, N6: the same created entry with the reference id serialized
+        // FIRST — the own-id prefix must still land on scheduleId, not on the
+        // first *Id in document order (it used to produce previewCategoryId).
+        const string payload =
+            """
+            {"dryRun":true,
+             "changed":[{"id":777,"name":"Report","newValue":"Report"}],
+             "skipped":[],"failed":[],"total":1,"affected":1,
+             "created":{"name":"Report","categoryId":55,"scheduleId":777}}
+            """;
+
+        var items = PreviewItems(Writer("clone_schedule", payload), "clone_schedule");
+        var created = items.GetProperty("created");
+
+        Assert.Equal(new[] { "name", "categoryId", "previewScheduleId" }, Keys(created));
+        Assert.Equal(777, created.GetProperty("previewScheduleId").GetInt64());
+        Assert.Equal(55, created.GetProperty("categoryId").GetInt64());
+    }
+
+    [Fact]
+    public void Preview_OwnIdPrefix_UnambiguousSingleUnknownIdKey()
+    {
+        // An entry whose only *Id key is not in the known own-id list: the
+        // single key is still the created object's id.
+        const string payload =
+            """
+            {"dryRun":true,
+             "changed":[{"id":42,"name":"Zone","newValue":"Zone"}],
+             "skipped":[],"failed":[],"total":1,"affected":1,
+             "created":{"zoneId":42,"name":"Zone","comment":"ref"}}
+            """;
+
+        var items = PreviewItems(Writer("write_tool", payload), "write_tool");
+        var created = items.GetProperty("created");
+
+        Assert.Equal(new[] { "previewZoneId", "name", "comment" }, Keys(created));
+        Assert.Equal(42, created.GetProperty("previewZoneId").GetInt64());
+    }
+
+    [Fact]
     public async Task ApplyReport_NeverPrefixesIds()
     {
         const string payload =
