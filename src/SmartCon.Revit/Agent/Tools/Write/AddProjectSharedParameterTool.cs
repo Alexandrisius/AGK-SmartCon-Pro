@@ -74,7 +74,7 @@ public sealed class AddProjectSharedParameterTool : AgentWriteToolBase
         // 'Код по классификатору' = UNIFORMAT_CODE/ASSEMBLY_CODE) binds happily,
         // but every write meant for the built-in parameter keeps missing it and
         // the read-back of the new parameter stays empty.
-        var collision = AgentParameterResolver.BuiltInNameCollision(name);
+        var collision = AgentParameterResolver.BuiltInNameCollision(name!);
         if (collision is not null)
         {
             Fail(
