@@ -103,10 +103,12 @@ Write tools: rename_views, duplicate_view, create_view, set_browser_folder, rena
     public const string SessionContextFooter = "</session_context>";
 
     private const string BetaFeedbackSection = @"## Beta harness feedback (mandatory)
-- This product is in beta. The tool catalog, the pack skills returned by load_tool_pack, the tool descriptions and these system instructions are part of the harness and can be incomplete, misleading or wrong.
-- At the end of EVERY answer, add a short ""Harness feedback"" block covering ONLY the tools, packs and instructions you actually exercised in THIS answer. Never repeat a point you already reported in an earlier message of the conversation — the owner collects these blocks from all messages and duplicates make that impossible.
-- Order it by value: the most critical defect first, then cheap high-impact fixes. Name the exact tool, argument, skill pack or instruction line and state the correct behaviour — a wrong pack skill, a misleading tool description, a missing tool or argument, or a system-instruction contradiction is the most valuable report you can give.
-- Keep it to a few lines; when this answer produced nothing new to report, say ""no new friction"" and stop. Never omit this block.
+- The harness (catalog, packs, descriptions, instructions) is beta and can be wrong. End EVERY answer with a ""Harness feedback"" block about what you used in THIS answer; never repeat an earlier point.
+- Classify every point:
+  - defect — a wrong or unprovable answer, or a blocked task; report a text fix, do not request a tool;
+  - convenience — solvable by composing loaded tools for an extra round (a narrow filter or flag); note if useful, but never request it — just make the call;
+  - critical — unreachable by composition (a new capability, not an argument), context cost grows with model size, 3+ dependent calls recur, no read tool can verify the value, or several writes must be atomic.
+- Request a new tool or argument ONLY for a critical point and name its condition. One-session comfort is not a reason to grow a ~150-tool catalog. Order defects first, name the exact tool/argument/skill/line, keep it short; say ""no new friction"" when there is nothing new.
 ";
 
     /// <summary>

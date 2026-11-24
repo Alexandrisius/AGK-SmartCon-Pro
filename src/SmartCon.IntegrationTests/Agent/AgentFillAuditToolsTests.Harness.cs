@@ -140,4 +140,16 @@ public sealed partial class AgentFillAuditToolsTests
         await Assert.That(family.GetProperty("sample").GetArrayLength())
             .IsGreaterThanOrEqualTo(1);
     }
+
+    [Test]
+    public async Task FindFamiliesWithParameter_DescriptionDistinguishesCounters()
+    {
+        var tool = new FindFamiliesWithParameterTool(new StubRevitContext(Doc));
+        var description = tool.Definition.Description;
+
+        await Assert.That(description)
+            .Contains("matchedParameterCount counts distinct matched parameter NAMES");
+        await Assert.That(description)
+            .Contains("matchedTypeCount counts type-level matches");
+    }
 }

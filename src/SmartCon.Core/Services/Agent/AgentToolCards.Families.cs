@@ -172,7 +172,10 @@ public static partial class AgentToolCards
                 "matchedParameterCount, sample[]; fields[] проецирует ключи строки " +
                 "(например familyId, familyName, matchedParameterCount, sample) — полный " +
                 "список на сотни семейств влезает в один вызов; includeInstanceParameters=true — " +
-                "instance-параметры размещённых экземпляров.",
+                "instance-параметры размещённых экземпляров. matchedParameterCount — число " +
+                "уникальных имён параметров, matchedTypeCount — число совпадений на уровне " +
+                "типов (тип + имя параметра; тип с двумя совпавшими именами считается " +
+                "дважды); счётчики не взаимозаменяемы.",
             WhenToUse =
                 "Когда нужно быстро найти семейства с параметром заказчика/ФОП, посчитать " +
                 "сколько семейств на PREFIX_/BP_/BIM_, подготовить миграцию на новый ФОП. " +
