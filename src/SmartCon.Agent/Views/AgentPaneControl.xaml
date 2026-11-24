@@ -346,7 +346,9 @@
                                     BorderThickness="2,0,0,0">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled"
-                                              MaxHeight="180">
+                                              MaxHeight="180"
+                                              behaviors:AutoScrollToEndBehavior.Text="{Binding ReasoningText}"
+                                              behaviors:AutoScrollToEndBehavior.Follow="{Binding IsReasoningStreaming}">
                                     <TextBlock Text="{Binding ReasoningText}"
                                                TextWrapping="Wrap"
                                                FontSize="11"
