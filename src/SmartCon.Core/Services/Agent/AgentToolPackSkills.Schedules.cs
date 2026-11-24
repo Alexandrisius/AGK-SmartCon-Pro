@@ -14,16 +14,17 @@ public static partial class AgentToolPackSkills
 ### Карта тулов
 - `list_schedules` — список: `categories`, `nameContains`, `includeTemplates`, `fields`.
   `fieldCount` = все поля, `fields[]` — видимые; пустые — `emptySchedules`; дубли по
-  определению (поля+фильтры+сортировка) — `duplicateGroups` (одинаковые колонки с разными
-  фильтрами/сортировкой — не дубли).
+  определению — `duplicateGroups`. `isMulticategory` — сквозная (у неё `categoryName` null;
+  null сам по себе не доказывает).
 - `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`,
   `includeHidden` (скрытые колонки с выборками значений). 0 строк под фильтром со
   значением → предупреждение «проверь значение фильтра».
 - `get_schedule_definition` — структура: поля (у общих — `guid` + `parameterName`, у built-in —
-  имя; у каждого `heading`, `columnWidthMm`, `totalsDisplay`, `hidden`, `scope` — область для
-  write-тулов), сортировка/группировка с флагами, фильтры (фазные — `phaseFilters`,
-  ссылки — `valueName`), стиль (`stripedRows`, текстовые стили, `showTitle`) и `placements[]`
-  (лист/точка/поворот) + `placedOnSheet`/`sheetNumbers`.
+  имя; у каждого `heading`, `columnWidthMm`, `totalsDisplay`, `hidden`, `fieldType`, `scope`),
+  сортировка/группировка с флагами, фильтры (фазные — `phaseFilters`,
+  ссылки — `valueName`), стиль и `placements[]` (лист/точка/поворот) +
+  `isMulticategory`/`placedOnSheet`/`sheetNumbers`. `scope` — уровень для write-тулов: у
+  built-in `fieldType` = `scope`, у общих `fieldType` всегда Instance.
 - `create_schedule` — `category` (OST-имя / русское / id / `multicategory` — сквозная по
   категориям, поля только общие), `name`, `fields` (0..15), `itemized`; dry-run id — PROVISIONAL.
 - `add_schedule_field` / `remove_schedule_field` — поля (1..15) по отображаемым именам; undo
@@ -38,7 +39,8 @@ public static partial class AgentToolPackSkills
 - `set_schedule_sort` — сортировка (0..4) и `itemized`; флаги группы
   `showHeader/showFooter/showBlankLine`.
 - `set_schedule_field_format` — заголовки и ширины: `fields[{field,heading?,widthMm?}]` (мм;
-  вычисляемым колонкам ширины недоступны — `field_not_formatable`).
+  вычисляемым колонкам ширины недоступны — `field_not_formatable`). `changed[]` — только
+  фактические изменения; no-op — в `detail`/`skipped[]`.
 - `set_schedule_style` — `stripedRows`/`useStripedRowsOnSheets` (2021+) и текстовые стили
   body/header/title.
 - `rename_schedule` — переименовать (шаг архива: освободить имя старой); имя должно быть свободно.
@@ -46,15 +48,13 @@ public static partial class AgentToolPackSkills
 - `move_schedule_on_sheet` — переместить (`instanceId|лист+спецификация`, мм) и/или повернуть.
 - `remove_schedule_from_sheet` — снять вынос (спецификация остаётся); undo возвращает точку и
   поворот.
-- `clone_schedule` — точный аналог ведомости на других параметрах: `fieldMapping[{sourceField,
+- `clone_schedule` — аналог ведомости на других параметрах: `fieldMapping[{sourceField,
   targetGuid|targetField}]` (guid — из `get_schedule_definition`), переносит порядок/заголовки/
-  ширины/скрытость, фильтры, сортировку с флагами, итоги и стиль; колонки без аналога —
-  `skippedFields`. Составные колонки (CombinedParameter) адресуются по имени (GUID нет) и
-  клонируются как обычные; фильтр/сортировка по замапленной колонке переезжают на цель.
-  Одна спека за вызов; `created{}` в dry-run PROVISIONAL.
-- `delete_schedules` — удаление: `scheduleIds` и/или `scheduleNames` (суммарно ≤50),
-  `confirmNames`. Удаление спецификации с листа убирает только `ScheduleSheetInstance`;
-  удаление самой спецификации — `delete_schedules`.
+  ширины/скрытость, фильтры, сортировку, итоги и стиль; колонки без аналога — `skippedFields`;
+  составные (CombinedParameter) — по имени; фильтр/сортировка переезжают на цель. Одна спека
+  за вызов; `created{}` PROVISIONAL.
+- `delete_schedules` — `scheduleIds`/`scheduleNames` (≤50) + `confirmNames`; снятие с листа
+  убирает только instance, сама спека — `delete_schedules`.
 
 ### Кухня Revit
 - `ViewSchedule` — вид, но не `ViewSheet`: без вьюпорта, на лист ставится `ScheduleSheetInstance`.

@@ -29,16 +29,18 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
         SupportsDryRun = false,
         Description =
             "Reads the definition of one schedule by scheduleId or exact scheduleName: " +
-            "category, key-schedule/itemized flags, fields (name, heading, hidden, calculated, " +
-            "field type, scope, shared parameter guid and parameterName, columnWidthMm and the " +
-            "totalsDisplay mode), filters (field, operator, value), sorting/grouping fields " +
-            "with the group decoration flags, the table style (stripedRows, " +
-            "useStripedRowsOnSheets, body/header/title text type names, showTitle) and " +
-            "placements[] (sheetId, sheetNumber, xMm, yMm, rotation of every " +
-            "ScheduleSheetInstance), plus placedOnSheet/sheetNumbers. fields[].scope is " +
-            "instance or type: the level the field's parameter lives on, i.e. the scope= value " +
-            "the write tools expect. Pass that scope, not fieldType: fieldType reports Instance " +
-            "for every shared parameter whether it is instance- or type-bound. scope is null " +
+            "category, key-schedule/itemized/multicategory flags, fields (name, heading, hidden, " +
+            "calculated, field type, scope, shared parameter guid and parameterName, " +
+            "columnWidthMm and the totalsDisplay mode), filters (field, operator, value), " +
+            "sorting/grouping fields with the group decoration flags, the table style " +
+            "(stripedRows, useStripedRowsOnSheets, body/header/title text type names, " +
+            "showTitle) and placements[] (sheetId, sheetNumber, xMm, yMm, rotation of every " +
+            "ScheduleSheetInstance), plus isMulticategory and placedOnSheet/sheetNumbers. " +
+            "fields[].scope is instance or type: the level the field's parameter lives on, " +
+            "i.e. the scope= value the write tools expect. Pass that scope, not fieldType: " +
+            "for a built-in field fieldType is the real Revit kind (Instance or ElementType) " +
+            "and agrees with scope; for a shared parameter it is always Instance whether it " +
+            "is instance- or type-bound. scope is null " +
             "when the level does not apply (a calculated, room or material field) or cannot be " +
             "established yet (a family parameter that is not bound in the project and has no " +
             "element to ask, or one bound to types in some families and to instances in " +
@@ -238,6 +240,9 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             ["placements"] = placements,
             ["categoryId"] = CategoryId(definition),
             ["categoryName"] = CategoryName(doc, definition),
+            ["isMulticategory"] = SafeBoolOrNull(() =>
+                definition.CategoryId is null
+                || definition.CategoryId == ElementId.InvalidElementId),
             ["isKeySchedule"] = SafeBool(() => definition.IsKeySchedule),
             ["isItemized"] = SafeBool(() => definition.IsItemized),
             ["isFilteredBySheet"] = SafeBool(() => definition.IsFilteredBySheet),

@@ -146,7 +146,7 @@ P.6–P.9 (P2) — отдельной сессией.
 | **H3** | Policy engine и атомарные планы | P2 | `backlog` | #301 | 7 | B, E; H3.4 — commitOnMatch. |
 | **H4** | Observability & eval v2 | P2 | `in-progress` | #302 | 7 | H4.5 реализована, ждёт ручной приёмки; H4.7 закрыта (2026-11-24); H4.6 (объективность бенчмарка) — backlog. |
 | **V** | Agent на Revit 2019–2022: совместимость параметров | P2 | `backlog` | #397 | 2 | Бета 2023+ принята; R23 отделён от R21. |
-| **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `in-progress` | #303 | 5 | A–E стабильны; H5.5 (reasoning stream + сворачивание work) реализована, ждёт ручной приёмки. |
+| **H5** | UX и расширяемость: steering, timeline, MCP | P3 | `in-progress` | #303 | 5 | A–E стабильны; H5.5 (reasoning stream + сворачивание work) реализована, ждёт ручной приёмки; повторная проверка 2026-11-24 добавила автопрокрутку тела reasoning. |
 | **H6** | Vector retrieval — только по метрике | P3 | `backlog` | #304 | 2 | H1/H1b; каталог должен вырасти. |
 | **H7** | Typed facade IRevitOps и sandbox | P3 | `backlog` | #305 | 2 | ADR-076; после A–E. |
 | **W** | Visual feedback: тул снимка, агент сам решает когда смотреть | P3 | `backlog` | #413 | 0 | Задел на будущее по запросу владельца; scope в теле эпика, задачи заводятся при старте. |
@@ -304,6 +304,9 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.36` | Harness feedback v3: `familiesScanned` vs `typesScanned`, `fields[]` find-тула, `familiesWithoutTypes` в summary | P1 | `done` | #520 |
 | `S.37` | Harness feedback v4: `byCategory[]` в find-туле, явные `familyIdsReturned`/`familyIdsNote` в group-туле | P1 | `done` | #521 |
 | `S.38` | Harness feedback v5: `familyIdsOffset`/`familyIdsLimit` для больших групп | P1 | `done` | #522 |
+| `S.39` | Harness feedback v6: классификация замечаний и расширение каталога только для критичных случаев; ясность `matchedParameterCount` vs `matchedTypeCount` | P1 | `in-progress` | #523 |
+| `S.40` | Fixed discovery cost: предзагрузка/кэш паков тулов по контексту вместо новых аргументов | P2 | `backlog` | #524 |
+| `S.41` | Harness feedback v7: честный отчёт `set_schedule_field_format`, маркер `isMulticategory`, `fieldType` vs `scope` | P1 | `in-progress` | #525 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 

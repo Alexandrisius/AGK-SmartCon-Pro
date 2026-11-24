@@ -22,8 +22,10 @@ public sealed class ListSchedulesTool : AgentReadToolBase
         Name = "list_schedules",
         Description =
             "Lists schedules and specifications (ведомости, спецификации): name, category, visible " +
-            "column headings, data row count, key schedule flag, sheet numbers and the explicit " +
-            "placedOnSheet flag (true = issued documentation placed on a sheet, false = draft). " +
+            "column headings, data row count, key schedule flag, isMulticategory (a schedule " +
+            "across categories; its category/categoryName are null), sheet numbers and the " +
+            "explicit placedOnSheet flag (true = issued documentation placed on a sheet, " +
+            "false = draft). " +
             "fieldCount counts ALL fields (visible + hidden; hiddenFieldCount of them are " +
             "hidden) — the same meaning as audit_fill_rate; fields[] lists only the visible " +
             "headings. Filters: " +
@@ -36,7 +38,7 @@ public sealed class ListSchedulesTool : AgentReadToolBase
             "are identical (candidates for cleanup).",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""includeInternal"":{""type"":""boolean"",""default"":false},""includeRevision"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: scheduleId,id,name,uniqueId,category|categoryName,fieldCount,hiddenFieldCount,fields,rowCount,isKeySchedule,isTemplate,sheetNumbers,placedOnSheet,definitionsDigest. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""includeInternal"":{""type"":""boolean"",""default"":false},""includeRevision"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: scheduleId,id,name,uniqueId,category|categoryName,fieldCount,hiddenFieldCount,fields,rowCount,isKeySchedule,isMulticategory,isTemplate,sheetNumbers,placedOnSheet,definitionsDigest. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(

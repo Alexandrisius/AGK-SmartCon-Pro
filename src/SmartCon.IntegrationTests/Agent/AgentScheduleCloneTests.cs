@@ -425,6 +425,32 @@ public sealed class AgentScheduleCloneTests : RevitApiTest
             .IsTrue();
     }
 
+    [Test]
+    public async Task SetScheduleFieldFormat_UnchangedHeadingWithChangedWidth_ReportsOnlyTheChange()
+    {
+        var result = CreateTool<SetScheduleFieldFormatTool>().ExecuteForTests(
+            Parse("{\"scheduleId\":" + _scheduleId + ",\"fields\":[{\"field\":\"" +
+                  _commentsField + "\",\"heading\":\"Комментарий ГОСТ\",\"widthMm\":90}]," +
+                  "\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(CreateTool<SetScheduleFieldFormatTool>().Definition.Description)
+            .Contains("never in reason");
+        var data = result.Data!.Value;
+        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("skipped").GetArrayLength()).IsEqualTo(0);
+
+        var changed = data.GetProperty("changed")[0];
+        // The heading was already current; the row is a real width change, so it
+        // must not carry a no-op reason (owner feedback 2026-11-24).
+        await Assert.That(changed.TryGetProperty("reason", out _)).IsFalse();
+        var detail = changed.GetProperty("detail").GetString();
+        await Assert.That(detail).Contains("width 60.0 -> 90.0 mm");
+        await Assert.That(detail).Contains("heading already equals");
+    }
+
     private List<ScheduleSheetInstance> PlacementsOf(long scheduleId)
     {
         var result = new List<ScheduleSheetInstance>();

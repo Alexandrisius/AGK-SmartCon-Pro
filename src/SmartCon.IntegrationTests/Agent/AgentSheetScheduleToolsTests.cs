@@ -171,6 +171,7 @@ public sealed class AgentSheetScheduleToolsTests : RevitApiTest
         await Assert.That(schedule.GetProperty("rowCount").GetInt32())
             .IsEqualTo(Math.Max(1, _wallCount));
         await Assert.That(schedule.GetProperty("isTemplate").GetBoolean()).IsFalse();
+        await Assert.That(schedule.GetProperty("isMulticategory").GetBoolean()).IsFalse();
     }
 
     [Test]

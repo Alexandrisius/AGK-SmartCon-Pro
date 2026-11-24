@@ -41,6 +41,9 @@ internal sealed class ScheduleCard
 
     public bool IsKeySchedule { get; set; }
 
+    /// <summary>Across categories: CategoryId is InvalidElementId, so category and categoryName are null.</summary>
+    public bool IsMulticategory { get; set; }
+
     public bool IsInternalKeynoteSchedule { get; set; }
 
     public bool IsTitleblockRevisionSchedule { get; set; }
@@ -192,10 +195,12 @@ internal static class AgentScheduleReader
 
         var categoryId = ElementId.InvalidElementId;
         var isKeySchedule = false;
+        var isMulticategory = false;
         try
         {
             categoryId = schedule.Definition.CategoryId;
             isKeySchedule = schedule.Definition.IsKeySchedule;
+            isMulticategory = categoryId is null || categoryId == ElementId.InvalidElementId;
         }
         catch (Exception)
         {
@@ -228,6 +233,7 @@ internal static class AgentScheduleReader
             RowCount = ReadRowCount(schedule, skipHeader: true),
             IsTemplate = schedule.IsTemplate,
             IsKeySchedule = isKeySchedule,
+            IsMulticategory = isMulticategory,
             IsInternalKeynoteSchedule = schedule.IsInternalKeynoteSchedule,
             IsTitleblockRevisionSchedule = schedule.IsTitleblockRevisionSchedule,
             SheetNumbers = onSheets ?? Array.Empty<string>(),

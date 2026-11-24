@@ -1,5 +1,8 @@
 using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
+using SmartCon.Core.Compatibility;
+using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using TUnit.Core;
 
@@ -35,5 +38,24 @@ public sealed partial class AgentScheduleWriteTests
         // The multicategory schedule offers the common fields, not one category.
         await Assert.That(schedule.Definition.GetSchedulableFields().Count)
             .IsGreaterThan(0);
+
+        // Both read surfaces must name the case instead of leaving a bare null
+        // category that reads as "category undefined" (owner feedback 2026-11-24).
+        var list = new ListSchedulesTool(new StubRevitContext(Doc)).ExecuteForTests(
+            Doc,
+            Parse("{\"nameContains\":\"" + name + "\",\"fields\":[\"scheduleId\",\"name\",\"isMulticategory\"]}"),
+            CancellationToken.None);
+        await Assert.That(list.Success).IsTrue();
+        var card = list.Data!.Value.GetProperty("schedules").EnumerateArray()
+            .First(item => item.GetProperty("scheduleId").GetInt64() == schedule.Id.GetValue());
+        await Assert.That(card.GetProperty("isMulticategory").GetBoolean()).IsTrue();
+
+        var definition = new GetScheduleDefinitionTool(new StubRevitContext(Doc)).ExecuteForTests(
+            Doc,
+            Parse("{\"scheduleId\":" + schedule.Id.GetValue() + "}"),
+            CancellationToken.None);
+        await Assert.That(definition.Success).IsTrue();
+        await Assert.That(definition.Data!.Value.GetProperty("isMulticategory").GetBoolean())
+            .IsTrue();
     }
 }

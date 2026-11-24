@@ -171,6 +171,7 @@ public sealed partial class AgentFillAuditToolsTests : RevitApiTest
         await Assert.That(result.Success).IsTrue();
         var data = result.Data!.Value;
         await Assert.That(data.GetProperty("placedOnSheet").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("isMulticategory").GetBoolean()).IsFalse();
         var sheets = data.GetProperty("sheetNumbers");
         await Assert.That(sheets.GetArrayLength()).IsGreaterThan(0);
         await Assert.That(sheets[0].GetString()).IsEqualTo(SheetNumber);
@@ -201,6 +202,19 @@ public sealed partial class AgentFillAuditToolsTests : RevitApiTest
         await Assert.That(bait.Data!.Value.GetProperty("placedOnSheet").GetBoolean()).IsFalse();
         await Assert.That(bait.Data.Value.GetProperty("sheetNumbers").GetArrayLength())
             .IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task ScheduleReadDescriptions_NameMulticategoryAndFieldTypeScope()
+    {
+        var list = new ListSchedulesTool(new StubRevitContext(Doc)).Definition.Description;
+        await Assert.That(list).Contains("isMulticategory");
+
+        var definition = new GetScheduleDefinitionTool(new StubRevitContext(Doc))
+            .Definition.Description;
+        await Assert.That(definition).Contains("isMulticategory");
+        await Assert.That(definition)
+            .Contains("for a built-in field fieldType is the real Revit kind");
     }
 
     [Test]
