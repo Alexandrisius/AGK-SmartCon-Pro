@@ -22,6 +22,15 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
     private const int MaxValues = 100;
     private const int LargeResultHintChars = 20000;
 
+    /// <summary>
+    /// Batch size the compact rows aim at: the orchestrator result budget minus
+    /// room for the envelope and the message.
+    /// </summary>
+    private const int BatchTargetCharacters =
+        ToolResultBudget.DefaultMaxCharacters - 800;
+
+    private const int MinShownParameters = 5;
+
     public GetFamilyParametersTool(IRevitContext revitContext) : base(revitContext)
     {
     }
@@ -39,7 +48,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "valuesByType.byName[typeName]. " +
             "familyIds (array, up to 20) reads several families in ONE call and returns " +
             "families[] with the same per-family payload (nameContains/scope/limits apply " +
-            "to every family). " +
+            "to every family); a batch that exceeds the context budget keeps EVERY family " +
+            "as compact rows (name, guid, storage, instance flag, counts; compact=true) " +
+            "instead of dropping families - formulas and values then need the single-family " +
+            "form. " +
             "Opens the family document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
@@ -134,10 +146,128 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             ["failedCount"] = failedCount
         };
 
-        return ToolResult.Ok(
-            AgentJson.Serialize(batchPayload),
-            "Read " + okCount + " of " + familyIds.Count + " family(ies)" +
-            (failedCount > 0 ? ", " + failedCount + " not found" : string.Empty) + ".");
+        var baseMessage = "Read " + okCount + " of " + familyIds.Count + " family(ies)" +
+                          (failedCount > 0 ? ", " + failedCount + " not found" : string.Empty);
+
+        // Live case 2 round 4: a 20-family batch exceeded the context budget and
+        // the generic trimmer halved the families array - the model re-read the
+        // same ids. When the full batch does not fit, every family is kept as a
+        // COMPACT row (parameter name, guid, storage, instance flag, counts);
+        // formulas and values stay one single-family call away.
+        if (AgentJson.Serialize(batchPayload).GetRawText().Length <= BatchTargetCharacters)
+            return ToolResult.Ok(
+                AgentJson.Serialize(batchPayload), baseMessage + ".");
+
+        return CompactBatch(families, familyIds.Count, okCount, failedCount, baseMessage);
+    }
+
+    private ToolResult CompactBatch(
+        List<object?> families,
+        int familyCount,
+        int okCount,
+        int failedCount,
+        string baseMessage)
+    {
+        var shown = int.MaxValue;
+        Dictionary<string, object?> payload;
+        while (true)
+        {
+            payload = new Dictionary<string, object?>
+            {
+                ["compact"] = true,
+                ["families"] = BuildCompactRows(families, shown),
+                ["familyCount"] = familyCount,
+                ["okCount"] = okCount,
+                ["failedCount"] = failedCount,
+                ["hint"] = "Compact rows: parameter name, guid, storage, instance flag, " +
+                           "type count. For formulas, values and lookup tables call " +
+                           "get_family_parameters with a single familyId."
+            };
+            if (AgentJson.Serialize(payload).GetRawText().Length <= BatchTargetCharacters
+                || shown <= MinShownParameters)
+            {
+                break;
+            }
+
+            shown = Math.Max(MinShownParameters, shown / 2);
+        }
+
+        var stillLarge = AgentJson.Serialize(payload).GetRawText().Length > BatchTargetCharacters;
+        var shownCount = CountShownParameters(payload);
+        var messageText = baseMessage + ". COMPACT rows for every family: parameter name, " +
+                          "guid, storage, instance flag" +
+                          (shownCount.HasValue
+                              ? ", " + shownCount.Value + " parameter(s) per family shown"
+                              : string.Empty) +
+                          "; formulas and values via a single-family call (familyId)" +
+                          (stillLarge
+                              ? "; the batch is still too large for the context - split " +
+                                "familyIds into several calls"
+                              : string.Empty) + ".";
+        return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
+    }
+
+    private static List<object?> BuildCompactRows(List<object?> families, int shown)
+    {
+        var rows = new List<object?>(families.Count);
+        foreach (var family in families)
+        {
+            if (family is not Dictionary<string, object?> payload
+                || payload.GetValueOrDefault("ok") is not true)
+            {
+                rows.Add(family);
+                continue;
+            }
+
+            var reports = payload.GetValueOrDefault("parameters")
+                as List<FamilyParameterReport> ?? new List<FamilyParameterReport>();
+            var row = new Dictionary<string, object?>
+            {
+                ["familyId"] = payload.GetValueOrDefault("familyId"),
+                ["familyName"] = payload.GetValueOrDefault("familyName"),
+                ["ok"] = true,
+                ["typeCount"] = payload.GetValueOrDefault("typeCount"),
+                ["parametersTotalInFamily"] = payload.GetValueOrDefault("parametersTotalInFamily"),
+                ["total"] = payload.GetValueOrDefault("total"),
+                ["parameters"] = reports
+                    .Take(shown)
+                    .Select(parameter => new Dictionary<string, object?>
+                    {
+                        ["name"] = parameter.Name,
+                        ["guid"] = parameter.Guid,
+                        ["storageType"] = parameter.StorageType,
+                        ["isInstance"] = parameter.IsInstance
+                    })
+                    .ToList()
+            };
+            if (reports.Count > shown)
+            {
+                row["parametersShown"] = Math.Min(shown, reports.Count);
+                row["parametersTruncated"] = true;
+            }
+
+            rows.Add(row);
+        }
+
+        return rows;
+    }
+
+    private static int? CountShownParameters(Dictionary<string, object?> payload)
+    {
+        if (payload.GetValueOrDefault("families") is not List<object?> rows || rows.Count == 0)
+            return null;
+
+        foreach (var row in rows)
+        {
+            if (row is Dictionary<string, object?> family
+                && family.GetValueOrDefault("ok") is true
+                && family.TryGetValue("parametersShown", out _))
+            {
+                return family.GetValueOrDefault("parametersShown") as int?;
+            }
+        }
+
+        return null;
     }
 
     private (Dictionary<string, object?>? Payload, string Message, string? ErrorCode) ReadFamily(

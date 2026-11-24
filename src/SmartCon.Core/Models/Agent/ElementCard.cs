@@ -42,7 +42,14 @@ public sealed class ParameterValueInfo
 {
     public required string Name { get; init; }
 
+    /// <summary>
+    /// Empty string when the parameter exists but carries no value (onlyNonEmpty=false
+    /// lists such rows); null means the raw value could not be read at all.
+    /// </summary>
     public string? Value { get; init; }
+
+    /// <summary>False when the parameter exists but carries no value; null otherwise.</summary>
+    public bool? HasValue { get; init; }
 
     public string? DisplayValue { get; init; }
 

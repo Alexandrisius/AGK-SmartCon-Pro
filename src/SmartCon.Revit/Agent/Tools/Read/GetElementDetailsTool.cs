@@ -12,6 +12,14 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
     private const int MaxElements = 10;
     private const int DefaultMaxParametersPerElement = 50;
     private const int HardMaxParametersPerElement = 200;
+    private const int MinCompactedParameters = 4;
+
+    /// <summary>
+    /// Payload size the tool compacts to: the orchestrator budget minus room for
+    /// the envelope (success/message/affectedCount) and the compaction note.
+    /// </summary>
+    private const int PayloadTargetCharacters =
+        ToolResultBudget.DefaultMaxCharacters - 800;
 
     public GetElementDetailsTool(IRevitContext revitContext)
         : base(revitContext)
@@ -36,7 +44,11 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             "Truncated and parametersTotal/Returned/Truncated describe the caps (the cap applies " +
             "per scope). readOnlyReason is set for parameters the agent cannot write. Narrow the " +
             "payload with parameterNames, parameterNameContains, excludeDerived; onlyNonEmpty " +
-            "defaults to true (empty values are hidden, pass false to list them). A name of " +
+            "defaults to true (empty values are hidden, pass false to list them - an empty " +
+            "parameter then carries value:\"\" and hasValue:false, so empty is distinct from " +
+            "not returned). When the batch exceeds the context budget the per-scope parameter " +
+            "cap is compacted (parametersCompacted) so every requested element stays in the " +
+            "answer. A name of " +
             "parameterNames that the element itself does not carry is looked up on its type " +
             "(the type parameters join the answer for that element); names found nowhere are " +
             "listed in parameterNamesNotFound.",
@@ -97,15 +109,14 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             ? AgentParameterResolver.BuiltInsOf(parameterNames.Where(name => !string.IsNullOrEmpty(name))!)
             : new HashSet<BuiltInParameter>();
 
-        var elements = new List<ElementDetails>();
-        var types = new List<ElementTypeDetails>();
-        var typesById = new Dictionary<long, ElementTypeDetails>();
+        // Pass 1 resolves the ids and the per-request flags once - none of that
+        // depends on the parameter cap compacted below.
         var missing = new List<long>();
         // The requested names that matched no parameter of any element or its
         // type (reported at the end): a name that lives only on the type pulls
         // the type parameters in for that element instead of disappearing.
         var namesFound = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
+        var requests = new List<ElementRequest>();
         foreach (var id in elementIds)
         {
             ct.ThrowIfCancellationRequested();
@@ -118,16 +129,6 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
             }
 
             var type = element as ElementType ?? ResolveType(doc, element);
-            var filter = new AgentParameterFilter
-            {
-                Classes = classes,
-                Names = parameterNames,
-                NameContains = parameterNameContains,
-                OnlyNonEmpty = onlyNonEmpty,
-                ExcludeDerived = excludeDerived,
-                Max = maxParameters,
-                EssenceProfile = AgentElementEssence.ProfileFor(element.Category)
-            };
 
             // Every element is checked on its own: a name found on the type of
             // the first element says nothing about the next one, which may have
@@ -155,37 +156,11 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
                 }
             }
 
-            var typeIsTheElement = element is ElementType;
-            if (type is not null)
-            {
-                var typeId = type.Id.GetValue();
-                if (!typesById.TryGetValue(typeId, out var typeDetails))
-                {
-                    typeDetails = AgentElementDetailsBuilder.BuildType(
-                        doc,
-                        type,
-                        filter,
-                        // A type asked for by its own id is the element: its
-                        // parameters are what the call is about, flag or not.
-                        includeTypeParameters || typeIsTheElement || needTypeParameters);
-                    typesById[typeId] = typeDetails;
-                    types.Add(typeDetails);
-                }
-                else if ((typeIsTheElement || needTypeParameters) && typeDetails.Parameters is null)
-                {
-                    // The type was listed through an earlier element without its
-                    // parameters; now they are asked for - by the type's own id
-                    // or by a name that lives on it - so it is rebuilt with them.
-                    var rebuilt = AgentElementDetailsBuilder.BuildType(doc, type, filter, true);
-                    types[types.IndexOf(typeDetails)] = rebuilt;
-                    typesById[typeId] = rebuilt;
-                }
-            }
-
-            elements.Add(AgentElementDetailsBuilder.BuildElement(doc, element, type, filter));
+            requests.Add(new ElementRequest(
+                element, type, element is ElementType, needTypeParameters));
         }
 
-        if (elements.Count == 0)
+        if (requests.Count == 0)
         {
             return ToolResult.Fail(
                 "element_not_found",
@@ -198,22 +173,121 @@ public sealed class GetElementDetailsTool : AgentReadToolBase
         if (parameterNamesNotFound is { Count: 0 })
             parameterNamesNotFound = null;
 
-        var payload = new
+        // Pass 2 builds the payload. Live case 4 round 3: full type dumps pushed
+        // the result past the context budget, and the generic trimmer then threw
+        // away REQUESTED ELEMENTS - the model had to repeat the call. Instead the
+        // tool itself compacts the parameter rows (fewer per scope) until the
+        // whole batch fits; every requested element stays in the answer.
+        var filterTemplate = new AgentParameterFilter
         {
-            total = elements.Count,
-            missing,
-            parameterClasses = classes.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
-            includeTypeParameters,
-            parameterNamesNotFound,
-            types,
-            elements
+            Classes = classes,
+            Names = parameterNames,
+            NameContains = parameterNameContains,
+            OnlyNonEmpty = onlyNonEmpty,
+            ExcludeDerived = excludeDerived,
+            Max = maxParameters
         };
+        var cap = maxParameters;
+        List<ElementDetails> elements;
+        List<ElementTypeDetails> types;
+        Dictionary<string, object?> payload;
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            (elements, types) = BuildDetails(
+                doc, requests, filterTemplate, cap, includeTypeParameters, ct);
+            payload = new Dictionary<string, object?>
+            {
+                ["total"] = elements.Count,
+                ["missing"] = missing,
+                ["parameterClasses"] = classes.OrderBy(value => value, StringComparer.Ordinal).ToArray(),
+                ["includeTypeParameters"] = includeTypeParameters,
+                ["types"] = types,
+                ["elements"] = elements
+            };
+            // A null dictionary value would serialize as an explicit null key
+            // (unlike the null property of the old anonymous payload): only the
+            // real list belongs in the answer.
+            if (parameterNamesNotFound is not null)
+                payload["parameterNamesNotFound"] = parameterNamesNotFound;
+            if (AgentJson.Serialize(payload).GetRawText().Length <= PayloadTargetCharacters
+                || cap <= MinCompactedParameters)
+            {
+                break;
+            }
 
-        return ToolResult.Ok(
-            AgentJson.Serialize(payload),
-            "Returned details for " + elements.Count + " element(s) and " + types.Count +
-            " type(s).");
+            cap = Math.Max(MinCompactedParameters, cap / 2);
+        }
+
+        var messageText = "Returned details for " + elements.Count + " element(s) and " +
+                          types.Count + " type(s).";
+        if (cap < maxParameters)
+        {
+            payload["parametersCompacted"] = new { requested = maxParameters, compactedTo = cap };
+            messageText += " All " + elements.Count + " requested element(s) are kept; " +
+                           "parameters per scope were compacted to " + cap +
+                           " to fit the context budget - pass parameterNames " +
+                           "(or parameterNameContains) to read specific values.";
+        }
+
+        return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
     }
+
+    private (List<ElementDetails> Elements, List<ElementTypeDetails> Types) BuildDetails(
+        Document doc,
+        List<ElementRequest> requests,
+        AgentParameterFilter template,
+        int maxParameters,
+        bool includeTypeParameters,
+        CancellationToken ct)
+    {
+        var elements = new List<ElementDetails>(requests.Count);
+        var types = new List<ElementTypeDetails>();
+        var typesById = new Dictionary<long, ElementTypeDetails>();
+        foreach (var request in requests)
+        {
+            ct.ThrowIfCancellationRequested();
+            var filter = template.Clone(maxParameters, request.Element.Category);
+            if (request.Type is not null)
+            {
+                var typeId = request.Type.Id.GetValue();
+                if (!typesById.TryGetValue(typeId, out var typeDetails))
+                {
+                    typeDetails = AgentElementDetailsBuilder.BuildType(
+                        doc,
+                        request.Type,
+                        filter,
+                        // A type asked for by its own id is the element: its
+                        // parameters are what the call is about, flag or not.
+                        includeTypeParameters || request.TypeIsTheElement || request.NeedTypeParameters);
+                    typesById[typeId] = typeDetails;
+                    types.Add(typeDetails);
+                }
+                else if ((request.TypeIsTheElement || request.NeedTypeParameters)
+                         && typeDetails.Parameters is null)
+                {
+                    // The type was listed through an earlier element without its
+                    // parameters; now they are asked for - by the type's own id
+                    // or by a name that lives on it - so it is rebuilt with them.
+                    var rebuilt = AgentElementDetailsBuilder.BuildType(
+                        doc, request.Type, filter, includeTypeParameters: true);
+                    types[types.IndexOf(typeDetails)] = rebuilt;
+                    typesById[typeId] = rebuilt;
+                }
+            }
+
+            elements.Add(
+                AgentElementDetailsBuilder.BuildElement(doc, request.Element, request.Type, filter));
+        }
+
+        return (elements, types);
+    }
+
+    private sealed record ElementRequest(
+        Element Element,
+        ElementType? Type,
+        bool TypeIsTheElement,
+        bool NeedTypeParameters);
 
     /// <summary>
     /// Whether the parameter set carries the requested name: by display name or

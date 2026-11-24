@@ -31,6 +31,22 @@ internal sealed class AgentParameterFilter
 
     public IReadOnlyCollection<BuiltInParameter> EssenceProfile { get; set; } =
         Array.Empty<BuiltInParameter>();
+
+    /// <summary>
+    /// Copy with a new parameter cap and essence profile: get_element_details
+    /// rebuilds its payload with shrinking caps until the batch fits the
+    /// context budget, and every rebuild must not disturb the template.
+    /// </summary>
+    public AgentParameterFilter Clone(int max, Category? category) => new()
+    {
+        Classes = Classes,
+        Names = Names,
+        NameContains = NameContains,
+        OnlyNonEmpty = OnlyNonEmpty,
+        ExcludeDerived = ExcludeDerived,
+        Max = max,
+        EssenceProfile = AgentElementEssence.ProfileFor(category)
+    };
 }
 
 internal static class AgentParameterCollector

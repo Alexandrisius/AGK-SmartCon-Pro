@@ -28,10 +28,24 @@ internal static class AgentParameterValueReader
         {
         }
 
+        // An empty parameter (listed with onlyNonEmpty=false) must be told apart
+        // from a value that failed to read: without an explicit marker the key
+        // disappears and "empty" is indistinguishable from "not returned"
+        // (live case 7 round 8).
+        var hasValue = true;
+        try
+        {
+            hasValue = parameter.HasValue;
+        }
+        catch (Exception)
+        {
+        }
+
         return new ParameterValueInfo
         {
             Name = parameter.Definition?.Name ?? string.Empty,
-            Value = TryReadRawValue(parameter),
+            Value = hasValue ? TryReadRawValue(parameter) : string.Empty,
+            HasValue = hasValue ? null : false,
             DisplayValue = TryReadDisplayValue(doc, parameter),
             Unit = TryReadUnitLabel(doc, parameter),
             StorageType = parameter.StorageType.ToString(),

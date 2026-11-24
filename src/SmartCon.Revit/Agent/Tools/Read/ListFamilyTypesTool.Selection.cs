@@ -12,34 +12,57 @@ public sealed partial class ListFamilyTypesTool
     private static ToolResult? ResolveDirectTypes(
         Document doc,
         IReadOnlyList<long> requestedTypeIds,
-        out List<FamilySymbol> types)
+        out List<FamilySymbol> types,
+        out List<ElementType> systemTypes)
     {
         types = new List<FamilySymbol>();
+        systemTypes = new List<ElementType>();
         if (requestedTypeIds.Count == 0)
             return null;
 
         var missing = new List<long>();
+        var notTypes = new List<long>();
         var seen = new HashSet<long>();
         foreach (var id in requestedTypeIds)
         {
             if (!seen.Add(id))
                 continue;
 
-            if (doc.GetElement(ElementIdCompat.Create(id)) is FamilySymbol symbol)
+            var element = doc.GetElement(ElementIdCompat.Create(id));
+            if (element is FamilySymbol symbol)
                 types.Add(symbol);
-            else
+            else if (element is ElementType systemType)
+                systemTypes.Add(systemType);
+            else if (element is null)
                 missing.Add(id);
+            else
+                notTypes.Add(id);
         }
 
-        if (missing.Count == 0)
+        if (missing.Count == 0 && notTypes.Count == 0)
             return null;
+
+        // Live case 5 round 11: classify_types returns ids of SYSTEM family types
+        // (WallType, PipeType, …) — those are real ElementTypes, so they resolve
+        // above and never land in this failure. What fails here is an id that is
+        // absent or not a type at all, and the action must say which tool reads
+        // the id space the caller was probably in.
+        var parts = new List<string>();
+        if (missing.Count > 0)
+            parts.Add("missing: [" + string.Join(", ", missing) + "]");
+        if (notTypes.Count > 0)
+            parts.Add("not element types (instances and other elements): [" +
+                      string.Join(", ", notTypes) + "]");
 
         return ToolResult.Fail(
             "type_not_found",
-            (types.Count == 0 ? "None of the typeIds resolved" : "typeIds requires every id to resolve") +
-            "; missing: [" + string.Join(", ", missing) + "]. " +
-            "[Action: re-read the family with list_family_types and use the typeId it returns]",
-            data: AgentJson.Serialize(new { missing }));
+            (types.Count + systemTypes.Count == 0
+                ? "None of the typeIds resolved to an element type"
+                : "typeIds requires every id to resolve to an element type") +
+            "; " + string.Join("; ", parts) + ". " +
+            "[Action: list_family_types returns family type ids; system family types " +
+            "(walls, pipes, ducts…) are listed by list_system_types]",
+            data: AgentJson.Serialize(new { missing, notTypes }));
     }
 
     private static ToolResult? ResolveFamilies(

@@ -81,6 +81,9 @@ public sealed partial class ClassifyTypesTool
             // The report to the user: a family with its code and the path in the
             // table. typeIds let the model correct single types without reading
             // setParameters; the values to write live in setParameters only.
+            // systemFamily marks groups without a loadable Family: their typeIds
+            // are system types (WallType, …) - list_family_types resolves them in
+            // systemTypes[], list_families never lists them (live case 5, R11).
             ["assignments"] = result.Assignments.Select(group => new
             {
                 family = group.Family,
@@ -88,7 +91,8 @@ public sealed partial class ClassifyTypesTool
                 code = group.Code,
                 breadcrumb = group.Breadcrumb,
                 score = System.Math.Round(group.Score, 4),
-                typeIds = group.TypeIds
+                typeIds = group.TypeIds,
+                systemFamily = group.FamilyId is null ? true : (bool?)null
             }).ToList(),
             ["uncertain"] = uncertainGroups,
             ["setParameters"] = setParameters,
