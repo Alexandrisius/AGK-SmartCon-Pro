@@ -286,124 +286,141 @@
             </Style>
 
             <DataTemplate x:Key="AgentChatItemTemplate">
-                <Grid Margin="0,5"
+                <Grid Margin="0,4"
                       Visibility="{Binding IsVisible, Converter={StaticResource BoolToVis}}">
 
-                    <!-- Assistant message -->
+                    <!-- Assistant message: the avatar and author label belong to the
+                         answer bubble only. Reasoning and tool calls are work lines,
+                         not authored messages, so they carry no author chrome. -->
                     <Grid x:Name="AssistantRow" Visibility="Collapsed">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
 
-                        <Border Width="26" Height="26" CornerRadius="13"
-                                Background="{DynamicResource AccentBrush}"
-                                VerticalAlignment="Top" Margin="0,16,8,0">
-                            <ContentControl Width="16" Height="16"
-                                            Style="{StaticResource AgentBotIconStyle}"
-                                            HorizontalAlignment="Center"
-                                            VerticalAlignment="Center"/>
-                        </Border>
-
-                        <StackPanel Grid.Column="1" HorizontalAlignment="Left" MaxWidth="520">
-                            <TextBlock Text="{Binding Header}"
-                                       FontSize="10"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource TextMutedBrush}"
-                                       Margin="2,0,0,3"/>
-                            <!-- Standalone chain-of-thought line (owner feedback): never
-                                 nested inside the answer bubble and never framed like a
-                                 tool card — caption first, chevron on the right, no icon. -->
-                            <StackPanel Visibility="{Binding ShowReasoningBlock, Converter={StaticResource BoolToVis}}"
-                                        Margin="2,0,0,6">
-                                <Button Command="{Binding ToggleReasoningCommand}"
-                                        Cursor="Hand"
-                                        HorizontalAlignment="Left"
-                                        Focusable="False">
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <!-- No chrome: nothing highlights on hover. -->
-                                            <ContentPresenter RecognizesAccessKey="False"/>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding ReasoningCaption}"
-                                                   FontSize="10"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextMutedBrush}"
-                                                   Margin="0,0,6,0"
-                                                   VerticalAlignment="Center"/>
-                                        <iconPacks:PackIconMaterial x:Name="ReasoningChevron"
-                                                                    Grid.Column="1"
-                                                                    Kind="ChevronRight"
-                                                                    Width="12" Height="12"
-                                                                    VerticalAlignment="Center"
-                                                                    Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </Grid>
-                                </Button>
-                                <!-- Expanded reasoning: quote-style left rule, no box; stretched
-                                     width stays stable while the model streams. -->
-                                <Border x:Name="ReasoningBody"
-                                        Visibility="Collapsed"
-                                        Margin="2,4,0,6"
-                                        Padding="8,0,0,0"
-                                        BorderBrush="{DynamicResource BorderAltBrush}"
-                                        BorderThickness="2,0,0,0">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                                  HorizontalScrollBarVisibility="Disabled"
-                                                  MaxHeight="180">
-                                        <TextBlock Text="{Binding ReasoningText}"
-                                                   TextWrapping="Wrap"
-                                                   FontSize="11"
-                                                   FontStyle="Italic"
-                                                   Foreground="{DynamicResource TextMutedBrush}"/>
-                                    </ScrollViewer>
-                                </Border>
-                            </StackPanel>
-                            <Border x:Name="AssistantBubble"
-                                    Background="{DynamicResource SurfaceBrush}"
-                                    BorderBrush="{DynamicResource BorderAltBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="3,12,12,12"
-                                    Padding="11,8">
-                                <StackPanel>
-                                    <TextBlock x:Name="AssistantPlain"
-                                               Text="{Binding Text}"
-                                               TextWrapping="Wrap"
-                                               Foreground="{DynamicResource TextPrimaryBrush}"
-                                               LineHeight="18"/>
-                                    <FlowDocumentScrollViewer x:Name="AssistantMarkdown"
-                                                              Document="{Binding MarkdownText, Converter={StaticResource MarkdownToFlow}}"
-                                                              Visibility="Collapsed"
-                                                              Background="Transparent"
-                                                              BorderThickness="0"
-                                                              Padding="0"
-                                                              IsToolBarVisible="False"
-                                                              VerticalScrollBarVisibility="Disabled"
-                                                              HorizontalScrollBarVisibility="Disabled"
-                                                              behaviors:MouseWheelRedirectBehavior.IsEnabled="True"
-                                                              Foreground="{DynamicResource TextPrimaryBrush}"
-                                                              FontFamily="Segoe UI"
-                                                              FontSize="12"/>
-                                    <TextBlock x:Name="AssistantStatus"
-                                               Text="{Binding StatusText}"
+                        <!-- Standalone chain-of-thought line (owner feedback): no avatar,
+                             no author label, aligned with the bubble body and tool cards —
+                             never nested inside the answer bubble and never framed like a
+                             tool card. -->
+                        <StackPanel Grid.Row="0"
+                                    Visibility="{Binding ShowReasoningBlock, Converter={StaticResource BoolToVis}}"
+                                    Margin="34,0,0,0"
+                                    HorizontalAlignment="Left"
+                                    MaxWidth="486">
+                            <Button Command="{Binding ToggleReasoningCommand}"
+                                    Cursor="Hand"
+                                    HorizontalAlignment="Left"
+                                    Focusable="False">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <!-- No chrome: nothing highlights on hover. -->
+                                        <ContentPresenter RecognizesAccessKey="False"/>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding ReasoningCaption}"
                                                FontSize="10"
+                                               FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextMutedBrush}"
+                                               Margin="0,0,6,0"
+                                               VerticalAlignment="Center"/>
+                                    <iconPacks:PackIconMaterial x:Name="ReasoningChevron"
+                                                                Grid.Column="1"
+                                                                Kind="ChevronRight"
+                                                                Width="12" Height="12"
+                                                                VerticalAlignment="Center"
+                                                                Foreground="{DynamicResource TextMutedBrush}"/>
+                                </Grid>
+                            </Button>
+                            <!-- Expanded reasoning: quote-style left rule, no box; stretched
+                                 width stays stable while the model streams. -->
+                            <Border x:Name="ReasoningBody"
+                                    Visibility="Collapsed"
+                                    Margin="2,4,0,0"
+                                    Padding="8,0,0,0"
+                                    BorderBrush="{DynamicResource BorderAltBrush}"
+                                    BorderThickness="2,0,0,0">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              MaxHeight="180">
+                                    <TextBlock Text="{Binding ReasoningText}"
                                                TextWrapping="Wrap"
-                                               Visibility="Collapsed"
-                                               Margin="0,4,0,0"/>
-                                    <TextBlock x:Name="StreamingMark"
-                                               Text="▍"
-                                               FontSize="12"
-                                               Foreground="{DynamicResource AccentBrush}"
-                                               Visibility="Collapsed"/>
-                                </StackPanel>
+                                               FontSize="11"
+                                               FontStyle="Italic"
+                                               Foreground="{DynamicResource TextMutedBrush}"/>
+                                </ScrollViewer>
                             </Border>
                         </StackPanel>
+
+                        <!-- Answer bubble carries the author avatar and label. -->
+                        <Grid x:Name="AssistantBubbleRow" Grid.Row="1"
+                              Visibility="Visible"
+                              Margin="0,3,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border Width="26" Height="26" CornerRadius="13"
+                                    Background="{DynamicResource AccentBrush}"
+                                    VerticalAlignment="Top" Margin="0,2,8,0">
+                                <ContentControl Width="16" Height="16"
+                                                Style="{StaticResource AgentBotIconStyle}"
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"/>
+                            </Border>
+
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Left" MaxWidth="520">
+                                <TextBlock Text="{Binding Header}"
+                                           FontSize="10"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           Margin="2,0,0,3"/>
+                                <Border x:Name="AssistantBubble"
+                                        Background="{DynamicResource SurfaceBrush}"
+                                        BorderBrush="{DynamicResource BorderAltBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="3,12,12,12"
+                                        Padding="11,8">
+                                    <StackPanel>
+                                        <TextBlock x:Name="AssistantPlain"
+                                                   Text="{Binding Text}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                                   LineHeight="18"/>
+                                        <FlowDocumentScrollViewer x:Name="AssistantMarkdown"
+                                                                  Document="{Binding MarkdownText, Converter={StaticResource MarkdownToFlow}}"
+                                                                  Visibility="Collapsed"
+                                                                  Background="Transparent"
+                                                                  BorderThickness="0"
+                                                                  Padding="0"
+                                                                  IsToolBarVisible="False"
+                                                                  VerticalScrollBarVisibility="Disabled"
+                                                                  HorizontalScrollBarVisibility="Disabled"
+                                                                  behaviors:MouseWheelRedirectBehavior.IsEnabled="True"
+                                                                  Foreground="{DynamicResource TextPrimaryBrush}"
+                                                                  FontFamily="Segoe UI"
+                                                                  FontSize="12"/>
+                                        <TextBlock x:Name="AssistantStatus"
+                                                   Text="{Binding StatusText}"
+                                                   FontSize="10"
+                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                   TextWrapping="Wrap"
+                                                   Visibility="Collapsed"
+                                                   Margin="0,4,0,0"/>
+                                        <TextBlock x:Name="StreamingMark"
+                                                   Text="▍"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource AccentBrush}"
+                                                   Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Grid>
                     </Grid>
 
                     <!-- User message -->
@@ -488,7 +505,7 @@
                     <!-- Tool call: compact, aligned with the agent bubble, expandable -->
                     <Grid x:Name="ToolRow"
                           Visibility="Collapsed"
-                          Margin="34,1,0,1"
+                          Margin="34,0,0,0"
                           HorizontalAlignment="Left"
                           MaxWidth="480">
                         <Border Background="{DynamicResource StatusBarSurfaceBrush}"
@@ -601,7 +618,7 @@
                          place. Shows elapsed time and tool-call count up front. -->
                     <Grid x:Name="WorkRow"
                           Visibility="Collapsed"
-                          Margin="34,2,0,2"
+                          Margin="34,0,0,0"
                           HorizontalAlignment="Left"
                           MaxWidth="480">
                         <Button Command="{Binding ToggleWorkCommand}"
@@ -633,8 +650,9 @@
                         <Setter TargetName="AssistantRow" Property="Visibility" Value="Visible"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding HasAnswerText}" Value="False">
-                        <!-- Reasoning-only turns must not render an empty bubble. -->
-                        <Setter TargetName="AssistantBubble" Property="Visibility" Value="Collapsed"/>
+                        <!-- Reasoning-only turns must not render an empty bubble with
+                             the author avatar: work lines show no author chrome. -->
+                        <Setter TargetName="AssistantBubbleRow" Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding KindName}" Value="User">
                         <Setter TargetName="UserRow" Property="Visibility" Value="Visible"/>
