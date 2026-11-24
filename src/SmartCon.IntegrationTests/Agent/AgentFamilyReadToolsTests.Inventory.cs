@@ -84,6 +84,12 @@ public sealed partial class AgentFamilyReadToolsTests
         var summary = summaryData.GetProperty("summary");
         await Assert.That(summary.GetProperty("totalFamilies").GetInt32()).IsEqualTo(facts.Total);
         await Assert.That(summary.GetProperty("totalTypes").GetInt32()).IsEqualTo(facts.Types);
+        var withoutTypes = summary.GetProperty("familiesWithoutTypes").GetInt32();
+        var withTypes = summary.GetProperty("familiesWithTypes").GetInt32();
+        await Assert.That(withoutTypes).IsGreaterThanOrEqualTo(0);
+        await Assert.That(withTypes + withoutTypes).IsEqualTo(facts.Total);
+        await Assert.That(summary.GetProperty("familyScanNote").GetString())
+            .Contains("Symbol-based");
         await Assert.That(summary.GetProperty("inPlace").GetInt32()).IsEqualTo(facts.InPlace);
         await Assert.That(summary.GetProperty("nonParametric").GetInt32()).IsEqualTo(facts.NonParametric);
         var rows = summary.GetProperty("byCategory");

@@ -171,7 +171,8 @@ public static class AgentToolCatalog
             ["group_families_by_shared_parameters"] = new("Read", false, new[]
             {
                 "группировка", "семейства", "фоп", "общие параметры", "сигнатура", "группы",
-                "наборы", "guid", "grouping", "signature"
+                "наборы", "guid", "grouping", "signature", "compact", "без общих параметров",
+                "groupBy prefix", "префикс параметра", "сколько ФОП", "источник параметров"
             }),
             ["audit_fill_rate"] = new("Read", false, new[]
             {
@@ -455,7 +456,11 @@ public static class AgentToolCatalog
             {
                 "найти семейства с параметром", "find families with parameter",
                 "в каких семействах", "Наименование_ГОСТ", "matchedParameter",
-                "instance параметр", "параметр экземпляра", "параметр по ГОСТ"
+                "instance параметр", "параметр экземпляра", "параметр по ГОСТ",
+                "PREFIX_", "BP_", "BIM_", "ФОП", "shared parameters", "общие параметры",
+                "префикс параметра", "prefix", "аудит параметров", "инвентаризация семейств",
+                "миграция параметров", "families by prefix", "fields", "проекция полей",
+                "разбивка по категориям", "byCategory"
             }),
             ["rename_family_parameter"] = new("Write", false, new[]
             {
@@ -490,7 +495,8 @@ public static class AgentToolCatalog
             ["read_tool_result"] = new("Meta", false, new[]
             {
                 "сохранённый результат", "полный результат", "resulthandle", "дочитать",
-                "продолжить результат", "stored result"
+                "продолжить результат", "stored result", "проекция", "project", "projection",
+                "выбрать поля из результата", "data.groups[0]"
             }),
             ["list_filters"] = new("Read", false, new[]
             {

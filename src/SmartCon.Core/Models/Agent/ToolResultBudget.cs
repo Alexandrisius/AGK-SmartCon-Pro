@@ -145,6 +145,11 @@ public static class ToolResultBudget
         if (arrays.Count == 0)
             return AddEnvelope(root, maxCharacters, resultHandle);
 
+        // The first trimmable array is the tool's primary page list (families,
+        // elements, views...); its "returned" field must follow the trim, or the
+        // answer says returned=173 next to familiesReturned=43.
+        var primaryArrayName = arrays[0].Name;
+
         while (true)
         {
             var current = root.ToJsonString(SerializerOptions);
@@ -171,6 +176,13 @@ public static class ToolResultBudget
 
             data[largest.Name + "Returned"] = largest.Array.Count;
             data[largest.Name + "Total"] = largest.OriginalCount;
+            if (string.Equals(largest.Name, primaryArrayName, StringComparison.Ordinal)
+                && data["returned"] is JsonValue returnedValue
+                && returnedValue.TryGetValue<int>(out _))
+            {
+                data["returned"] = largest.Array.Count;
+            }
+
             data["truncated"] = true;
             data["hint"] = resultHandle is null ? TruncationHint : BlobHint;
             if (resultHandle is not null)

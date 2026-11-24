@@ -5,6 +5,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
+using SmartCon.Revit.Agent.Tools.Families;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -21,6 +22,8 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
     private const int DefaultLimit = 100;
     private const int MaxLimit = 500;
     private const int MaxFamiliesPerGroup = 100;
+    private const int DefaultFamilyIdsPerGroup = 100;
+    private const int MaxFamilyIdsPerGroup = 500;
     private const int MaxUnplaced = 200;
 
     public GroupFamiliesBySharedParametersTool(IRevitContext revitContext) : base(revitContext)
@@ -33,15 +36,27 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Description =
-            "Groups loaded families by the signature of their shared parameters (ФОП): the set " +
-            "of shared parameter GUIDs each family carries, so families from the same shared " +
-            "parameter file land in one group ('50 families with one ФОП, 20 with another'). " +
-            "Scope: type (parameters read from family symbols), instance (from placed " +
-            "instances) or both (default, union). Also lists unplaced families separately " +
-            "(includeUnplaced). Families without any shared parameters form their own group. " +
-            "Use it before mass migration to shared parameters of a customer and to plan " +
-            "batch work by source parameter sets.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""scope"":{""type"":""string"",""enum"":[""type"",""instance"",""both""],""default"":""both""},""includeUnplaced"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+            "Groups loaded families by shared parameters (ФОП). groupBy=signature (default) uses " +
+            "the exact full set of shared parameter GUIDs each family carries. That set is " +
+            "strict: families from one shared parameter file may split into many groups when " +
+            "their parameter subsets differ (dozens of groups on a few hundred families is " +
+            "normal, not one FOP per group). For 'how many FOPs / how many families to port' " +
+            "use groupBy=prefix: it buckets families by the parameter-name prefix (PREFIX_ " +
+            "style, the part up to the first '_') — the practical source-level approximation, " +
+            "because Revit does not store the source ФОП path. A family with several prefixes " +
+            "appears in several prefix groups. Scope: type, instance or both (default, union). " +
+            "Also lists unplaced families separately (includeUnplaced). Families without any " +
+            "shared parameters are counted in familiesWithoutSharedParameters. compact=true " +
+            "(alias groupsCompact) returns one row per group (signatureDigest/prefix, " +
+            "parameterNames, parameterCount, familyCount, familyIds) instead of full parameter " +
+            "rows and family cards; read family cards with get_family_parameters(familyIds:[...]). " +
+            "familiesScanned is the number of distinct families; typesScanned is the number " +
+            "of family symbols (types) scanned, so familiesScanned < typesScanned is normal. " +
+            "familyIdsOffset/familyIdsLimit page the ids inside every group (default 100, max 500); " +
+            "familyIdsReturned/familyIdsNote say how many ids are shown (for example 'familyIds " +
+            "shown: 95 of 173 (offset 99)'); familyCount stays the full count, and non-compact " +
+            "rows carry familiesReturned/familiesNote.",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""scope"":{""type"":""string"",""enum"":[""type"",""instance"",""both""],""default"":""both""},""groupBy"":{""type"":""string"",""enum"":[""signature"",""prefix""],""default"":""signature"",""description"":""signature = exact full GUID set; prefix = source-level bucket by parameter-name prefix (recommended for how-many-FOPs questions)""},""includeUnplaced"":{""type"":""boolean"",""default"":true},""compact"":{""type"":""boolean"",""default"":false},""groupsCompact"":{""type"":""boolean"",""default"":false,""description"":""Alias for compact: one row per group without full cards""},""familyIdsOffset"":{""type"":""integer"",""default"":0,""minimum"":0,""description"":""Compact mode: skip this many family ids in every group (page through a large group)""},""familyIdsLimit"":{""type"":""integer"",""default"":100,""minimum"":1,""maximum"":500,""description"":""Compact mode: family ids per group (at most 500)""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -51,6 +66,26 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
         var includeType = !string.Equals(scopeText, "instance", StringComparison.OrdinalIgnoreCase);
         var includeInstance = !string.Equals(scopeText, "type", StringComparison.OrdinalIgnoreCase);
         var includeUnplaced = AgentJson.GetBool(args, "includeUnplaced", true);
+        var groupByText = (AgentJson.GetString(args, "groupBy") ?? "signature")
+            .Trim().ToLowerInvariant();
+        if (groupByText != "signature" && groupByText != "prefix")
+        {
+            return ToolResult.Fail(
+                "invalid_arguments",
+                "groupBy must be signature or prefix. [Action: use prefix for a source-level " +
+                "FOP count, signature for the exact GUID set]");
+        }
+
+        var prefixMode = groupByText == "prefix";
+        var compact = AgentJson.GetBool(args, "compact", false)
+                      || AgentJson.GetBool(args, "groupsCompact", false);
+        var familyIdsOffset = AgentPaging.NormalizeOffset(
+            AgentJson.GetInt(args, "familyIdsOffset", 0));
+        var familyIdsLimit = Math.Max(
+            1,
+            Math.Min(
+                AgentJson.GetInt(args, "familyIdsLimit", DefaultFamilyIdsPerGroup),
+                MaxFamilyIdsPerGroup));
         var offset = AgentPaging.NormalizeOffset(AgentJson.GetInt(args, "offset", 0));
         var limit = AgentPaging.NormalizeLimit(
             AgentJson.GetInt(args, "limit", DefaultLimit),
@@ -73,9 +108,10 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
         foreach (var id in categoryIds)
             categoryIdSet.Add(id.GetValue());
 
-        var resolver = new SharedGuidResolver(doc);
+        var resolver = new AgentSharedParameterResolver(doc);
         var families = new Dictionary<long, FamilySignature>();
-        var familiesScanned = 0;
+        var familiesScanned = new HashSet<long>();
+        var typesScanned = 0;
 
         // Pass 1: family symbols — type-scope shared parameters (and the family
         // registry: unplaced families appear here only).
@@ -89,7 +125,8 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
             if (family is null || !MatchesCategory(family, categoryIdSet))
                 continue;
 
-            familiesScanned++;
+            typesScanned++;
+            familiesScanned.Add(family.Id.GetValue());
             var signature = GetOrCreate(families, family);
             if (!includeType)
                 continue;
@@ -110,6 +147,7 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
             if (family is null || !MatchesCategory(family, categoryIdSet))
                 continue;
 
+            familiesScanned.Add(family.Id.GetValue());
             var signature = GetOrCreate(families, family);
             signature.PlacedInstanceCount++;
 
@@ -131,9 +169,26 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
             ? ordered
             : ordered.Where(item => item.PlacedInstanceCount > 0).ToList();
 
-        var groups = new Dictionary<string, List<FamilySignature>>(StringComparer.Ordinal);
+        var groups = new Dictionary<string, List<FamilySignature>>(
+            prefixMode ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (var item in considered)
         {
+            if (prefixMode)
+            {
+                foreach (var prefix in PrefixesOf(resolver, item, includeType, includeInstance))
+                {
+                    if (!groups.TryGetValue(prefix, out var prefixGroup))
+                    {
+                        prefixGroup = new List<FamilySignature>();
+                        groups.Add(prefix, prefixGroup);
+                    }
+
+                    prefixGroup.Add(item);
+                }
+
+                continue;
+            }
+
             var digest = item.ComputeDigest(includeType, includeInstance);
             if (!groups.TryGetValue(digest, out var group))
             {
@@ -151,33 +206,98 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
 
         var page = AgentPaging.Slice(orderedGroups, offset, limit);
         var hasMore = offset + page.Count < orderedGroups.Count;
+        var familiesWithoutShared = considered.Count(item =>
+            item.SortedGuids(includeType, includeInstance).Count == 0);
 
         var groupRows = new List<Dictionary<string, object?>>(page.Count);
         foreach (var pair in page)
         {
             var members = pair.Value;
-            var guids = members[0].SortedGuids(includeType, includeInstance);
             var familiesReturned = Math.Min(members.Count, MaxFamiliesPerGroup);
-            var familyRows = new List<Dictionary<string, object?>>(familiesReturned);
-            for (var index = 0; index < familiesReturned; index++)
+            var familyIds = members
+                .Skip(familyIdsOffset)
+                .Take(familyIdsLimit)
+                .Select(item => item.FamilyId)
+                .ToList();
+            var truncated = members.Count > familiesReturned;
+            var familiesNote = truncated
+                ? "families shown: " + familiesReturned + " of " + members.Count
+                : null;
+            var familyIdsTruncated = familyIdsOffset + familyIds.Count < members.Count;
+            var familyIdsNote = familyIdsTruncated || familyIdsOffset > 0
+                ? "familyIds shown: " + familyIds.Count + " of " + members.Count +
+                  " (offset " + familyIdsOffset + ")"
+                : null;
+            if (prefixMode)
             {
-                familyRows.Add(new Dictionary<string, object?>
+                var prefixNames = DescribePrefixNames(
+                    resolver, members, pair.Key, includeType, includeInstance);
+                if (compact)
                 {
-                    ["familyId"] = members[index].FamilyId,
-                    ["familyName"] = members[index].FamilyName,
-                    ["category"] = members[index].Category,
-                    ["placedInstanceCount"] = members[index].PlacedInstanceCount
+                    groupRows.Add(new Dictionary<string, object?>
+                    {
+                        ["prefix"] = pair.Key,
+                        ["parameterNames"] = prefixNames,
+                        ["parameterCount"] = prefixNames.Count,
+                        ["familyCount"] = members.Count,
+                        ["familyIds"] = familyIds,
+                        ["familyIdsOffset"] = familyIdsOffset,
+                        ["familyIdsReturned"] = familyIds.Count,
+                        ["familyIdsTruncated"] = familyIdsTruncated,
+                        ["familyIdsNote"] = familyIdsNote,
+                        ["familiesTruncated"] = truncated
+                    });
+                    continue;
+                }
+
+                groupRows.Add(new Dictionary<string, object?>
+                {
+                    ["prefix"] = pair.Key,
+                    ["parameterNames"] = prefixNames,
+                    ["parameterCount"] = prefixNames.Count,
+                    ["count"] = members.Count,
+                    ["families"] = BuildFamilyRows(members, familiesReturned),
+                    ["familiesReturned"] = familiesReturned,
+                    ["familiesTruncated"] = truncated,
+                    ["familiesNote"] = familiesNote
                 });
+                continue;
+            }
+
+            var guids = members[0].SortedGuids(includeType, includeInstance);
+            if (compact)
+            {
+                var names = DescribeParameters(
+                        resolver, members, includeType, includeInstance)
+                    .Select(row => row.GetValueOrDefault("name") as string)
+                    .Where(name => !string.IsNullOrEmpty(name))
+                    .ToList();
+                groupRows.Add(new Dictionary<string, object?>
+                {
+                    ["signatureDigest"] = pair.Key,
+                    ["parameterNames"] = names,
+                    ["parameterCount"] = names.Count,
+                    ["familyCount"] = members.Count,
+                    ["familyIds"] = familyIds,
+                    ["familyIdsOffset"] = familyIdsOffset,
+                    ["familyIdsReturned"] = familyIds.Count,
+                    ["familyIdsTruncated"] = familyIdsTruncated,
+                    ["familyIdsNote"] = familyIdsNote,
+                    ["familiesTruncated"] = truncated
+                });
+                continue;
             }
 
             groupRows.Add(new Dictionary<string, object?>
             {
                 ["signatureDigest"] = pair.Key,
                 ["guids"] = guids,
-                ["parameters"] = DescribeParameters(doc, resolver, members, includeType, includeInstance),
+                ["parameters"] = DescribeParameters(resolver, members, includeType, includeInstance),
                 ["count"] = members.Count,
-                ["families"] = familyRows,
-                ["familiesTruncated"] = members.Count > familiesReturned
+                ["families"] = BuildFamilyRows(members, familiesReturned),
+                ["familiesReturned"] = familiesReturned,
+                ["familiesTruncated"] = truncated,
+                ["familiesNote"] = familiesNote
             });
         }
 
@@ -191,7 +311,9 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
                     continue;
 
                 unplacedTotal++;
-                if (unplacedRows.Count >= MaxUnplaced)
+                // In compact mode the group rows already carry familyIds; duplicating
+                // the same cards in unplacedFamilies was half of the 215k answer.
+                if (compact || unplacedRows.Count >= MaxUnplaced)
                     continue;
 
                 unplacedRows.Add(new Dictionary<string, object?>
@@ -207,7 +329,9 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
         var payload = new Dictionary<string, object?>
         {
             ["scope"] = scopeText is null ? "both" : scopeText.Trim().ToLowerInvariant(),
+            ["groupBy"] = groupByText,
             ["includeUnplaced"] = includeUnplaced,
+            ["compact"] = compact,
             ["groupCount"] = orderedGroups.Count,
             ["groups"] = groupRows,
             ["returned"] = groupRows.Count,
@@ -215,20 +339,40 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
             ["nextOffset"] = hasMore ? offset + groupRows.Count : (int?)null,
             ["truncated"] = hasMore,
             ["total"] = considered.Count,
-            ["familiesScanned"] = familiesScanned,
+            ["familiesScanned"] = familiesScanned.Count,
+            ["typesScanned"] = typesScanned,
+            ["familiesWithoutSharedParameters"] = familiesWithoutShared,
             ["unplacedFamilies"] = unplacedRows.Count > 0 ? unplacedRows : null,
             ["unplacedCount"] = unplacedTotal,
-            ["unplacedTruncated"] = unplacedTotal > unplacedRows.Count,
+            ["unplacedFamiliesSuppressed"] = compact && unplacedTotal > 0 ? true : null,
+            ["unplacedTruncated"] = !compact && unplacedTotal > unplacedRows.Count,
             ["unknownCategories"] = unknownCategories.Count > 0 ? unknownCategories : null,
             ["scopeNote"] =
                 "Type-scope GUIDs are read from family symbols, instance-scope from placed " +
                 "instances. A family with no placed instances may still carry instance-scope " +
-                "parameters in its document — check get_family_parameters for an exact answer."
+                "parameters in its document — check get_family_parameters for an exact answer. " +
+                "familiesWithoutSharedParameters counts within the selected scope: with " +
+                "scope=type a family that only has instance-scope shared parameters counts " +
+                "as without shared." +
+                (compact
+                    ? " Compact mode: groups carry parameterNames and familyIds; call " +
+                      "get_family_parameters(familyIds:[...]) for family cards."
+                    : string.Empty) +
+                (prefixMode
+                    ? " groupBy=prefix is a source-level heuristic: the bucket is the parameter-name " +
+                      "prefix up to the first '_'; Revit does not store the source ФОП path, and a " +
+                      "family with several prefixes appears in several groups."
+                    : string.Empty)
         };
 
         var messageText =
-            "Grouped " + considered.Count + " family(ies) into " + orderedGroups.Count +
-            " shared-parameter signature group(s); returned " + groupRows.Count + "." +
+            "Grouped " + considered.Count + " family(ies) by " +
+            (prefixMode ? "shared-parameter prefix" : "shared-parameter signature") +
+            " into " + orderedGroups.Count + " group(s); returned " + groupRows.Count + "." +
+            (prefixMode ? " A family may appear in several prefix groups." : string.Empty) +
+            (familiesWithoutShared > 0
+                ? " " + familiesWithoutShared + " family(ies) have no shared parameters."
+                : string.Empty) +
             (unplacedTotal > 0
                 ? " " + unplacedTotal + " family(ies) have no placed instances."
                 : string.Empty) +
@@ -237,9 +381,69 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
         return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
     }
 
+    private static IEnumerable<string> PrefixesOf(
+        AgentSharedParameterResolver resolver,
+        FamilySignature family,
+        bool includeType,
+        bool includeInstance)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var guid in family.SortedGuids(includeType, includeInstance))
+        {
+            var prefix = AgentSharedParameterResolver.PrefixOf(
+                resolver.NameOf(guid));
+            if (seen.Add(prefix))
+                yield return prefix;
+        }
+    }
+
+    private static List<string> DescribePrefixNames(
+        AgentSharedParameterResolver resolver,
+        IReadOnlyList<FamilySignature> members,
+        string prefix,
+        bool includeType,
+        bool includeInstance)
+    {
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var member in members)
+        {
+            foreach (var guid in member.SortedGuids(includeType, includeInstance))
+            {
+                var name = resolver.NameOf(guid);
+                if (string.Equals(
+                        AgentSharedParameterResolver.PrefixOf(name),
+                        prefix,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    names.Add(name);
+                }
+            }
+        }
+
+        return names.ToList();
+    }
+
+    private static List<Dictionary<string, object?>> BuildFamilyRows(
+        IReadOnlyList<FamilySignature> members,
+        int count)
+    {
+        var rows = new List<Dictionary<string, object?>>(count);
+        for (var index = 0; index < count; index++)
+        {
+            rows.Add(new Dictionary<string, object?>
+            {
+                ["familyId"] = members[index].FamilyId,
+                ["familyName"] = members[index].FamilyName,
+                ["category"] = members[index].Category,
+                ["placedInstanceCount"] = members[index].PlacedInstanceCount
+            });
+        }
+
+        return rows;
+    }
+
     private static List<Dictionary<string, object?>> DescribeParameters(
-        Document doc,
-        SharedGuidResolver resolver,
+        AgentSharedParameterResolver resolver,
         IReadOnlyList<FamilySignature> members,
         bool includeType,
         bool includeInstance)
@@ -256,7 +460,7 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
 
             rows.Add(new Dictionary<string, object?>
             {
-                ["name"] = resolver.NameOf(doc, guid),
+                ["name"] = resolver.NameOf(guid),
                 ["guid"] = guid,
                 ["scope"] = scope
             });
@@ -338,60 +542,6 @@ public sealed class GroupFamiliesBySharedParametersTool : AgentReadToolBase
             for (var index = 0; index < 8; index++)
                 builder.Append(hash[index].ToString("x2", System.Globalization.CultureInfo.InvariantCulture));
             return builder.ToString();
-        }
-    }
-
-    /// <summary>
-    /// Resolves parameter → shared GUID through the definition element
-    /// (doc.GetElement(definition.Id) as SharedParameterElement → GuidValue)
-    /// with a cache: the same definition is met once per parameter slot.
-    /// </summary>
-    private sealed class SharedGuidResolver
-    {
-        private readonly Document _doc;
-        private readonly Dictionary<long, string?> _byDefinitionId = new();
-
-        public SharedGuidResolver(Document doc)
-        {
-            _doc = doc;
-        }
-
-        public string? ResolveGuid(Parameter parameter)
-        {
-            try
-            {
-                // Definition.Id lives on InternalDefinition (the project-context
-                // definition of built-in, project and shared parameters alike).
-                if (parameter.Definition is not InternalDefinition definition)
-                    return null;
-
-                var definitionId = definition.Id.GetValue();
-                if (_byDefinitionId.TryGetValue(definitionId, out var cached))
-                    return cached;
-
-                var resolved = _doc.GetElement(definition.Id) is SharedParameterElement shared
-                    ? shared.GuidValue.ToString("D")
-                    : null;
-                _byDefinitionId.Add(definitionId, resolved);
-                return resolved;
-            }
-            catch (Exception)
-            {
-                return null;
-            }
-        }
-
-        public string NameOf(Document doc, string guid)
-        {
-            try
-            {
-                var parsed = Guid.ParseExact(guid, "D");
-                return SharedParameterElement.Lookup(doc, parsed)?.Name ?? guid;
-            }
-            catch (Exception)
-            {
-                return guid;
-            }
         }
     }
 }

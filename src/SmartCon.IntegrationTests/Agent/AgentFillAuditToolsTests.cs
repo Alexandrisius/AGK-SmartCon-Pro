@@ -19,7 +19,7 @@ namespace SmartCon.IntegrationTests.Agent;
 /// data strings) and the guid/parameterName/placedOnSheet extension of
 /// get_schedule_definition / list_schedules.
 /// </summary>
-public sealed class AgentFillAuditToolsTests : RevitApiTest
+public sealed partial class AgentFillAuditToolsTests : RevitApiTest
 {
     private const string LevelName = "SC_FillAuditLevel";
     private const string SheetScheduleName = "СК_Ведомость_листовая";
@@ -308,6 +308,11 @@ public sealed class AgentFillAuditToolsTests : RevitApiTest
         await Assert.That(result.Success).IsTrue();
         var data = result.Data!.Value;
         await Assert.That(data.GetProperty("groupCount").GetInt32()).IsGreaterThanOrEqualTo(3);
+        var familiesScanned = data.GetProperty("familiesScanned").GetInt32();
+        var typesScanned = data.GetProperty("typesScanned").GetInt32();
+        await Assert.That(familiesScanned).IsGreaterThanOrEqualTo(2);
+        // familiesScanned counts distinct families, typesScanned counts their symbols.
+        await Assert.That(familiesScanned).IsLessThanOrEqualTo(typesScanned);
 
         var groups = data.GetProperty("groups").EnumerateArray().ToList();
         var groupA = groups.First(group =>

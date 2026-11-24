@@ -42,8 +42,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "Lists family parameters with their scope (instance/type), id (FamilyParameter.Id), " +
             "shared GUID, isBuiltIn (built-in parameters cannot be removed), storage type, " +
             "formula, lookup tables, canSetValue/canSetFormula and the value of each family type. " +
-            "parametersTotalInFamily is the count BEFORE nameContains/scope filters; total is " +
-            "the paging total of the filtered set. parameters[] is flat: address a row with " +
+            "parametersTotalInFamily is the count BEFORE nameContains/scope filters; matchedCount is " +
+            "the number of parameters that matched the filters and total is its paging total " +
+            "(matchedCount=0 means the filter found nothing; the family was still read). " +
+            "parameters[] is flat: address a row with " +
             "parameters.byId[id] or parameters.byName[name], a type value with " +
             "valuesByType.byName[typeName]. " +
             "familyIds (array, up to 20) reads several families in ONE call and returns " +
@@ -228,6 +230,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 ["ok"] = true,
                 ["typeCount"] = payload.GetValueOrDefault("typeCount"),
                 ["parametersTotalInFamily"] = payload.GetValueOrDefault("parametersTotalInFamily"),
+                ["matchedCount"] = payload.GetValueOrDefault("matchedCount"),
+                ["nameContains"] = payload.GetValueOrDefault("nameContains"),
                 ["total"] = payload.GetValueOrDefault("total"),
                 ["parameters"] = reports
                     .Take(shown)
@@ -362,6 +366,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 // is the paging total of the filtered set and used to read as "the
                 // family only has this many parameters" (external harness feedback).
                 ["parametersTotalInFamily"] = manager.GetParameters().Count,
+                ["matchedCount"] = filtered.Count,
+                ["nameContains"] = string.IsNullOrWhiteSpace(nameContains) ? null : nameContains,
                 ["typeCount"] = types.Count,
                 ["types"] = typeNames,
                 ["typesTruncated"] = types.Count > typeNames.Count,

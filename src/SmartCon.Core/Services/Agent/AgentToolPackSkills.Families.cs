@@ -35,9 +35,8 @@ public static partial class AgentToolPackSkills
 - `blastRadius` в каждом write — показывайте радиус загрузки.
 
 ### Три уровня, которые нельзя путать
-- **Семейство** (`Family`): `familyId`, `familyName`, `familyUniqueId`.
-- **Тип** (`FamilySymbol`): размер/марка, параметры типа.
-- **Экземпляр** (`FamilyInstance`): `scope:instance` — экземпляр, `scope:type` — весь тип.
+- **Семейство** (`familyId`/`familyName`/`familyUniqueId`) → **тип** (`FamilySymbol`: размеры,
+  параметры типа) → **экземпляр** (`FamilyInstance`: `scope:instance`; `scope:type` — весь тип).
 
 ### Кухня Revit
 - `Document.EditFamily` открывает **независимую копию** без редактора; нельзя внутри транзакции,
@@ -47,8 +46,8 @@ public static partial class AgentToolPackSkills
   уникальны).
 - После правки семейство **загружается обратно** и создаётся заново: `familyId`/`familyUniqueId`
   меняются (`previousFamilyId` в ответе), дальше адресуйте по `familyName`.
-- Перезагрузка **не удаляет** и **не переименовывает** типы проекта: переименованный в семействе
-  тип — **дубль**: переименовывайте `rename_family_type`, дубль удаляет `delete_family_types`.
+- Перезагрузка не переименовывает типы проекта: переименованный в семействе тип — дубль
+  (`rename_family_type`; дубль удаляет `delete_family_types`).
 - `Document.Delete(FamilySymbol)` удаляет тип **и все экземпляры** — это `force=true`.
 - `duplicate_family_type` — независимая копия; `rename_family_type` не трогает экземпляры;
   `replace_family_type` — bulk одним `ChangeTypeId` (несовместимые — `type_not_valid_for_element`).
@@ -59,25 +58,19 @@ public static partial class AgentToolPackSkills
 - `purge_families`: кандидат — без размещённых экземпляров; in-place — отдельно.
 - `FamilyManager.Set` пишет во внутренних единицах; `SetValueString` парсит строку в единицах
   документа; `Set` отказывает под формулой.
-- `FamilyParameter.Formula` — **только чтение**; `SetFormula` ставит, `null` снимает; цикл —
-  «invalid formula string».
+- `FamilyParameter.Formula` — только чтение; `SetFormula` ставит/снимает; цикл — invalid formula.
 - Диалект формул: имена регистрозависимы, `<=`/`>=` нет (`NOT(a > b)`), условие — `IF(cond, t, f)`,
-  округление — `round/roundup/rounddown`; складывать только одинаковые единицы, округление делит
-  на `1 mm`. **Строковые параметры формулы держат** (константы в кавычках, `size_lookup`, сборка
-  строки через `IF`) — «текст — через IF» про условную сборку, не про запрет формул у текста.
+  округление — `round/roundup/rounddown`; единицы только одинаковые. Строковые параметры формулы
+  держат: «текст — через IF» про условную сборку, не про запрет формул у текста.
 - Добавление: обычный (`name` + `storageType`) и **shared** (по `guid`; `createDefinition=true`
   создаёт определение в ФОП); определение shared фиксируется при первой загрузке.
 - Built-in имена («Код по классификатору») отклоняются (`parameter_name_taken`) — пишите built-in.
-- `createDefinition=true` пишет **вне** транзакции семейства: при откате определение в ФОП
-  останется.
+- `createDefinition=true` пишет вне транзакции семейства: при откате определение в ФОП останется.
 - `map_family_parameters`: source/target одного scope и размерности (`scope_mismatch`/
-  `spec_mismatch`), без конверсии единиц; `values` снимает формулу target, `formula` переносит
-  текст; в джобе `createTarget:true` создаёт цель из ФОП и работает вместе с `mode:formula` —
-  создание и формула одной джобой.
+  `spec_mismatch`), без конверсии; `values` снимает формулу target; `createTarget:true` — цель из ФОП.
 - `rename_family_parameter` не переименовывает **shared** (`shared_parameter_not_renameable`; имя
   из определения); built-in не переименовываются и не удаляются.
-- `remove_family_parameter` удаляет family **и shared** (по `guid`); формулы Revit удаляет сам
-  (warning); built-in нельзя (`builtin_not_removable`).
+- `remove_family_parameter` удаляет family и shared (по `guid`); built-in нельзя (`builtin_not_removable`).
 - Перед правкой создаётся backup `.rfa`; `undo_last` восстанавливает семейство.
 
 ### Инварианты
@@ -95,7 +88,6 @@ public static partial class AgentToolPackSkills
   и `load_family` (без overwrite) откатываются.
 - Перед `delete_family_types` — `list_family_types(includePlaced=true)`: размещённые экземпляры
   это радиус поражения (`type_in_use` без `force=true`).
-- Перед `remove_family_parameter` — `get_family_parameters` (покажет формулы).
 - После записи — read-back (`get_family_parameters(includeValues=true)`).
 
 ### Форма get_family_parameters
@@ -138,6 +130,10 @@ public static partial class AgentToolPackSkills
    `start_job(action:""map_family_parameters"")` с `createTarget:true` (mode formula для
    вычисляемых, mode values для текстовых) → read-back. Спецификация берёт поля-семейные
    параметры; проектные привязки не нужны.
+11. «Сколько семейств на PREFIX_/BP_/BIM_»: `find_families_with_parameter(parameterName:""PREFIX_"",
+   match:""prefix"", includeInstanceParameters:true, compact:true, summary:true)` → `byPrefix`,
+   `familiesWithoutAnyShared`; перенос — `replace_family_parameter` (не `map_family_parameters`:
+   тот копирует значения, а не перепривязывает определение).
 
 ### Что нельзя
 - Править семейство через `Parameter.Set` без `FamilyManager` — значения не запишутся.

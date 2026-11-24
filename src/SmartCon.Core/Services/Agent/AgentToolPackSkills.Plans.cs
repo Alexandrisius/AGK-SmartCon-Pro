@@ -143,7 +143,10 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
   (`truncated`, `hint`) или ответ заменяется дайджестом с `resultHandle`; полный JSON
   доступен через `read_tool_result` (хранится 30 дней).
 - `read_tool_result`: `handle` — идентификатор вызова тула, `offset`/`limit` (символы,
-  по умолчанию 8000) или `path` внутрь JSON; ответ всегда содержит `nextOffset`.
+  по умолчанию 8000) или `path` внутрь JSON (`data.groups[0]`, отрицательный индекс — с конца);
+  `project:[""signatureDigest"",""parameters.name"",""count""]` возвращает только названные поля,
+  а свойство над массивом разворачивает его поэлементно — не листайте 200k символов ради
+  трёх полей. Ответ всегда содержит `nextOffset`.
 
 ### Инварианты
 - `alreadyAvailable=true` или `alreadyLoaded` в ответе `load_tool_pack` — тул уже вызываем,
@@ -154,7 +157,8 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
 
 ### Рецепты
 1. Не знаете имя тула: `find_tools(query=""скрыть элементы на виде"")` → карточка → `load_tool_pack(pack=...)`.
-2. Ответ пришёл с `truncated=true` и `resultHandle`: `read_tool_result(handle, offset=...)`.
+2. Ответ пришёл с `truncated=true` и `resultHandle`: нужны конкретные поля —
+   `read_tool_result(handle, project=[...])`; нужен весь фрагмент — `read_tool_result(handle, path=..., offset=...)`.
 3. Нужен обзор возможностей: `find_tools(query="""")` с `limit/nextOffset`.
 
 ### Что нельзя

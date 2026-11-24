@@ -478,6 +478,10 @@ public async Task ListSharedParameters_WithoutFile_ReturnsMissing()
 
         await Assert.That(result.Success).IsFalse();
         await Assert.That(result.ErrorCode).IsEqualTo("shared_parameter_file_missing");
+        // set_shared_parameter_file lives in the params pack: the error must name the
+        // loader call, otherwise a model that only loaded families cannot act on it.
+        await Assert.That(result.Message).Contains("load_tool_pack(pack=\"params\")");
+        await Assert.That(result.Message).Contains("set_shared_parameter_file");
     }
     finally
     {

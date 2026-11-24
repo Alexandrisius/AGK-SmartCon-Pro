@@ -16,6 +16,18 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
     private const int DefaultLimit = 200;
     private const int MaxLimit = 1000;
 
+    /// <summary>
+    /// set_shared_parameter_file lives in the params pack, not in families:
+    /// the action names the pack and the loader call, otherwise a model that
+    /// only loaded families sees a tool it cannot call (harness feedback).
+    /// </summary>
+    private const string MissingFileAction =
+        " [Action: call load_tool_pack(pack=\"params\") first - set_shared_parameter_file is " +
+        "in the params pack, not families - then set_shared_parameter_file(path=<absolute .txt " +
+        "path>, dryRun=true); createIfMissing=true creates a new empty file, an existing file " +
+        "is not overwritten; the path is named by the user. In the Revit UI: Manage > Shared " +
+        "Parameters]";
+
     public ListSharedParametersTool(IRevitContext revitContext) : base(revitContext)
     {
     }
@@ -56,19 +68,14 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             return ToolResult.Fail(
                 "shared_parameter_file_missing",
                 "The active shared parameter file could not be opened: " + ex.Message +
-                ". [Action: call set_shared_parameter_file(path=<absolute path of the .txt " +
-                "file>, dryRun=true) to attach an existing file - createIfMissing=true creates " +
-                "a new empty file - then retry; in the Revit UI: Manage > Shared Parameters]");
+                MissingFileAction);
         }
 
         if (file is null)
         {
             return ToolResult.Fail(
                 "shared_parameter_file_missing",
-                "No active shared parameter file is configured. [Action: call " +
-                "set_shared_parameter_file(path=<absolute .txt path>, createIfMissing=true, " +
-                "dryRun=true) to create a new shared parameter file or attach the existing " +
-                "one, then retry; in the Revit UI: Manage > Shared Parameters > Create/Browse]");
+                "No active shared parameter file is configured." + MissingFileAction);
         }
 
         var matches = new List<SharedParameterRow>();
@@ -121,9 +128,7 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             return ToolResult.Fail(
                 "shared_parameter_file_missing",
                 "The shared parameter file could not be read: " + ex.Message +
-                ". [Action: call set_shared_parameter_file(path=<absolute path of another " +
-                ".txt file>, dryRun=true) to switch to a readable file, or check the file " +
-                "and retry]");
+                MissingFileAction);
         }
 
         matches.Sort((left, right) =>

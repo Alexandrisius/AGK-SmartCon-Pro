@@ -298,6 +298,12 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.28` | Сборщик листов: `visibleCategories` и обязательный read-back через `summarize_elements` | P1 | `in-progress` | #513 |
 | `S.29` | Сид кейса 4: насосы должны принадлежать системам — «сердце кейса» недоказуемо из модели (вердиктор уже честный) | P1 | `blocked` | #514 |
 | `S.32` | Ночной прогон №3 (deepseek, pass A): остаток находок P2/P3 харнесса | P3 | `backlog` | #516 |
+| `S.33` | family audit read-surface: discovery/prefix/summary, compact groups, `read_tool_result` projection | P1 | `done` | #518 |
+| `S.34` | ФОП-миграция: `audit_parameter_migration` и `compare_families_with_shared_parameter_file` | P2 | `backlog` | #517 |
+| `S.35` | Harness feedback v2: честный `returned`/пагинация, `groupBy:"prefix"`, действие ФОП из пака params | P1 | `done` | #519 |
+| `S.36` | Harness feedback v3: `familiesScanned` vs `typesScanned`, `fields[]` find-тула, `familiesWithoutTypes` в summary | P1 | `done` | #520 |
+| `S.37` | Harness feedback v4: `byCategory[]` в find-туле, явные `familyIdsReturned`/`familyIdsNote` в group-туле | P1 | `done` | #521 |
+| `S.38` | Harness feedback v5: `familyIdsOffset`/`familyIdsLimit` для больших групп | P1 | `done` | #522 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 

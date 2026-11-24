@@ -53,13 +53,16 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             "placed in the model; 0 means it has no instance of its own - a nested or " +
             "profile family may still be in use, so 0 does not mean unused), " +
             "compact=false returns all ten, summary=true adds counts over the whole " +
-            "filtered set (totalFamilies, totalTypes, byCategory, placed, unplaced). " +
+            "filtered set (totalFamilies, totalTypes, byCategory, placed, unplaced, " +
+            "familiesWithTypes/familiesWithoutTypes). familiesWithoutTypes are counted in " +
+            "totalFamilies but are absent from symbol-based scans (group_families_by_shared_parameters, " +
+            "find_families_with_parameter), so their familiesScanned can be smaller. " +
             "Families are not types and not instances: use list_family_types for the types " +
             "of a family. System families (walls, floors, pipes and the like) are not " +
             "listed here: their types come from list_system_types.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family name.""},""category"":{""anyOf"":[{""type"":""string""},{""type"":""array"",""items"":{""type"":""string""}}],""description"":""Category name or OST_* built-in name. A family matches any of the listed categories.""},""includeInPlace"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: familyId, uniqueId, name, category, categoryId, typeCount, placedInstanceCount, isEditable, isInPlace, isParametric. Default: familyId, name, category, typeCount. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields. false: every record carries all ten fields.""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds summary over the whole filtered set, ignoring limit/offset: totalFamilies, totalTypes, byCategory [{category, families, types}] sorted by families desc, inPlace, nonParametric, placed, unplaced (families with/without an instance of their own in the model; unplaced does not mean unused - nested and profile families have no instance of their own).""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family name.""},""category"":{""anyOf"":[{""type"":""string""},{""type"":""array"",""items"":{""type"":""string""}}],""description"":""Category name or OST_* built-in name. A family matches any of the listed categories.""},""includeInPlace"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: familyId, uniqueId, name, category, categoryId, typeCount, placedInstanceCount, isEditable, isInPlace, isParametric. Default: familyId, name, category, typeCount. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields. false: every record carries all ten fields.""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds summary over the whole filtered set, ignoring limit/offset: totalFamilies, totalTypes, byCategory [{category, families, types}] sorted by families desc, inPlace, nonParametric, placed, unplaced (families with/without an instance of their own in the model; unplaced does not mean unused - nested and profile families have no instance of their own), familiesWithTypes, familiesWithoutTypes, familiesWithoutTypesSample, familyScanNote (families without types are absent from symbol-based family scans).""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -114,7 +117,7 @@ public sealed class ListFamiliesTool : AgentReadToolBase
                 placedCounts.TryGetValue(family.Id.GetValue(), out placedInstanceCount);
             }
 
-            summary.Add(categoryName, typeCount, family.IsInPlace, family.IsParametric,
+            summary.Add(family.Name, categoryName, typeCount, family.IsInPlace, family.IsParametric,
                 placedInstanceCount > 0);
             if (!inWindow)
                 continue;
@@ -268,13 +271,20 @@ public sealed class ListFamiliesTool : AgentReadToolBase
         private int _nonParametric;
         private int _placed;
         private int _unplaced;
+        private int _withoutTypes;
+        private readonly List<string> _withoutTypeNames = new();
 
         internal int Total { get; set; }
 
         internal int CategoryCount => _byCategory.Count;
 
         internal void Add(
-            string? category, int typeCount, bool isInPlace, bool isParametric, bool isPlaced)
+            string? name,
+            string? category,
+            int typeCount,
+            bool isInPlace,
+            bool isParametric,
+            bool isPlaced)
         {
             var key = category ?? string.Empty;
             if (!_byCategory.TryGetValue(key, out var count))
@@ -283,6 +293,13 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             count.Families++;
             count.Types += typeCount;
             _totalTypes += typeCount;
+            if (typeCount == 0)
+            {
+                _withoutTypes++;
+                if (_withoutTypeNames.Count < 10 && !string.IsNullOrWhiteSpace(name))
+                    _withoutTypeNames.Add(name!);
+            }
+
             if (isInPlace)
                 _inPlace++;
             if (!isParametric)
@@ -313,7 +330,17 @@ public sealed class ListFamiliesTool : AgentReadToolBase
                 ["inPlace"] = _inPlace,
                 ["nonParametric"] = _nonParametric,
                 ["placed"] = _placed,
-                ["unplaced"] = _unplaced
+                ["unplaced"] = _unplaced,
+                ["familiesWithTypes"] = Total - _withoutTypes,
+                ["familiesWithoutTypes"] = _withoutTypes,
+                ["familiesWithoutTypesSample"] = _withoutTypeNames.Count > 0
+                    ? _withoutTypeNames
+                    : null,
+                ["familyScanNote"] =
+                    "Symbol-based scans (group_families_by_shared_parameters, " +
+                    "find_families_with_parameter) see families that have types (FamilySymbol) " +
+                    "or placed instances; familiesWithoutTypes are counted in totalFamilies " +
+                    "but not in their familiesScanned."
             };
         }
 

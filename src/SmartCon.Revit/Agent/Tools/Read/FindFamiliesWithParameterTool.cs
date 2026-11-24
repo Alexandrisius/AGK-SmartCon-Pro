@@ -2,6 +2,7 @@ using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Agent.Tools.Families;
 
@@ -9,11 +10,14 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 
 /// <summary>
 /// Live scan (no persistent index) over loaded family types: finds families whose
-/// types expose a parameter with the requested name (and optionally value).
-/// Instance-scope parameters live on placed instances, not on the family symbol,
-/// so they need the separate <c>includeInstanceParameters</c> pass.
+/// types expose a parameter with the requested name (exact, contains or prefix)
+/// and optionally a value. Instance-scope parameters live on placed instances, not
+/// on the family symbol, so they need the separate
+/// <c>includeInstanceParameters</c> pass. With <c>summary=true</c> the same scan
+/// also reports the shared-parameter landscape (families without any shared
+/// parameter and the parameter-name prefixes such as PREFIX_ / BP_ / BIM_).
 /// </summary>
-public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
+public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
 {
     private const int DefaultLimit = 100;
     private const int MaxLimit = 500;
@@ -29,6 +33,23 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
 
     private const int MaxSampleInstances = 5;
 
+    private const int MaxSampleParameterNames = 3;
+
+    private const int MaxPrefixBuckets = 20;
+
+    private static readonly string[] FamilyRowFields =
+    {
+        "familyId", "familyName", "familyUniqueId", "category", "matchedParameterCount",
+        "sample", "sampleTruncated", "matchedTypeCount", "matchedTypesReturned",
+        "matchedTypesTruncated", "matchedTypeNames", "matchedTypes", "placedInstanceCount",
+        "instancesScanned", "instanceParametersUnknown", "matchedInstanceParameterCount",
+        "matchedInstanceParametersReturned", "matchedInstanceParametersTruncated",
+        "matchedInstanceParameterNames", "matchedInstanceParameters"
+    };
+
+    /// <summary>Room for the tool envelope and the message inside the 40k budget.</summary>
+    private const int PageBudgetCharacters = ToolResultBudget.DefaultMaxCharacters - 2000;
+
     public FindFamiliesWithParameterTool(IRevitContext revitContext) : base(revitContext)
     {
     }
@@ -37,39 +58,51 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
     {
         Name = "find_families_with_parameter",
         Description =
-            "Finds loaded families whose family types expose a parameter with the given name " +
-            "(exact or contains match) and optional value. Scans the live project on every " +
-            "call — no index; unplaced types are included. By default only type parameters are " +
-            "searched. With includeInstanceParameters=true placed family instances are also " +
-            "scanned, so instance-scope shared parameters (for example a name parameter) are " +
-            "found; placedInstanceCount is reported only with includeInstanceParameters=true " +
-            "(null and instancesScanned=false otherwise — not scanned, not unplaced); families " +
-            "with no placed instances are flagged instanceParametersUnknown=true " +
-            "(their instance parameters can only be checked by opening the family document via " +
-            "get_family_parameters). matchedTypes and matchedInstanceParameters are " +
-            "capped per family by maxMatchedTypes (default 10, max 50); the totals and *Truncated " +
-            "flags show how many matches exist in full. compact=true returns *Names instead of " +
-            "full rows.",
+            "Audit/migration: finds loaded families by parameter name (exact, contains or " +
+            "prefix) and optional value. Use match=prefix (or parameterNamePrefix) for a " +
+            "one-call inventory by shared-parameter prefix — PREFIX_, BP_, BIM_, any ФОП prefix — " +
+            "instead of group_families_by_shared_parameters (that tool groups families by the " +
+            "full GUID signature and returns heavy cards). summary=true (alias groupByPrefix) adds " +
+            "byCategory[] over the matched families (category + families), so a category overview " +
+            "does not need every page, familiesWithoutAnyShared and byPrefix[] (prefix, families, " +
+            "parameters) across every scanned family, not only the matches; the prefix is the part " +
+            "up to the first '_' " +
+            "(e.g. PREFIX_), names without '_' fall into the '(none)' bucket. unplacedCount is " +
+            "reported whenever includeInstanceParameters=true (null when instance parameters " +
+            "were not scanned). " +
+            "Scans the live project on every call — no index; unplaced types are included. " +
+            "By default only type parameters are searched. With includeInstanceParameters=true " +
+            "placed family instances are also scanned, so instance-scope shared parameters " +
+            "(for example a name parameter) are found; placedInstanceCount is reported only " +
+            "with includeInstanceParameters=true (null and instancesScanned=false otherwise — " +
+            "not scanned, not unplaced); families with no placed instances are flagged " +
+            "instanceParametersUnknown=true (their instance parameters can only be checked by " +
+            "opening the family document via get_family_parameters). compact=true returns " +
+            "compact rows with familyName, matchedParameterCount and a sample[] of matched " +
+            "parameter names — enough for a migration plan, without full type/instance rows; " +
+            "fields:[...] projects the row keys, so compact=true with " +
+            "fields:[\"familyId\",\"familyName\",\"matchedParameterCount\",\"sample\"] keeps a " +
+            "few-hundred-family list in one call. " +
+            "matchedTypes and matchedInstanceParameters are capped per family by maxMatchedTypes " +
+            "(default 10, max 50); the totals and *Truncated flags show how many matches exist " +
+            "in full.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""parameterName"":{""type"":""string""},""match"":{""type"":""string"",""enum"":[""exact"",""contains""],""default"":""exact""},""valueContains"":{""type"":""string""},""category"":{""type"":""string""},""includeInstanceParameters"":{""type"":""boolean"",""default"":false},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""maxMatchedTypes"":{""type"":""integer"",""default"":10,""minimum"":1,""maximum"":50},""compact"":{""type"":""boolean"",""default"":false},""offset"":{""type"":""integer"",""default"":0}},""required"":[""parameterName""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson +
+            @"""parameterName"":{""type"":""string"",""description"":""Parameter name or prefix to search for""},""parameterNamePrefix"":{""type"":""string"",""description"":""Alias for a prefix search: same as parameterName + match=prefix""},""match"":{""type"":""string"",""enum"":[""exact"",""contains"",""prefix""],""default"":""exact""},""valueContains"":{""type"":""string""},""category"":{""type"":""string""},""includeInstanceParameters"":{""type"":""boolean"",""default"":false},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds byCategory[] (matched families), familiesWithoutAnyShared, byPrefix[], unplacedCount""},""groupByPrefix"":{""type"":""boolean"",""default"":false,""description"":""Alias for summary: add byCategory[], byPrefix[] and familiesWithoutAnyShared""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""maxMatchedTypes"":{""type"":""integer"",""default"":10,""minimum"":1,""maximum"":50},""compact"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Row keys to return: familyId, familyName, familyUniqueId, category, matchedParameterCount, sample, sampleTruncated, matchedTypeCount, matchedTypesReturned, matchedTypesTruncated, matchedTypeNames, matchedTypes, placedInstanceCount, instancesScanned, instanceParametersUnknown, matchedInstanceParameterCount, matchedInstanceParametersReturned, matchedInstanceParametersTruncated, matchedInstanceParameterNames, matchedInstanceParameters. Unknown names return invalid_arguments.""},""offset"":{""type"":""integer"",""default"":0}},""required"":[],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
-        var parameterName = AgentJson.GetString(args, "parameterName");
-        if (string.IsNullOrWhiteSpace(parameterName))
-        {
-            return ToolResult.Fail(
-                "invalid_arguments",
-                "parameterName is required: pass the parameter name to search for.");
-        }
+        var queryError = ResolveQuery(args, out var parameterName, out var mode, out var modeText);
+        if (queryError is not null)
+            return ToolResult.Fail("invalid_arguments", queryError);
 
-        var matchText = AgentJson.GetString(args, "match");
-        var contains = string.Equals(matchText, "contains", StringComparison.OrdinalIgnoreCase);
         var valueContains = AgentJson.GetString(args, "valueContains");
         var categoryFilter = AgentJson.GetString(args, "category");
         var includeInstanceParameters = AgentJson.GetBool(args, "includeInstanceParameters", false);
+        var summary = AgentJson.GetBool(args, "summary", false)
+                      || AgentJson.GetBool(args, "groupByPrefix", false);
         var offset = AgentPaging.NormalizeOffset(AgentJson.GetInt(args, "offset", 0));
         var limit = AgentPaging.NormalizeLimit(
             AgentJson.GetInt(args, "limit", DefaultLimit),
@@ -81,6 +114,12 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
                 AgentJson.GetInt(args, "maxMatchedTypes", DefaultMaxMatchedTypes),
                 MaxMatchedTypes));
         var compact = AgentJson.GetBool(args, "compact", false);
+        var fieldSelection = AgentListPayload.SelectFields(
+            FamilyRowFields,
+            AgentJson.GetStringArray(args, "fields"),
+            FamilyRowFields);
+        if (!fieldSelection.IsValid)
+            return ToolResult.Fail("invalid_arguments", fieldSelection.Error!);
 
         HashSet<long>? categoryIds = null;
         if (!string.IsNullOrWhiteSpace(categoryFilter))
@@ -100,365 +139,316 @@ public sealed class FindFamiliesWithParameterTool : AgentReadToolBase
             categoryIds = new HashSet<long>(resolved.Select(id => id.GetValue()));
         }
 
-        var families = new Dictionary<long, FamilyMatch>();
-        var familiesSeen = new HashSet<long>();
-        var typesScanned = 0;
-        var instancesScanned = 0;
+        var outcome = ScanFamilies(
+            doc,
+            parameterName!,
+            mode,
+            valueContains,
+            categoryIds,
+            includeInstanceParameters,
+            summary,
+            maxMatchedTypes,
+            ct);
 
-        var collector = new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol));
-        foreach (var element in collector)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (element is not FamilySymbol symbol)
-                continue;
-
-            typesScanned++;
-            var family = symbol.Family;
-            if (family is null)
-                continue;
-
-            familiesSeen.Add(family.Id.GetValue());
-            if (!MatchesCategory(family, categoryIds))
-                continue;
-
-            FamilyMatch? familyMatch = null;
-            var matchTotal = 0;
-            var seenParameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Parameter parameter in symbol.Parameters)
-            {
-                var name = parameter.Definition?.Name;
-                if (string.IsNullOrEmpty(name))
-                    continue;
-
-                if (!MatchesName(name!, parameterName!, contains))
-                    continue;
-
-                var value = SafeValueString(parameter);
-                if (!string.IsNullOrWhiteSpace(valueContains)
-                    && !AgentFamilySpecs.ContainsNormalized(value, valueContains!))
-                {
-                    continue;
-                }
-
-                if (!seenParameterNames.Add(name!))
-                    continue;
-
-                matchTotal++;
-                familyMatch ??= GetOrCreateFamily(families, family);
-
-                // The cap belongs to the family, not to one type: a door family with
-                // 40 matching types used to return 40 rows (external run 6, P2).
-                if (familyMatch.TypeMatches.Count >= maxMatchedTypes)
-                    continue;
-
-                familyMatch.TypeMatches.Add(new Dictionary<string, object?>
-                {
-                    ["scope"] = "type",
-                    ["typeId"] = symbol.Id.GetValue(),
-                    ["typeName"] = symbol.Name,
-                    ["parameterName"] = name,
-                    ["value"] = value
-                });
-            }
-
-            if (matchTotal == 0 || familyMatch is null)
-                continue;
-
-            familyMatch.MatchedTypesTotal += matchTotal;
-        }
-
-        if (includeInstanceParameters)
-        {
-            ScanPlacedInstances(
-                doc,
-                categoryIds,
-                parameterName!,
-                contains,
-                valueContains,
-                maxMatchedTypes,
-                families,
-                familiesSeen,
-                ref instancesScanned,
-                ct);
-        }
-
-        var ordered = new List<FamilyMatch>(families.Values);
-        ordered.Sort((left, right) =>
+        var matched = outcome.Families.Values
+            .Where(item => item.Matched)
+            .ToList();
+        matched.Sort((left, right) =>
             string.Compare(left.FamilyName, right.FamilyName, StringComparison.OrdinalIgnoreCase));
 
-        var page = new List<Dictionary<string, object?>>();
-        for (var index = offset; index < ordered.Count && page.Count < limit; index++)
+        var typeMatches = matched.Sum(item => item.MatchedTypesTotal);
+        var instanceMatches = matched.Sum(item => item.MatchedInstanceParametersTotal);
+        var instancesScanned = includeInstanceParameters;
+        var unplacedCount = instancesScanned
+            ? outcome.Families.Values.Count(item => item.PlacedInstanceCount == 0)
+            : (int?)null;
+        // The summary is a full pass over the scanned families; the page loop may
+        // run several times, so compute it once. byCategory counts the matched
+        // families (total), not the page: that is what makes a truncated page
+        // unnecessary for a category overview.
+        var summaryFields = summary ? BuildSummary(outcome, instancesScanned) : null;
+        var byCategory = summary ? BuildByCategory(matched) : null;
+
+        // A page of compact rows can still exceed the context budget: answer with
+        // an honest smaller page and nextOffset instead of letting the generic
+        // trimmer halve families[] while "returned" keeps the pre-trim count.
+        var pageSize = Math.Min(limit, Math.Max(0, matched.Count - offset));
+        List<Dictionary<string, object?>> page;
+        Dictionary<string, object?> payload;
+        while (true)
         {
-            var item = ordered[index];
-            page.Add(new Dictionary<string, object?>
+            page = new List<Dictionary<string, object?>>();
+            for (var index = offset; index < matched.Count && page.Count < pageSize; index++)
+                page.Add(BuildFamilyRow(
+                    matched[index], compact, includeInstanceParameters, fieldSelection));
+
+            payload = BuildPayload(page);
+            if (pageSize <= 1
+                || AgentJson.Serialize(payload).GetRawText().Length <= PageBudgetCharacters)
             {
-                ["familyId"] = item.FamilyId,
-                ["familyName"] = item.FamilyName,
-                ["familyUniqueId"] = item.FamilyUniqueId,
-                ["category"] = item.Category,
-                ["matchedTypeCount"] = item.MatchedTypesTotal,
-                ["matchedTypesReturned"] = item.TypeMatches.Count,
-                ["matchedTypesTruncated"] = item.MatchedTypesTotal > item.TypeMatches.Count,
-                ["matchedTypeNames"] = compact
-                    ? item.TypeMatches.Select(match => match["typeName"]).ToList()
-                    : null,
-                ["matchedTypes"] = compact ? null : item.TypeMatches,
-                // Null (not zero) when the instances were not scanned: a zero here
-                // read as "family has no placed instances".
-                ["placedInstanceCount"] = includeInstanceParameters ? (int?)item.PlacedInstanceCount : null,
-                ["instancesScanned"] = includeInstanceParameters,
-                ["instanceParametersUnknown"] =
-                    includeInstanceParameters && item.PlacedInstanceCount == 0,
-                ["matchedInstanceParameterCount"] = item.MatchedInstanceParametersTotal,
-                ["matchedInstanceParametersReturned"] = item.InstanceMatches.Count,
-                ["matchedInstanceParametersTruncated"] =
-                    item.MatchedInstanceParametersTotal > item.InstanceMatches.Count,
-                ["matchedInstanceParameterNames"] = compact
-                    ? item.InstanceMatches.Select(match => match["parameterName"]).ToList()
-                    : null,
-                ["matchedInstanceParameters"] = compact ? null : item.InstanceMatches
-            });
+                break;
+            }
+
+            pageSize = Math.Max(1, pageSize / 2);
         }
 
         var nextOffset = offset + page.Count;
-        var typeMatches = ordered.Sum(item => item.MatchedTypesTotal);
-        var instanceMatches = ordered.Sum(item => item.MatchedInstanceParametersTotal);
-        var payload = new Dictionary<string, object?>
-        {
-            ["parameterName"] = parameterName,
-            ["match"] = contains ? "contains" : "exact",
-            ["includeInstanceParameters"] = includeInstanceParameters,
-            ["compact"] = compact,
-            ["families"] = page,
-            ["total"] = ordered.Count,
-            ["returned"] = page.Count,
-            ["offset"] = offset,
-            ["nextOffset"] = nextOffset < ordered.Count ? nextOffset : (int?)null,
-            ["truncated"] = nextOffset < ordered.Count,
-            ["familiesScanned"] = familiesSeen.Count,
-            ["typesScanned"] = typesScanned,
-            ["instancesScanned"] = instancesScanned,
-            ["typeMatchesTotal"] = typeMatches,
-            ["instanceParametersTotal"] = instanceMatches,
-            ["scopeNote"] =
-                "Type parameters are read from family symbols. With includeInstanceParameters=true " +
-                "instance-scope parameters are read from placed instances; a family with no " +
-                "placed instances can only be checked by opening its document with " +
-                "get_family_parameters."
-        };
-
-        var messageText = ordered.Count == 0
+        var messageText = matched.Count == 0
             ? "No loaded family exposes a parameter matching '" + parameterName + "'. " +
-              "Scanned " + typesScanned + " type(s) in " + familiesSeen.Count +
+              "Scanned " + outcome.TypesScanned + " type(s) in " + outcome.FamiliesSeen.Count +
               " family(ies)" +
               (includeInstanceParameters
-                  ? " and " + instancesScanned + " placed instance(s)."
+                  ? " and " + outcome.InstancesScanned + " placed instance(s)."
                   : "; pass includeInstanceParameters=true to also scan placed instances.") +
               " Use list_families / get_family_parameters to inspect a family."
-            : "Found " + ordered.Count + " family(ies) with parameter '" + parameterName +
+            : "Found " + matched.Count + " family(ies) with parameter '" + parameterName +
               "' (" + typeMatches + " type match(es)" +
               (includeInstanceParameters ? ", " + instanceMatches + " instance parameter(s)" : "") +
               "); returned " + page.Count +
-              (nextOffset < ordered.Count ? ", next offset " + nextOffset : string.Empty) + ".";
+              (nextOffset < matched.Count ? ", next offset " + nextOffset : string.Empty) +
+              (payload.GetValueOrDefault("pageBudgetApplied") is true
+                  ? " (the page was reduced to fit the context budget)"
+                  : string.Empty) +
+              (summary && payload.GetValueOrDefault("byPrefix") is List<Dictionary<string, object?>> prefixes
+                  ? "; " + prefixes.Count + " shared-parameter prefix bucket(s), " +
+                    payload.GetValueOrDefault("familiesWithoutAnyShared") +
+                    " family(ies) without any shared parameters."
+                  : string.Empty) + ".";
 
         return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
-    }
 
-    private static void ScanPlacedInstances(
-        Document doc,
-        HashSet<long>? categoryIds,
-        string parameterName,
-        bool contains,
-        string? valueContains,
-        int maxMatchedTypes,
-        Dictionary<long, FamilyMatch> families,
-        HashSet<long> familiesSeen,
-        ref int instancesScanned,
-        CancellationToken ct)
-    {
-        var collector = new FilteredElementCollector(doc).OfClass(typeof(FamilyInstance));
-        foreach (var element in collector)
+        Dictionary<string, object?> BuildPayload(List<Dictionary<string, object?>> currentPage)
         {
-            ct.ThrowIfCancellationRequested();
-            if (element is not FamilyInstance instance)
-                continue;
-
-            instancesScanned++;
-            var family = instance.Symbol?.Family;
-            if (family is null)
-                continue;
-
-            familiesSeen.Add(family.Id.GetValue());
-            if (!MatchesCategory(family, categoryIds))
-                continue;
-
-            var familyMatch = GetOrCreateFamily(families, family);
-            familyMatch.PlacedInstanceCount++;
-
-            var seenParameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (Parameter parameter in instance.Parameters)
+            var next = offset + currentPage.Count;
+            var more = next < matched.Count;
+            var result = new Dictionary<string, object?>
             {
-                var name = parameter.Definition?.Name;
-                if (string.IsNullOrEmpty(name))
-                    continue;
-
-                if (!MatchesName(name!, parameterName, contains))
-                    continue;
-
-                var value = SafeValueString(parameter);
-                if (!string.IsNullOrWhiteSpace(valueContains)
-                    && !AgentFamilySpecs.ContainsNormalized(value, valueContains!))
-                {
-                    continue;
-                }
-
-                if (!seenParameterNames.Add(name!))
-                    continue;
-
-                if (!familyMatch.InstanceParameters.TryGetValue(name!, out var match))
-                {
-                    match = new InstanceParameterMatch
-                    {
-                        ParameterName = name!,
-                        FirstValue = value
-                    };
-                    familyMatch.InstanceParameters.Add(name!, match);
-                    familyMatch.MatchedInstanceParametersTotal++;
-
-                    if (familyMatch.InstanceMatches.Count < maxMatchedTypes)
-                    {
-                        familyMatch.InstanceMatches.Add(match.ToRow());
-                    }
-                }
-
-                match.AddInstance(instance.Id.GetValue(), value);
-                if (match.Row is not null)
-                    match.SyncRow();
-            }
-        }
-    }
-
-    private static FamilyMatch GetOrCreateFamily(
-        Dictionary<long, FamilyMatch> families,
-        Autodesk.Revit.DB.Family family)
-    {
-        var id = family.Id.GetValue();
-        if (families.TryGetValue(id, out var existing))
-            return existing;
-
-        var created = new FamilyMatch
-        {
-            FamilyId = id,
-            FamilyUniqueId = family.UniqueId,
-            FamilyName = family.Name,
-            Category = family.FamilyCategory?.Name
-        };
-        families.Add(id, created);
-        return created;
-    }
-
-    private static bool MatchesCategory(
-        Autodesk.Revit.DB.Family family,
-        HashSet<long>? categoryIds) =>
-        categoryIds is null
-        || (family.FamilyCategory is not null
-            && categoryIds.Contains(family.FamilyCategory.Id.GetValue()));
-
-    private static bool MatchesName(string name, string parameterName, bool contains) =>
-        contains
-            ? AgentFamilySpecs.ContainsNormalized(name, parameterName)
-            : string.Equals(name, parameterName.Trim(), StringComparison.OrdinalIgnoreCase);
-
-    private static string? SafeValueString(Parameter parameter)
-    {
-        try
-        {
-            return parameter.AsValueString() ?? parameter.AsString();
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private sealed class FamilyMatch
-    {
-        public long FamilyId { get; init; }
-
-        public required string FamilyUniqueId { get; init; }
-
-        public required string FamilyName { get; init; }
-
-        public string? Category { get; init; }
-
-        public int MatchedTypesTotal { get; set; }
-
-        public int MatchedInstanceParametersTotal { get; set; }
-
-        public int PlacedInstanceCount { get; set; }
-
-        public List<Dictionary<string, object?>> TypeMatches { get; } = new();
-
-        public List<Dictionary<string, object?>> InstanceMatches { get; } = new();
-
-        public Dictionary<string, InstanceParameterMatch> InstanceParameters { get; } =
-            new(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private sealed class InstanceParameterMatch
-    {
-        public required string ParameterName { get; init; }
-
-        public string? FirstValue { get; init; }
-
-        public int InstanceCount { get; private set; }
-
-        public List<long> SampleInstanceIds { get; } = new();
-
-        public List<string> SampleValues { get; } = new();
-
-        public Dictionary<string, object?>? Row { get; private set; }
-
-        public void AddInstance(long instanceId, string? value)
-        {
-            InstanceCount++;
-            if (SampleInstanceIds.Count < MaxSampleInstances
-                && !SampleInstanceIds.Contains(instanceId))
-            {
-                SampleInstanceIds.Add(instanceId);
-            }
-
-            if (SampleValues.Count < MaxSampleInstances
-                && !string.IsNullOrWhiteSpace(value)
-                && !SampleValues.Contains(value!))
-            {
-                SampleValues.Add(value!);
-            }
-        }
-
-        public Dictionary<string, object?> ToRow()
-        {
-            Row = new Dictionary<string, object?>
-            {
-                ["scope"] = "instance",
-                ["parameterName"] = ParameterName,
-                ["value"] = FirstValue,
-                ["instanceCount"] = 0,
-                ["sampleInstanceIds"] = SampleInstanceIds,
-                ["sampleValues"] = SampleValues
+                ["parameterName"] = parameterName,
+                ["parameterNamePrefix"] = mode == MatchMode.Prefix ? parameterName : null,
+                ["match"] = modeText,
+                ["includeInstanceParameters"] = includeInstanceParameters,
+                ["summary"] = summary,
+                ["compact"] = compact,
+                ["families"] = currentPage,
+                ["total"] = matched.Count,
+                ["returned"] = currentPage.Count,
+                ["offset"] = offset,
+                ["nextOffset"] = more ? next : (int?)null,
+                ["truncated"] = more,
+                ["pageBudgetApplied"] = currentPage.Count < limit && more ? true : null,
+                ["familiesScanned"] = outcome.FamiliesSeen.Count,
+                ["typesScanned"] = outcome.TypesScanned,
+                ["instancesScanned"] = outcome.InstancesScanned,
+                ["unplacedCount"] = unplacedCount,
+                ["typeMatchesTotal"] = typeMatches,
+                ["instanceParametersTotal"] = instanceMatches,
+                ["scopeNote"] =
+                    "Type parameters are read from family symbols. With includeInstanceParameters=true " +
+                    "instance-scope parameters are read from placed instances; a family with no " +
+                    "placed instances can only be checked by opening its document with " +
+                    "get_family_parameters."
             };
-            return Row;
-        }
 
-        public void SyncRow()
+            if (!fieldSelection.IsDefault)
+                result["fields"] = fieldSelection.Fields;
+            if (summaryFields is not null)
+            {
+                foreach (var pair in summaryFields)
+                    result[pair.Key] = pair.Value;
+                result["byCategory"] = byCategory;
+                result["byCategoryNote"] =
+                    "byCategory counts the matched families (total), not the page.";
+            }
+
+            return result;
+        }
+    }
+
+    private static Dictionary<string, object?> BuildFamilyRow(
+        FamilyScan item,
+        bool compact,
+        bool includeInstanceParameters,
+        AgentListPayload.FieldSelection fields)
+    {
+        var row = new Dictionary<string, object?>
         {
-            if (Row is null)
-                return;
+            ["familyId"] = item.FamilyId,
+            ["familyName"] = item.FamilyName,
+            ["familyUniqueId"] = item.FamilyUniqueId,
+            ["category"] = item.Category,
+            ["matchedParameterCount"] = item.MatchedParameterNames.Count,
+            ["sample"] = item.MatchedParameterNames
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .Take(MaxSampleParameterNames)
+                .ToList(),
+            ["sampleTruncated"] = item.MatchedParameterNames.Count > MaxSampleParameterNames,
+            ["matchedTypeCount"] = item.MatchedTypesTotal,
+            ["matchedTypesReturned"] = item.TypeMatches.Count,
+            ["matchedTypesTruncated"] = item.MatchedTypesTotal > item.TypeMatches.Count,
+            ["matchedTypeNames"] = compact
+                ? item.TypeMatches.Select(match => match["typeName"]).ToList()
+                : null,
+            ["matchedTypes"] = compact ? null : item.TypeMatches,
+            // Null (not zero) when the instances were not scanned: a zero here
+            // read as "family has no placed instances".
+            ["placedInstanceCount"] = includeInstanceParameters
+                ? (int?)item.PlacedInstanceCount
+                : null,
+            ["instancesScanned"] = includeInstanceParameters,
+            ["instanceParametersUnknown"] =
+                includeInstanceParameters && item.PlacedInstanceCount == 0,
+            ["matchedInstanceParameterCount"] = item.MatchedInstanceParametersTotal,
+            ["matchedInstanceParametersReturned"] = item.InstanceMatches.Count,
+            ["matchedInstanceParametersTruncated"] =
+                item.MatchedInstanceParametersTotal > item.InstanceMatches.Count,
+            ["matchedInstanceParameterNames"] = compact
+                ? item.InstanceMatches.Select(match => match["parameterName"]).ToList()
+                : null,
+            ["matchedInstanceParameters"] = compact ? null : item.InstanceMatches
+        };
 
-            Row["instanceCount"] = InstanceCount;
-            Row["value"] = FirstValue ?? (SampleValues.Count > 0 ? SampleValues[0] : null);
-            Row["sampleInstanceIds"] = SampleInstanceIds;
-            Row["sampleValues"] = SampleValues;
+        return fields.IsDefault ? row : AgentListPayload.Project(row, fields);
+    }
+
+    private static List<Dictionary<string, object?>> BuildByCategory(
+        IReadOnlyList<FamilyScan> matched) =>
+        matched
+            .GroupBy(item => item.Category ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new Dictionary<string, object?>
+            {
+                ["category"] = group.Key.Length == 0 ? null : group.Key,
+                ["families"] = group.Count()
+            })
+            .OrderByDescending(row => (int)row["families"]!)
+            .ThenBy(row => (string?)row["category"], StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static Dictionary<string, object?> BuildSummary(
+        ScanOutcome outcome,
+        bool instancesScanned)
+    {
+        var families = outcome.Families.Values.ToList();
+        var withoutShared = families.Count(item => item.SharedGuids.Count == 0);
+        var buckets = new Dictionary<string, PrefixBucket>(StringComparer.OrdinalIgnoreCase);
+        foreach (var family in families)
+        {
+            foreach (var name in family.SharedParameterNames)
+            {
+                var prefix = PrefixOf(name);
+                if (!buckets.TryGetValue(prefix, out var bucket))
+                {
+                    bucket = new PrefixBucket(prefix);
+                    buckets.Add(prefix, bucket);
+                }
+
+                bucket.Families.Add(family.FamilyId);
+                bucket.Parameters.Add(name);
+            }
         }
+
+        var ordered = buckets.Values
+            .OrderByDescending(bucket => bucket.Families.Count)
+            .ThenBy(bucket => bucket.Prefix, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var byPrefix = ordered
+            .Take(MaxPrefixBuckets)
+            .Select(bucket => new Dictionary<string, object?>
+            {
+                ["prefix"] = bucket.Prefix,
+                ["families"] = bucket.Families.Count,
+                ["parameters"] = bucket.Parameters.Count
+            })
+            .ToList();
+
+        return new Dictionary<string, object?>
+        {
+            ["familiesWithoutAnyShared"] = withoutShared,
+            ["familiesWithSharedParameters"] = families.Count - withoutShared,
+            ["placedFamilies"] = instancesScanned
+                ? families.Count(item => item.PlacedInstanceCount > 0)
+                : (int?)null,
+            ["byPrefix"] = byPrefix,
+            ["byPrefixTruncated"] = ordered.Count > byPrefix.Count,
+            ["summaryScope"] = instancesScanned ? "type+instance" : "type",
+            ["summaryNote"] =
+                "familiesWithoutAnyShared and byPrefix count shared parameters only. " +
+                (instancesScanned
+                    ? "Scope is type+instance."
+                    : "Scope is type only: pass includeInstanceParameters=true for instance-scope " +
+                      "shared parameters and unplaced counts.")
+        };
+    }
+
+    private static string PrefixOf(string name) =>
+        AgentSharedParameterResolver.PrefixOf(name);
+
+    private static string? ResolveQuery(
+        JsonElement args,
+        out string? parameterName,
+        out MatchMode mode,
+        out string modeText)
+    {
+        parameterName = AgentJson.GetString(args, "parameterName");
+        var prefixAlias = AgentJson.GetString(args, "parameterNamePrefix");
+        modeText = (AgentJson.GetString(args, "match") ?? "exact").Trim().ToLowerInvariant();
+
+        if (!string.IsNullOrWhiteSpace(prefixAlias))
+        {
+            if (!string.IsNullOrWhiteSpace(parameterName)
+                && !string.Equals(
+                    parameterName!.Trim(), prefixAlias!.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                mode = MatchMode.Exact;
+                return "Pass parameterName or parameterNamePrefix, not both with different values.";
+            }
+
+            parameterName = prefixAlias;
+            if (string.IsNullOrWhiteSpace(AgentJson.GetString(args, "match")))
+                modeText = "prefix";
+        }
+
+        if (string.IsNullOrWhiteSpace(parameterName))
+        {
+            mode = MatchMode.Exact;
+            return "parameterName (or parameterNamePrefix) is required: pass the parameter " +
+                   "name or prefix to search for.";
+        }
+
+        switch (modeText)
+        {
+            case "exact":
+                mode = MatchMode.Exact;
+                return null;
+            case "contains":
+                mode = MatchMode.Contains;
+                return null;
+            case "prefix":
+                mode = MatchMode.Prefix;
+                return null;
+            default:
+                mode = MatchMode.Exact;
+                return "match must be exact, contains or prefix.";
+        }
+    }
+
+    private enum MatchMode
+    {
+        Exact,
+        Contains,
+        Prefix
+    }
+
+    private sealed class PrefixBucket
+    {
+        public PrefixBucket(string prefix)
+        {
+            Prefix = prefix;
+        }
+
+        public string Prefix { get; }
+
+        public HashSet<long> Families { get; } = new();
+
+        public HashSet<string> Parameters { get; } = new(StringComparer.OrdinalIgnoreCase);
     }
 }

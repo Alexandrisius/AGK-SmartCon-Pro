@@ -358,15 +358,13 @@ public static partial class AgentToolCards
                 Examples = new[]
                 {
                     "Покажи остаток результата по resultHandle",
-                    "Дочитай список видов из сохранённого результата",
                     "Возьми data.views из результата с resultHandle",
                     "Продолжи результат с offset 8000"
                 },
                 Synonyms = new[]
                 {
-                    "read_tool_result", "resultHandle", "сохранённый результат", "полный результат",
-                    "дочитать", "продолжить результат", "stored result", "result handle",
-                    "обрезанный результат", "truncated result"
+                    "read_tool_result", "resultHandle", "сохранённый результат",
+                    "дочитать", "stored result", "обрезанный результат", "проекция", "project"
                 },
                 NegativeExamples = new[]
                 {

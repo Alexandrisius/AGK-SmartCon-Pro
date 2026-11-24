@@ -38,7 +38,7 @@ internal static class AgentResultPath
             return null;
         }
 
-        foreach (var segment in path.Split(new[] { '.', '/' }, StringSplitOptions.RemoveEmptyEntries))
+        foreach (var segment in SplitPath(path))
         {
             if (node is JsonObject obj)
             {
@@ -50,11 +50,10 @@ internal static class AgentResultPath
             }
             else if (node is JsonArray array)
             {
-                if (!int.TryParse(segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index)
-                    || index < 0
-                    || index >= array.Count)
+                if (!TryParseIndex(segment, array.Count, out var index))
                 {
-                    error = "Path segment '" + segment + "' is not a valid array index.";
+                    error = "Path segment '" + segment + "' is not a valid array index " +
+                            "(use 0-based [n], a negative index from the end, or a property name).";
                     return null;
                 }
 
@@ -69,6 +68,189 @@ internal static class AgentResultPath
 
         return node;
     }
+
+    /// <summary>
+    /// Projects several paths out of a stored result. Unlike <see cref="Resolve"/>,
+    /// a property segment applied to an array maps over the elements, so
+    /// <c>parameters.name</c> on an array of parameter rows yields an array of
+    /// names. This is the read-side answer to "do not page 200k characters into
+    /// the context just to aggregate three fields".
+    /// </summary>
+    internal static JsonNode? Project(
+        string json,
+        string? basePath,
+        IReadOnlyList<string> paths,
+        out string? error)
+    {
+        error = null;
+        JsonNode? root;
+        try
+        {
+            root = JsonNode.Parse(json);
+        }
+        catch (JsonException ex)
+        {
+            error = "The stored result is not valid JSON: " + ex.Message;
+            return null;
+        }
+
+        var baseNode = root;
+        if (!string.IsNullOrWhiteSpace(basePath))
+        {
+            baseNode = Resolve(json, basePath!, out error);
+            if (error is not null)
+                return null;
+        }
+
+        var result = new JsonObject();
+        foreach (var path in paths)
+        {
+            var segments = SplitPath(path);
+            if (segments.Length == 0)
+            {
+                error = "Projection path is empty.";
+                return null;
+            }
+
+            if (!TryResolveProjected(baseNode, segments, 0, out var value))
+            {
+                error = "Path '" + path + "' was not found in the stored result.";
+                return null;
+            }
+
+            result[path] = Clone(value);
+        }
+
+        return result;
+    }
+
+    private static bool TryResolveProjected(
+        JsonNode? node,
+        IReadOnlyList<string> segments,
+        int index,
+        out JsonNode? value)
+    {
+        value = null;
+        if (index >= segments.Count)
+        {
+            value = node;
+            return true;
+        }
+
+        var segment = segments[index];
+        if (node is JsonObject obj)
+        {
+            if (!obj.TryGetPropertyValue(segment, out var child))
+                return false;
+
+            return TryResolveProjected(child, segments, index + 1, out value);
+        }
+
+        if (node is JsonArray array)
+        {
+            if (int.TryParse(
+                    segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+            {
+                if (!TryParseIndex(segment, array.Count, out var itemIndex))
+                    return false;
+
+                return TryResolveProjected(
+                    array[itemIndex], segments, index + 1, out value);
+            }
+
+            var mapped = new JsonArray();
+            var wildcard = segment == "*";
+            foreach (var item in array)
+            {
+                if (!TryResolveProjected(
+                        item, segments, wildcard ? index + 1 : index, out var mappedValue))
+                {
+                    // Keep positional alignment: parameters.name over a heterogeneous
+                    // array yields a null placeholder instead of silently shortening.
+                    mapped.Add(null);
+                    continue;
+                }
+
+                mapped.Add(Clone(mappedValue));
+            }
+
+            value = mapped;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseIndex(string segment, int count, out int index)
+    {
+        index = 0;
+        if (!int.TryParse(
+                segment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        if (parsed < 0)
+            parsed += count;
+
+        if (parsed < 0 || parsed >= count)
+            return false;
+
+        index = parsed;
+        return true;
+    }
+
+    private static string[] SplitPath(string path)
+    {
+        // Only [n] and [*] are index syntax: a JSON key that itself contains
+        // brackets (not produced by current tools, but legal) stays addressable.
+        var segments = new List<string>();
+        var current = new System.Text.StringBuilder();
+        void Flush()
+        {
+            if (current.Length == 0)
+                return;
+
+            segments.Add(current.ToString());
+            current.Clear();
+        }
+
+        for (var index = 0; index < path.Length; index++)
+        {
+            var character = path[index];
+            if (character is '.' or '/')
+            {
+                Flush();
+                continue;
+            }
+
+            if (character == '[')
+            {
+                var close = path.IndexOf(']', index + 1);
+                if (close > index + 1)
+                {
+                    var inner = path.Substring(index + 1, close - index - 1);
+                    if (inner == "*"
+                        || int.TryParse(
+                            inner, NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+                    {
+                        Flush();
+                        segments.Add(inner);
+                        index = close;
+                        continue;
+                    }
+                }
+            }
+
+            current.Append(character);
+        }
+
+        Flush();
+        return segments.ToArray();
+    }
+
+    private static JsonNode? Clone(JsonNode? node) =>
+        node is null ? null : JsonNode.Parse(node.ToJsonString(TextOptions));
 
     /// <summary>The resolved value as text: a JSON string as itself, anything else as JSON.</summary>
     internal static string ToText(JsonNode? node) =>

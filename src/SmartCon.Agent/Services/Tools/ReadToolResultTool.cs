@@ -54,7 +54,18 @@ public sealed class ReadToolResultTool : IAgentTool
 
         string content;
         var path = GetString(args, "path");
-        if (string.IsNullOrWhiteSpace(path))
+        var project = GetStringArray(args, "project");
+        var projected = project.Count > 0;
+        if (projected)
+        {
+            var selection = AgentResultPath.Project(
+                blob.ResultJson, path, project, out var projectError);
+            if (selection is null)
+                return ToolResult.Fail("invalid_arguments", projectError!);
+
+            content = AgentResultPath.ToText(selection);
+        }
+        else if (string.IsNullOrWhiteSpace(path))
         {
             content = blob.ResultJson;
         }
@@ -86,6 +97,8 @@ public sealed class ReadToolResultTool : IAgentTool
         {
             handle,
             path,
+            projected,
+            project,
             offset,
             limit,
             limitCappedTo,
@@ -118,8 +131,12 @@ public sealed class ReadToolResultTool : IAgentTool
                 "this tool with offset/limit (and an optional path inside the JSON) instead of " +
                 "re-running the original tool. offset/limit are measured in characters " +
                 "(default 8000 ≈ 2–3k tokens), not tokens; limit is at most 20000 - larger " +
-                "values are cut to 20000. To PASS a part of a stored result to " +
-                "another tool, do not read it: put the reference object " +
+                "values are cut to 20000. Path segments accept both data.views.1 and data.views[1]; " +
+                "a negative index counts from the end. project:[...] returns ONLY the named paths " +
+                "and maps a property over arrays (parameters.name → array of names), so a large " +
+                "result can be aggregated without paging it into the context: " +
+                "project:[\"signatureDigest\",\"parameters.name\",\"count\"]. To PASS a part of a " +
+                "stored result to another tool, do not read it: put the reference object " +
                 "{\"$result\":\"<handle>\",\"path\":\"<path>\"} in place of that argument.",
             Risk = AgentToolRisk.Read,
             SupportsDryRun = false,
@@ -129,7 +146,8 @@ public sealed class ReadToolResultTool : IAgentTool
                 @"""handle"":{""type"":""string"",""minLength"":1}," +
                 @"""offset"":{""type"":""integer"",""minimum"":0,""default"":0}," +
                 @"""limit"":{""type"":""integer"",""minimum"":1,""default"":8000,""description"":""At most 20000; larger values are cut to 20000 (see limitCappedTo in the result)""}," +
-                @"""path"":{""type"":""string"",""description"":""Dot/slash path inside the JSON, e.g. data.views or data/views""}}," +
+                @"""path"":{""type"":""string"",""description"":""Dot/slash path inside the JSON, e.g. data.views or data/views; arrays accept [n], e.g. data.groups[0]""}," +
+                @"""project"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":50,""description"":""Return only these paths (relative to path). A property over an array maps over its elements: parameters.name -> array of names""}}," +
                 @"""required"":[""handle""],""additionalProperties"":false}"
         };
 
@@ -149,6 +167,29 @@ public sealed class ReadToolResultTool : IAgentTool
         }
 
         return value.GetString();
+    }
+
+    private static IReadOnlyList<string> GetStringArray(JsonElement args, string property)
+    {
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<string>();
+        }
+
+        var items = new List<string>();
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                var text = item.GetString();
+                if (!string.IsNullOrWhiteSpace(text))
+                    items.Add(text!);
+            }
+        }
+
+        return items;
     }
 
     private static int GetInt(JsonElement args, string property, int fallback)

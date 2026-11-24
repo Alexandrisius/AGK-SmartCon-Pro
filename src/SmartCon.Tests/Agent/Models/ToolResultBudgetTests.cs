@@ -197,7 +197,12 @@ public sealed class ToolResultBudgetTests
             .ToArray();
 
         var result = ToolResult.Ok(
-            JsonSerializer.SerializeToElement(new { total = families.Length, families }),
+            JsonSerializer.SerializeToElement(new
+            {
+                total = families.Length,
+                returned = families.Length,
+                families
+            }),
             "big");
 
         var json = ToolResultBudget.Serialize(result, maxCharacters: 5000);
@@ -208,7 +213,11 @@ public sealed class ToolResultBudgetTests
         var data = document.RootElement.GetProperty("data");
         Assert.True(data.GetProperty("truncated").GetBoolean());
         Assert.True(data.GetProperty("familiesTotal").GetInt32() >= 1000);
-        Assert.True(data.GetProperty("familiesReturned").GetInt32() < 1000);
+        var returned = data.GetProperty("familiesReturned").GetInt32();
+        Assert.True(returned < 1000);
+        // "returned" is the page size of families[], not the pre-trim count:
+        // returned=173 next to familiesReturned=43 is a contradictory answer.
+        Assert.Equal(returned, data.GetProperty("returned").GetInt32());
     }
 
     [Fact]

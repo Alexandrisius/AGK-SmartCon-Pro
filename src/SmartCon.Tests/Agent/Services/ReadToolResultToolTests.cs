@@ -137,6 +137,113 @@ public sealed class ReadToolResultToolTests
     }
 
     [Fact]
+    public async Task Execute_ResolvesBracketArrayIndex()
+    {
+        var tool = CreateTool(
+            "{\"data\":{\"groups\":[{\"signatureDigest\":\"g1\"},{\"signatureDigest\":\"g2\"}]}}");
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"handle\":\"call_1\",\"path\":\"data.groups[0].signatureDigest\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("g1", result.Data!.Value.GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task Execute_ResolvesNegativeArrayIndex()
+    {
+        var tool = CreateTool(
+            "{\"data\":{\"groups\":[{\"signatureDigest\":\"g1\"},{\"signatureDigest\":\"g2\"}]}}");
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"handle\":\"call_1\",\"path\":\"data.groups[-1].signatureDigest\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("g2", result.Data!.Value.GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task Execute_ProjectionReturnsSelectedFieldsAndMapsArrays()
+    {
+        var tool = CreateTool(
+            "{\"data\":{\"groups\":[{\"signatureDigest\":\"g1\",\"count\":2," +
+            "\"parameters\":[{\"name\":\"ADSK_Марка\"},{\"name\":\"ADSK_Код\"}]}]}}");
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse(
+                "{\"handle\":\"call_1\",\"path\":\"data.groups[0]\"," +
+                "\"project\":[\"signatureDigest\",\"parameters.name\",\"count\"]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = result.Data!.Value;
+        Assert.True(data.GetProperty("projected").GetBoolean());
+        using var projected = JsonDocument.Parse(data.GetProperty("content").GetString()!);
+        var root = projected.RootElement;
+        Assert.Equal("g1", root.GetProperty("signatureDigest").GetString());
+        Assert.Equal(2, root.GetProperty("count").GetInt32());
+        var names = root.GetProperty("parameters.name");
+        Assert.Equal(2, names.GetArrayLength());
+        Assert.Equal("ADSK_Марка", names[0].GetString());
+        Assert.Equal("ADSK_Код", names[1].GetString());
+    }
+
+    [Fact]
+    public async Task Execute_ProjectionUnknownPath_IsRejected()
+    {
+        var tool = CreateTool("{\"data\":{\"groups\":[]}}");
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"handle\":\"call_1\",\"project\":[\"missing.path\"]}"),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("invalid_arguments", result.ErrorCode);
+    }
+
+    [Fact]
+    public async Task Execute_BracketKeyIsAddressableAsALiteralProperty()
+    {
+        var tool = CreateTool("{\"data\":{\"a[b]\":\"literal-key\"}}");
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse("{\"handle\":\"call_1\",\"path\":\"data.a[b]\"}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        Assert.Equal("literal-key", result.Data!.Value.GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public async Task Execute_ProjectionArrayMap_KeepsPositionalNulls()
+    {
+        var tool = CreateTool(
+            "{\"data\":{\"groups\":[{\"parameters\":[{\"name\":\"a\"},{}]}]}}");
+
+        var result = await tool.ExecuteAsync(
+            Context(),
+            Parse(
+                "{\"handle\":\"call_1\",\"path\":\"data.groups[0]\"," +
+                "\"project\":[\"parameters.name\"]}"),
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+        using var projected = JsonDocument.Parse(
+            result.Data!.Value.GetProperty("content").GetString()!);
+        var names = projected.RootElement.GetProperty("parameters.name");
+        Assert.Equal(2, names.GetArrayLength());
+        Assert.Equal("a", names[0].GetString());
+        Assert.Equal(JsonValueKind.Null, names[1].ValueKind);
+    }
+
+    [Fact]
     public async Task Execute_OffsetBeyondEnd_IsRejected()
     {
         var tool = CreateTool("{\"success\":true}");

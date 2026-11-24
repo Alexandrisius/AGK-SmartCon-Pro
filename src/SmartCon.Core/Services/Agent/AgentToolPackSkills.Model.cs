@@ -101,9 +101,13 @@ public static partial class AgentToolPackSkills
 - `get_element_bounds` — координаты и габариты ≤50 элементов в мм (координаты модели): `location`
   (точка вставки либо start/end/mid/lengthMm кривой размещения), `boundingBox` (min/max/size/center);
   `viewId` — боксы в контексте вида. Типы — `applicable=false` (`element_type`).
-- `group_families_by_shared_parameters` — группы семейств по наборам GUID общих параметров
-  (`scope: type|instance|both`) + отдельный `unplacedFamilies`: инвентаризация, из каких
-  ФОПов собрана модель, перед массовой миграцией параметров.
+- `group_families_by_shared_parameters` — группы по общим параметрам
+  (`scope: type|instance|both`) + отдельный `unplacedFamilies`. `groupBy:""signature""` —
+  точный полный набор GUID (может дать десятки групп); `groupBy:""prefix""` — бакеты по
+  префиксу имени, практическая оценка «сколько ФОП / сколько портировать» (Revit не хранит
+  путь источника). `compact:true` — `parameterNames[]`/`familyCount`/`familyIds[]`;
+  `familiesWithoutSharedParameters`; точный аудит по префиксу —
+  `find_families_with_parameter(match:""prefix"", summary:true)`.
 - `audit_fill_rate` — батч-аудит заполненности: обязательный набор = поля спек НА ЛИСТАХ
   (или явные `scheduleIds`), сводка за один проход по модели (cap 20000 элементов):
   filled / emptyNoValue / emptyString / missingParameter + виновники (семейство/тип/уровень);
@@ -173,8 +177,11 @@ public static partial class AgentToolPackSkills
 4. «Покажи параметры этого элемента»: `get_element_details(elementIds=[id], includeTypeParameters=true, onlyNonEmpty=true)`.
 5. «Аудит модели перед выдачей»: `audit_fill_rate` (без аргументов — поля листовых спек) →
    по виновникам точечное `set_parameters`/джоба для безопасно-выводимого.
-6. «Из каких ФОПов собрана модель»: `group_families_by_shared_parameters(scope:""both"")` →
-   группы по сигнатурам GUID + `unplacedFamilies` отдельным списком.
+6. «Из каких ФОПов собрана модель / сколько портировать»:
+   `group_families_by_shared_parameters(groupBy:""prefix"", compact:true)` → группы по
+   префиксам имён, `familiesWithoutSharedParameters`, `unplacedCount`; точный состав GUID —
+   `groupBy:""signature""`; карточки — `get_family_parameters(familyIds:[...])`. «Сколько
+   семейств на PREFIX_/BP_/BIM_» — `find_families_with_parameter(match:""prefix"", summary:true)`.
 7. «Где стоят элементы / как далеко друг от друга»: `query_elements` (id) →
    `get_element_bounds(elementIds=[...])` → точки вставки и концы кривых в мм.
 

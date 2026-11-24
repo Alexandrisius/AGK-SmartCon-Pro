@@ -490,10 +490,14 @@ public static partial class AgentToolCards
             Pack = "families",
             Purpose =
                 "Читает активный файл общих параметров (ФОП): путь, группы и определения с " +
-                "именем, GUID, типом данных, группой и видимостью.",
+                "именем, GUID, типом данных, группой и видимостью. Если ФОП не подключён — " +
+                "shared_parameter_file_missing: set_shared_parameter_file живёт в паке params " +
+                "(load_tool_pack(pack:\"params\")), путь называет пользователь; в UI — " +
+                "Manage > Shared Parameters.",
             WhenToUse =
                 "Перед добавлением общего параметра в семейство — чтобы выбрать точное " +
-                "определение из ФОП; чтобы проверить, какой ФОП сейчас подключён.",
+                "определение из ФОП; чтобы проверить, какой ФОП сейчас подключён. При " +
+                "shared_parameter_file_missing сначала подключается ФОП из пака params.",
             WhenNotToUse =
                 "Когда параметр обычный, не общий — add_family_parameter; когда нужны " +
                 "параметры конкретного семейства — get_family_parameters.",
