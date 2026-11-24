@@ -73,6 +73,7 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, ListMaterialsTool>();
         services.AddSingleton<IAgentTool, ListScopeBoxesTool>();
         services.AddSingleton<IAgentTool, RenameViewsTool>();
+        services.AddSingleton<IAgentTool, CreateLevelTool>();
         services.AddSingleton<IAgentTool, RenameLevelsTool>();
         services.AddSingleton<IAgentTool, ApplyViewTemplateTool>();
         services.AddSingleton<IAgentTool, SetViewTemplateInclusionTool>();
@@ -283,6 +284,7 @@ public static class AgentToolRegistration
         typeof(ListMaterialsTool),
         typeof(ListScopeBoxesTool),
         typeof(RenameViewsTool),
+        typeof(CreateLevelTool),
         typeof(RenameLevelsTool),
         typeof(ApplyViewTemplateTool),
         typeof(SetViewTemplateInclusionTool),

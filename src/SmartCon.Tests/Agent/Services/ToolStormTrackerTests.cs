@@ -235,6 +235,50 @@ public sealed class ToolStormTrackerTests
     }
 
     [Fact]
+    public void Observe_PlanFailingOnDifferentSteps_IsNotTheSameError()
+    {
+        // The stress run: three plan previews failed with plan_dry_run_failed but
+        // on different steps — the code alone called that "the same error" and
+        // the model started changing a path that was fine (S.42).
+        var tracker = new ToolStormTracker();
+
+        for (var round = 1; round <= 4; round++)
+        {
+            var failure = ToolResult.Fail(
+                "plan_dry_run_failed", "Step dry run failed.",
+                data: JsonSerializer.SerializeToElement(
+                    new { failedStepId = "s" + round, phase = "preview" }));
+
+            Assert.Empty(tracker.Observe(null, "execute_plan", "{\"steps\":[...]}", failure, round));
+        }
+    }
+
+    [Fact]
+    public void Observe_PlanFailingOnTheSameStep_NamesTheStep()
+    {
+        var tracker = new ToolStormTracker();
+
+        for (var round = 1; round <= 3; round++)
+        {
+            var failure = ToolResult.Fail(
+                "plan_dry_run_failed", "Step 's2' dry run failed.",
+                data: JsonSerializer.SerializeToElement(new { failedStepId = "s2" }));
+
+            var hints = tracker.Observe(null, "execute_plan", "{\"steps\":[...]}", failure, round);
+            if (round < 3)
+            {
+                Assert.Empty(hints);
+                continue;
+            }
+
+            var hint = Assert.Single(hints);
+            Assert.Contains(
+                "already failed in round(s) 1, 2 with the same error (plan_dry_run_failed on step 's2')",
+                hint, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
     public void Observe_SameErrorWithDifferentArguments_CountsAsOneStorm()
     {
         var tracker = new ToolStormTracker();

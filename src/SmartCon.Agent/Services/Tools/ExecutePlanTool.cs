@@ -61,6 +61,20 @@ public sealed partial class ExecutePlanTool : IAgentTool
             "{\"stepId\":\"s1\",\"toolName\":\"set_view_template\",\"arguments\":{...}} " +
             "(toolName names the tool to run; dependsOn is optional and only for steps whose " +
             "arguments actually read an earlier step's result). " +
+            "To configure what an earlier step CREATED, reference its result inside arguments: " +
+            "{\"$step\":\"<stepId>\",\"path\":\"created.sheetId\"} (dot segments or array " +
+            "indexes: createdViewports.0.viewportId). At apply the reference is replaced by the REAL " +
+            "id from that step's apply result, so create_sheet → create_viewports or " +
+            "create_schedule → place_schedule_on_sheet stay one plan; the referenced steps are " +
+            "wired into dependsOn automatically. Reference the tool's own created* block: " +
+            "create_level → created.levelId, create_sheet → created.sheetId, create_schedule → " +
+            "created.scheduleId, create_viewports → createdViewports.N.viewportId. In the preview " +
+            "such steps are preview_skipped (a dry-run id does not survive apply) and an " +
+            "unresolvable reference fails the step with step_reference_unresolved. " +
+            "onError:\"continue\" marks a step whose failure is EXPECTED (a negative guard " +
+            "check, e.g. copy_crop_from_view on a template-controlled view): the failure is " +
+            "recorded (steps[].expectedFailure=true) and the remaining steps still run; the " +
+            "default onError:\"stop\" aborts the plan on the first failed step. " +
             "With dryRun=true (default) every write step is executed as a rollback-only dry run " +
             "and the aggregated diff (changed/skipped/failed per step) is returned; nothing " +
             "changes. Show that diff to the user. Call again with dryRun=false and the " +
@@ -98,7 +112,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
         Category = "Write",
         Tags = new[] { "план", "сценарий", "несколько", "шагов", "сразу", "plan", "multi-step" },
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""goal"":{""type"":""string""},""allowDestructive"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""planDigest"":{""type"":""string""},""steps"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""stepId"":{""type"":""string""},""toolName"":{""type"":""string""},""arguments"":{""type"":""object""},""dependsOn"":{""type"":""array"",""items"":{""type"":""string""}},""expectedChanges"":{""type"":""integer"",""minimum"":0},""expectedChangesAtLeast"":{""type"":""integer"",""minimum"":1},""rationale"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true},""readBackTool"":{""type"":""string""},""readBackArguments"":{""type"":""object""},""readBackExpectations"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""path"":{""type"":""string""},""expected"":{""type"":""string""}},""required"":[""path"",""expected""],""additionalProperties"":false}}},""required"":[""stepId"",""toolName"",""arguments""],""additionalProperties"":false}}},""required"":[""goal"",""steps""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""goal"":{""type"":""string""},""allowDestructive"":{""type"":""boolean"",""default"":false},""dryRun"":{""type"":""boolean"",""default"":true},""planDigest"":{""type"":""string""},""steps"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""stepId"":{""type"":""string""},""toolName"":{""type"":""string""},""arguments"":{""type"":""object""},""dependsOn"":{""type"":""array"",""items"":{""type"":""string""}},""onError"":{""type"":""string"",""enum"":[""stop"",""continue""],""default"":""stop""},""expectedChanges"":{""type"":""integer"",""minimum"":0},""expectedChangesAtLeast"":{""type"":""integer"",""minimum"":1},""rationale"":{""type"":""string""},""dryRun"":{""type"":""boolean"",""default"":true},""readBackTool"":{""type"":""string""},""readBackArguments"":{""type"":""object""},""readBackExpectations"":{""type"":""array"",""items"":{""type"":""object"",""properties"":{""path"":{""type"":""string""},""expected"":{""type"":""string""}},""required"":[""path"",""expected""],""additionalProperties"":false}}},""required"":[""stepId"",""toolName"",""arguments""],""additionalProperties"":false}}},""required"":[""goal"",""steps""],""additionalProperties"":false}"
     };
 
     public async Task<ToolResult> ExecuteAsync(
@@ -265,6 +279,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
                 ? result.AffectedCount
                 : result.Steps.Sum(step => step.Changed),
             failedStepId,
+            expectedFailures = result.ExpectedFailureCount,
             steps = Steps(result, apply: !dryRun),
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,
@@ -296,6 +311,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
             affected = result.AffectedCount,
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,
+            expectedFailures = result.ExpectedFailureCount,
             steps = Steps(result, apply: false),
             warnings,
             // The dry-run id warning closes every preview branch: the incomplete
@@ -338,6 +354,16 @@ public sealed partial class ExecutePlanTool : IAgentTool
 
             try
             {
+                // A {"$step": …} reference is not the final value: repairing the
+                // arguments would drop the reference as an unknown property. The
+                // resolved arguments are schema-validated at apply instead.
+                if (AgentPlanExecutor.ContainsStepReference(step.ArgumentsJson)
+                    || AgentPlanExecutor.ContainsStepReference(step.ArgumentsReadBackJson))
+                {
+                    steps.Add(step);
+                    continue;
+                }
+
                 using var arguments = JsonDocument.Parse(step.ArgumentsJson);
                 var repair = AgentToolInputRepair.Repair(
                     tool.Definition.InputSchemaJson, arguments.RootElement);
@@ -353,6 +379,7 @@ public sealed partial class ExecutePlanTool : IAgentTool
                     ToolName = step.ToolName,
                     ArgumentsJson = repair.Arguments.GetRawText(),
                     DependsOn = step.DependsOn,
+                    OnError = step.OnError,
                     DryRun = step.DryRun,
                     Rationale = step.Rationale,
                     ExpectedChanges = step.ExpectedChanges,
@@ -414,7 +441,12 @@ public sealed partial class ExecutePlanTool : IAgentTool
                 StepId = stepId,
                 ToolName = toolName,
                 ArgumentsJson = arguments.GetRawText(),
-                DependsOn = GetStringArray(stepElement, "dependsOn"),
+                DependsOn = WireStepReferences(
+                    stepId,
+                    GetStringArray(stepElement, "dependsOn"),
+                    arguments.GetRawText(),
+                    GetObjectJson(stepElement, "readBackArguments")),
+                OnError = GetString(stepElement, "onError") ?? "stop",
                 ExpectedChanges = GetInt(stepElement, "expectedChanges"),
                 ExpectedChangesAtLeast = GetInt(stepElement, "expectedChangesAtLeast"),
                 Rationale = GetString(stepElement, "rationale"),
@@ -432,6 +464,41 @@ public sealed partial class ExecutePlanTool : IAgentTool
             AllowDestructive = args.TryGetProperty("allowDestructive", out var allow)
                                && allow.ValueKind == JsonValueKind.True
         };
+    }
+
+    /// <summary>
+    /// A {"$step": "s1"} reference in a step's arguments means the step consumes
+    /// s1's apply result: it must run after s1, so the referenced ids are wired
+    /// into dependsOn automatically — the model never has to spell the
+    /// dependency out (and forgetting it would break the topological order the
+    /// apply follows) (S.42).
+    /// </summary>
+    private static IReadOnlyList<string> WireStepReferences(
+        string stepId,
+        IReadOnlyList<string> dependsOn,
+        string argumentsJson,
+        string readBackArgumentsJson)
+    {
+        var wired = new List<string>(dependsOn);
+        foreach (var referenced in AgentPlanExecutor.ReferencedStepIds(argumentsJson))
+        {
+            if (!string.Equals(referenced, stepId, StringComparison.Ordinal)
+                && !wired.Contains(referenced, StringComparer.Ordinal))
+            {
+                wired.Add(referenced);
+            }
+        }
+
+        foreach (var referenced in AgentPlanExecutor.ReferencedStepIds(readBackArgumentsJson))
+        {
+            if (!string.Equals(referenced, stepId, StringComparison.Ordinal)
+                && !wired.Contains(referenced, StringComparer.Ordinal))
+            {
+                wired.Add(referenced);
+            }
+        }
+
+        return wired;
     }
 
     private static IReadOnlyList<AgentPlanExpectation> GetExpectations(JsonElement step)

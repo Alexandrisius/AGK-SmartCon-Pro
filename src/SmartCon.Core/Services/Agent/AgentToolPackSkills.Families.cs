@@ -111,8 +111,9 @@ public static partial class AgentToolPackSkills
    `set_shared_parameter_file` (путь называет пользователь).
 2. «Перенеси значения из A в B»: `get_family_parameters(includeValues=true)` →
    `map_family_parameters(mappings:[{source:{name:A}, target:{name:B}}], mode:""values"")`.
-3. «Поставь формулу длины»: `set_family_formula(parameter:""Длина"", formula:""Ширина + 20 mm * 2"")`;
-   константам всегда указывайте единицы.
+3. «Поставь формулу длины»: `set_family_formula(parameter:""Длина"", formula:""Ширина * 2"")`;
+   константа без единиц = единицы параметра (длина: ""100"" = 30.5 м); суффиксы (""100 mm"")
+   API отвергает; фикс-значение в мм — `set_family_parameter_values`.
 4. «Убери лишний тип»: `list_family_types(includePlaced=true)` → `delete_family_types(dryRun=true)`
    → решение о `force` → apply.
 5. «Независимый вариант типа»: `duplicate_family_type` → `set_family_parameter_values` на новый тип.

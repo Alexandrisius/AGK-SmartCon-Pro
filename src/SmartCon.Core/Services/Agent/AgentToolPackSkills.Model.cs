@@ -56,6 +56,8 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `list_levels` — все уровни: имя, отметка, id.
+- `create_level` — новый уровень: `name`, `elevationMm` (отрицательная — ниже базы проекта);
+  guard `level_name_taken`. План вида НЕ создаётся — следом `create_floor_plans`.
 - `rename_levels` — `items[{levelId,newName}]`, `atomic`.
 
 ### Кухня Revit
@@ -78,6 +80,8 @@ public static partial class AgentToolPackSkills
 1. «Переименуй уровни по шаблону»: `list_levels` → сформировать имена → `rename_levels(atomic=true)`.
 2. «Какой у меня перепад этажей?»: `list_levels` → разница `ProjectElevation` между соседними (не `Elevation`: база может быть Shared).
 3. «Элементы на уровне N»: `query_elements(levelIds=[id])`.
+4. «Добавь этаж»: `create_level(name, elevationMm)` → в плане `execute_plan` связка через
+   `{{""$step"":""s1"",""path"":""created.levelId""}}` внутри `levels:[…]` → `create_floor_plans(levels, templateId, namePattern)`.
 
 ### Что нельзя
 - Сравнивать `Elevation` уровней с разной `Elevation Base`.

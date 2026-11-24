@@ -192,6 +192,118 @@ internal static partial class AgentScheduleWriteHelper
         false;
 #endif
 
+    // ── Table style inheritance (create_schedule, S.42) ────────────────
+
+    /// <summary>Table text types adopted by a created schedule from an existing one.</summary>
+    internal sealed class InheritedTableStyle
+    {
+        public long? SourceScheduleId { get; set; }
+
+        public string? SourceScheduleName { get; set; }
+
+        public long? BodyTextTypeId { get; set; }
+
+        public long? HeaderTextTypeId { get; set; }
+
+        public long? TitleTextTypeId { get; set; }
+
+        public string? BodyTextTypeName { get; set; }
+
+        public string? HeaderTextTypeName { get; set; }
+
+        public string? TitleTextTypeName { get; set; }
+    }
+
+    /// <summary>
+    /// Copies the body/header/title text types of an existing schedule onto a
+    /// freshly created one (same category first, else any non-template schedule)
+    /// so a new specification does not come out with Revit's default «тело» style
+    /// on every row (S.42). Returns null when the document has no schedule to
+    /// inherit from.
+    /// </summary>
+    internal static InheritedTableStyle? InheritTableTextTypes(Document doc, ViewSchedule schedule)
+    {
+        try
+        {
+            ViewSchedule? source = null;
+            ViewSchedule? fallback = null;
+            foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(ViewSchedule)))
+            {
+                if (element is not ViewSchedule candidate
+                    || candidate.Id == schedule.Id
+                    || candidate.IsTemplate)
+                {
+                    continue;
+                }
+
+                fallback ??= candidate;
+
+                try
+                {
+                    if (source is null
+                        && candidate.Definition.CategoryId == schedule.Definition.CategoryId)
+                    {
+                        source = candidate;
+                    }
+                }
+                catch (Exception)
+                {
+                    // A key schedule without a readable category: skip for the match.
+                }
+            }
+
+            source ??= fallback;
+            if (source is null)
+                return null;
+
+            var inherited = new InheritedTableStyle
+            {
+                SourceScheduleId = source.Id.GetValue(),
+                SourceScheduleName = source.Name,
+                BodyTextTypeId = SafeTextTypeId(source.BodyTextTypeId),
+                HeaderTextTypeId = SafeTextTypeId(source.HeaderTextTypeId),
+                TitleTextTypeId = SafeTextTypeId(source.TitleTextTypeId)
+            };
+
+            if (inherited.BodyTextTypeId.HasValue)
+                schedule.BodyTextTypeId = ElementIdCompat.Create(inherited.BodyTextTypeId.Value);
+            if (inherited.HeaderTextTypeId.HasValue)
+                schedule.HeaderTextTypeId = ElementIdCompat.Create(inherited.HeaderTextTypeId.Value);
+            if (inherited.TitleTextTypeId.HasValue)
+                schedule.TitleTextTypeId = ElementIdCompat.Create(inherited.TitleTextTypeId.Value);
+
+            inherited.BodyTextTypeName = TextTypeName(doc, inherited.BodyTextTypeId);
+            inherited.HeaderTextTypeName = TextTypeName(doc, inherited.HeaderTextTypeId);
+            inherited.TitleTextTypeName = TextTypeName(doc, inherited.TitleTextTypeId);
+            return inherited;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Text note types available for set_schedule_style (id + name).</summary>
+    internal static List<object> AvailableTextTypes(Document doc, int limit)
+    {
+        var result = new List<object>();
+        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(TextNoteType)))
+        {
+            if (result.Count >= limit)
+                break;
+
+            result.Add(new { id = element.Id.GetValue(), name = element.Name });
+        }
+
+        return result;
+    }
+
+    private static long? SafeTextTypeId(ElementId id) =>
+        id is null || id == ElementId.InvalidElementId ? null : id.GetValue();
+
+    private static string? TextTypeName(Document doc, long? id) =>
+        id.HasValue ? doc.GetElement(ElementIdCompat.Create(id.Value))?.Name : null;
+
     // ── Placement rotation ─────────────────────────────────────────────
 
     /// <summary>

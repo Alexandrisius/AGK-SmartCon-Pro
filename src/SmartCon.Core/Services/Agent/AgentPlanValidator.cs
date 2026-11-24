@@ -118,17 +118,60 @@ public static class AgentPlanValidator
                 });
             }
 
-            var schemaErrors = AgentToolSchemaValidator.Validate(
-                tool.InputSchemaJson, step.ArgumentsJson);
-            if (schemaErrors.Count > 0)
+            if (!string.Equals(step.OnError, "stop", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(step.OnError, "continue", StringComparison.OrdinalIgnoreCase))
             {
                 errors.Add(new AgentPlanIssue
                 {
-                    Code = "plan_args_invalid",
-                    Message = "Arguments of '" + step.ToolName + "' are invalid: " +
-                              string.Join("; ", schemaErrors),
+                    Code = "plan_on_error_invalid",
+                    Message = "Step '" + step.StepId + "' sets onError='" + step.OnError +
+                              "'; use \"stop\" or \"continue\".",
                     StepId = step.StepId
                 });
+            }
+
+            // A {"$step": …} reference is a placeholder, not the final argument
+            // value: the schema check would reject the reference object itself.
+            // The referenced steps are wired into dependsOn by the parser, so the
+            // structural checks below still apply; the resolved arguments are
+            // schema-checked at apply time instead (S.42).
+            var hasStepReference =
+                AgentPlanExecutor.ContainsStepReference(step.ArgumentsJson)
+                || AgentPlanExecutor.ContainsStepReference(step.ArgumentsReadBackJson);
+            if (!hasStepReference)
+            {
+                var schemaErrors = AgentToolSchemaValidator.Validate(
+                    tool.InputSchemaJson, step.ArgumentsJson);
+                if (schemaErrors.Count > 0)
+                {
+                    errors.Add(new AgentPlanIssue
+                    {
+                        Code = "plan_args_invalid",
+                        Message = "Arguments of '" + step.ToolName + "' are invalid: " +
+                                  string.Join("; ", schemaErrors),
+                        StepId = step.StepId
+                    });
+                }
+            }
+            else
+            {
+                foreach (var referenced in AgentPlanExecutor.ReferencedStepIds(step.ArgumentsJson)
+                             .Concat(AgentPlanExecutor.ReferencedStepIds(step.ArgumentsReadBackJson)))
+                {
+                    if (plan.Steps.Any(candidate =>
+                            string.Equals(candidate.StepId, referenced, StringComparison.Ordinal)))
+                    {
+                        continue;
+                    }
+
+                    errors.Add(new AgentPlanIssue
+                    {
+                        Code = "plan_dependency_unknown",
+                        Message = "Step '" + step.StepId + "' references unknown step '" +
+                                  referenced + "'.",
+                        StepId = step.StepId
+                    });
+                }
             }
 
             if (step.ExpectedChanges.HasValue && step.ExpectedChangesAtLeast.HasValue)

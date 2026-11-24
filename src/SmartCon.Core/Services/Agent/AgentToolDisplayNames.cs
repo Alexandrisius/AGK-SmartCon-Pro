@@ -1,4 +1,4 @@
-namespace SmartCon.Core.Services.Agent;
+﻿namespace SmartCon.Core.Services.Agent;
 
 /// <summary>
 /// Human-readable tool labels for the UI. Labels follow the tool name literally
@@ -48,6 +48,7 @@ public static class AgentToolDisplayNames
             ["create_view"] = "Создать вид",
             ["set_browser_folder"] = "Задать папку браузера",
             ["rename_levels"] = "Переименовать уровни",
+            ["create_level"] = "Создать уровень",
             ["apply_view_template"] = "Применить шаблон вида",
             ["create_view_template"] = "Создать шаблон вида",
             ["set_view_template_inclusion"] = "Задать включение в шаблон вида",
@@ -63,6 +64,7 @@ public static class AgentToolDisplayNames
             ["set_filter_rules"] = "Задать правила фильтра",
             ["rename_filter"] = "Переименовать фильтр",
             ["delete_filter"] = "Удалить фильтр",
+            ["merge_duplicate_filters"] = "Слить дубликат фильтра",
             ["set_view_parameters"] = "Задать параметры вида",
             ["delete_views"] = "Удалить виды",
             ["delete_sheets"] = "Удалить листы",
@@ -194,6 +196,7 @@ public static class AgentToolDisplayNames
             ["create_view"] = "Create view",
             ["set_browser_folder"] = "Set browser folder",
             ["rename_levels"] = "Rename levels",
+            ["create_level"] = "Create level",
             ["apply_view_template"] = "Apply view template",
             ["create_view_template"] = "Create view template",
             ["set_view_template_inclusion"] = "Set view template inclusion",
@@ -209,6 +212,7 @@ public static class AgentToolDisplayNames
             ["set_filter_rules"] = "Set filter rules",
             ["rename_filter"] = "Rename filter",
             ["delete_filter"] = "Delete filter",
+            ["merge_duplicate_filters"] = "Merge duplicate filter",
             ["set_view_parameters"] = "Set view parameters",
             ["delete_views"] = "Delete views",
             ["delete_sheets"] = "Delete sheets",

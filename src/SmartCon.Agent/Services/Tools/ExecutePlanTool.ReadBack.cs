@@ -54,6 +54,7 @@ public sealed partial class ExecutePlanTool
             affected = result.AffectedCount,
             previewIncomplete = result.PreviewIncomplete,
             notPreviewed = result.NotPreviewed,
+            expectedFailures = result.ExpectedFailureCount,
             warning = result.PreviewIncomplete
                 ? "Steps " + string.Join(", ", result.NotPreviewed) +
                   " were applied without a preview: they depend on earlier write steps, so " +
@@ -123,6 +124,14 @@ public sealed partial class ExecutePlanTool
         IReadOnlyList<string> warnings)
     {
         var parts = new List<string>(warnings);
+        if (result.ExpectedFailureCount > 0)
+        {
+            parts.Add(
+                result.ExpectedFailureCount + " step(s) failed as EXPECTED (onError=continue, " +
+                "see steps[].expectedFailure): the guards behaved as designed and the plan " +
+                "continued past them — nothing to fix.");
+        }
+
         if (digestAutoFilled)
         {
             parts.Add(
@@ -276,6 +285,7 @@ public sealed partial class ExecutePlanTool
             stepId = step.StepId,
             toolName = step.ToolName,
             status = Status(step, apply),
+            expectedFailure = step.ExpectedFailure,
             changed = step.Changed,
             skipped = step.Skipped,
             failed = step.Failed,

@@ -112,6 +112,20 @@ public sealed partial class AgentPlanExecutor
                 continue;
             }
 
+            // A {"$step": …} reference resolves from the referenced step's APPLY
+            // result; the dry run rolled that step back, so its created object
+            // does not exist here either — same skip, same honest reason.
+            if (ContainsStepReference(step.ArgumentsJson)
+                || ContainsStepReference(step.ArgumentsReadBackJson))
+            {
+                var target = ReferencedStepIds(step.ArgumentsJson)
+                    .Concat(ReferencedStepIds(step.ArgumentsReadBackJson))
+                    .FirstOrDefault() ?? "?";
+                result.PreviewSkipped = true;
+                result.PreviewSkipReason = "uses_step_reference:" + target;
+                continue;
+            }
+
             var dryResult = await ExecuteToolAsync(tool, WithDryRun(step.ArgumentsJson, true), true, execution, ct)
                 .ConfigureAwait(false);
             result.DryRunResult = dryResult;
@@ -120,12 +134,19 @@ public sealed partial class AgentPlanExecutor
 
             if (!dryResult.Success)
             {
-                return AgentPlanExecutionResult.Fail(
+                // A negative guard check inside the plan (onError="continue")
+                // records the failure and lets the plan go on (S.42).
+                var failure = FailStep(
+                    step, result, steps, results,
                     "plan_dry_run_failed",
                     "Step '" + step.StepId + "' dry run failed: " +
                     (dryResult.ErrorCode ?? "unknown") +
                     ". Full per-step diff is in steps[].",
-                    results);
+                    markUpstream: false);
+                if (failure is not null)
+                    return failure;
+
+                continue;
             }
 
             if (step.ExpectedChanges.HasValue || step.ExpectedChangesAtLeast.HasValue)
@@ -246,211 +267,6 @@ public sealed partial class AgentPlanExecutor
         return null;
     }
 
-    private async Task<AgentPlanExecutionResult?> RunApplyAsync(
-        IReadOnlyList<AgentPlanStep> steps,
-        IReadOnlyList<AgentPlanStepResult> results,
-        AgentPlanExecutionContext execution,
-        CancellationToken ct)
-    {
-        foreach (var step in steps)
-        {
-            ct.ThrowIfCancellationRequested();
-            var tool = GetTool(step.ToolName);
-            if (tool is null)
-                return AgentPlanExecutionResult.Fail(
-                    "plan_tool_unknown", "Unknown tool '" + step.ToolName + "'.", results);
-
-            var result = results.First(item => item.StepId == step.StepId);
-            if (!IsWrite(step.ToolName))
-            {
-                result.ApplyResult = await ExecuteToolAsync(
-                        tool, step.ArgumentsJson, false, execution, ct)
-                    .ConfigureAwait(false);
-                result.DryRunOk = result.ApplyResult.Success;
-                if (!result.ApplyResult.Success)
-                {
-                    MarkUpstreamFailures(step, steps, results);
-                    return AgentPlanExecutionResult.Fail(
-                        "plan_read_failed",
-                        "Step '" + step.StepId + "' (read) failed: " +
-                        (result.ApplyResult.ErrorCode ?? "unknown") + " " +
-                        result.ApplyResult.Message,
-                        results);
-                }
-
-                continue;
-            }
-
-            var applyResult = await ExecuteToolAsync(
-                    tool, WithDryRun(step.ArgumentsJson, false), true, execution, ct)
-                .ConfigureAwait(false);
-            result.ApplyResult = applyResult;
-            ReadCounts(applyResult, result);
-            CollectFamilyAliases(applyResult, execution.FamilyIdAliases);
-
-            if (!applyResult.Success)
-            {
-                MarkUpstreamFailures(step, steps, results);
-                return AgentPlanExecutionResult.Fail(
-                    "plan_apply_failed",
-                    "Step '" + step.StepId + "' failed: " +
-                    (applyResult.ErrorCode ?? "unknown") + " " + applyResult.Message,
-                    results);
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// A failed apply step stops the plan, so the steps that wanted the id it was
-    /// supposed to create never run. They get a typed upstream_step_failed result
-    /// instead of a bare not_run, so the model sees which dependency broke.
-    /// </summary>
-    private static void MarkUpstreamFailures(
-        AgentPlanStep failedStep,
-        IReadOnlyList<AgentPlanStep> steps,
-        IReadOnlyList<AgentPlanStepResult> results)
-    {
-        var byId = steps.ToDictionary(step => step.StepId, StringComparer.Ordinal);
-        foreach (var step in steps)
-        {
-            var result = results.FirstOrDefault(item => item.StepId == step.StepId);
-            if (result is null || result.ApplyResult is not null)
-                continue;
-
-            var visiting = new HashSet<string>(StringComparer.Ordinal);
-            if (!DependsOnCore(step, failedStep.StepId, byId, visiting))
-                continue;
-
-            result.ApplyResult = ToolResult.Fail(
-                "upstream_step_failed",
-                "Step '" + step.StepId + "' depends on failed step '" + failedStep.StepId +
-                "' (tool " + failedStep.ToolName + ") and was not run.");
-        }
-    }
-
-    private static bool DependsOnCore(
-        AgentPlanStep step,
-        string stepId,
-        IReadOnlyDictionary<string, AgentPlanStep> byId,
-        ISet<string> visiting)
-    {
-        foreach (var dependency in step.DependsOn)
-        {
-            if (string.Equals(dependency, stepId, StringComparison.Ordinal))
-                return true;
-
-            if (!visiting.Add(dependency))
-                continue;
-
-            if (byId.TryGetValue(dependency, out var dependentStep)
-                && DependsOnCore(dependentStep, stepId, byId, visiting))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private async Task<(
-        IReadOnlyList<string> Verified,
-        IReadOnlyList<string> Mismatches,
-        IReadOnlyList<string> NotVerifiable)> RunReadBackAsync(
-        IReadOnlyList<AgentPlanStep> steps,
-        IReadOnlyList<AgentPlanStepResult> results,
-        AgentPlanExecutionContext execution,
-        CancellationToken ct)
-    {
-        var verified = new List<string>();
-        var mismatches = new List<string>();
-        var notVerifiable = new List<string>();
-
-        foreach (var step in steps)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (string.IsNullOrWhiteSpace(step.ReadBackTool))
-                continue;
-
-            var readBackToolName = step.ReadBackTool!;
-            var result = results.First(item => item.StepId == step.StepId);
-            result.ExpectationsDeclared = step.ReadBackExpectations.Count;
-            var tool = GetTool(readBackToolName);
-            if (tool is null)
-            {
-                result.ReadBackFailed = true;
-                mismatches.Add(step.StepId + ": read-back tool '" + readBackToolName +
-                               "' is not registered");
-                continue;
-            }
-
-            var readBack = await ExecuteToolAsync(
-                    tool, step.ArgumentsReadBackJson, false, execution, ct)
-                .ConfigureAwait(false);
-            result.ReadBackResult = readBack;
-            result.ReadBackExecuted = true;
-
-            if (!readBack.Success || readBack.Data is not { } data)
-            {
-                // Nothing was compared: the report must say that verification
-                // was requested but could not run, not that none was requested
-                // (review r1 #1).
-                result.ReadBackFailed = true;
-                mismatches.Add(step.StepId + ": read-back failed (" +
-                               (readBack.ErrorCode ?? "unknown") + ")" +
-                               DescribeAppliedCreatedIds(result.ApplyResult));
-                continue;
-            }
-
-            result.ExpectationsChecked = step.ReadBackExpectations.Count;
-            foreach (var expectation in step.ReadBackExpectations)
-            {
-                var resolution = ResolvePath(data, expectation.Path);
-                if (!resolution.Resolved && resolution.Status == PathStatus.UnsupportedForm)
-                {
-                    // Syntax the resolver does not understand compares nothing:
-                    // reported as not verifiable, never as a value mismatch.
-                    result.NotVerifiableCount++;
-                    notVerifiable.Add(step.StepId + ": " + expectation.Path +
-                                      " — not verifiable (path form not supported: " +
-                                      resolution.Reason + ")");
-                    continue;
-                }
-
-                // A supported path that addressed nothing (no such row or key)
-                // did not confirm the expectation: it is a mismatch like a
-                // differing value, with the reason attached (review r1 #2).
-                var actual = resolution.Resolved ? resolution.Value : null;
-                if (!resolution.Resolved
-                    || actual is null
-                    || !string.Equals(actual, expectation.Expected, StringComparison.Ordinal))
-                {
-                    result.MismatchCount++;
-                    if (!resolution.Resolved)
-                        result.NotFoundMismatchCount++;
-                    mismatches.Add(step.StepId + ": " + expectation.Path + " expected '" +
-                                   expectation.Expected + "', actual '" + (actual ?? "null") + "'" +
-                                   (resolution.Resolved
-                                       ? string.Empty
-                                       : " — object not found in read-back payload (" +
-                                         resolution.Reason + ")"));
-                }
-                else
-                {
-                    result.VerifiedCount++;
-                    verified.Add(step.StepId + ": " + expectation.Path + " = " + actual);
-                }
-            }
-
-            // A read-back that ran without expectations compared nothing: it is
-            // reported as "read-back executed, nothing to compare" by the apply
-            // report, never counted as verified (review r2, WA-6).
-        }
-
-        return (verified, mismatches, notVerifiable);
-    }
-
     private static bool PlanContainsDiscard(AgentPlan plan) =>
         plan.Steps.Any(step =>
             string.Equals(step.ToolName, "discard_change_set", StringComparison.OrdinalIgnoreCase));
@@ -504,5 +320,4 @@ public sealed partial class AgentPlanExecutor
             return ToolResult.Fail("tool_exception", ex.GetType().Name + ": " + ex.Message);
         }
     }
-
 }

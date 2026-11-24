@@ -35,7 +35,9 @@ public sealed class MergeDuplicateFiltersTool : AgentWriteToolBase
         Description =
             "Merges ONE duplicate view filter into its canonical twin: for every view that " +
             "applies the duplicate, the canonical filter is added and the duplicate removed " +
-            "(views that already apply the canonical only lose the duplicate); then the " +
+            "(views that already apply the canonical only lose the duplicate); the duplicate's " +
+            "per-view visibility flag (V/G «Видимость») is carried over to the canonical filter " +
+            "(unreadable ones are listed in filterVisibilityNotTransferred); then the " +
             "duplicate filter is deleted. list_filters.duplicateGroups shows the groups and " +
             "which copy is alive (appliedViewsCount). The dry run returns the per-view plan " +
             "(view x operation) and names[]; apply requires confirmNames equal to the FRESH " +
@@ -101,9 +103,13 @@ public sealed class MergeDuplicateFiltersTool : AgentWriteToolBase
                 : Array.Empty<long>());
 
         // Plan: view x operation. Views with custom overrides on the duplicate
-        // keep nothing — AddFilter starts from default overrides.
+        // keep nothing — AddFilter starts from default overrides. The per-view
+        // visibility flag ("Видимость" in V/G) is transferred: AddFilter starts
+        // visible, which would un-hide everything the duplicate hid (S.42).
         var plan = new List<object>();
         var overridesNotTransferred = new List<object>();
+        var visibilityNotTransferred = new List<object>();
+        var savedVisibility = new Dictionary<long, bool>();
         foreach (var view in duplicateViews)
         {
             var canonicalApplied = canonicalViewIds.Contains(view.Id.GetValue());
@@ -115,14 +121,27 @@ public sealed class MergeDuplicateFiltersTool : AgentWriteToolBase
                 canonicalAlreadyApplied = canonicalApplied
             });
 
-            if (!HasNonDefaultOverrides(view, duplicateId))
+            if (HasNonDefaultOverrides(view, duplicateId))
+            {
+                overridesNotTransferred.Add(new
+                {
+                    viewId = view.Id.GetValue(),
+                    viewName = view.Name
+                });
+            }
+
+            if (canonicalApplied)
                 continue;
 
-            overridesNotTransferred.Add(new
-            {
-                viewId = view.Id.GetValue(),
-                viewName = view.Name
-            });
+            var visible = TryReadFilterVisibility(view, duplicateId);
+            if (visible.HasValue)
+                savedVisibility[view.Id.GetValue()] = visible.Value;
+            else
+                visibilityNotTransferred.Add(new
+                {
+                    viewId = view.Id.GetValue(),
+                    viewName = view.Name
+                });
         }
 
         AgentDeleteHelper.PublishNames(outcome, new[] { duplicateName });
@@ -141,6 +160,7 @@ public sealed class MergeDuplicateFiltersTool : AgentWriteToolBase
         outcome.Data["plan"] = plan;
         outcome.Data["viewsAffected"] = duplicateViews.Count;
         outcome.Data["overridesNotTransferred"] = overridesNotTransferred;
+        outcome.Data["filterVisibilityNotTransferred"] = visibilityNotTransferred;
         outcome.Data["undoSupported"] = false;
 
         if (overridesNotTransferred.Count > 0)
@@ -149,6 +169,16 @@ public sealed class MergeDuplicateFiltersTool : AgentWriteToolBase
                 overridesNotTransferred.Count + " view(s) had graphic overrides on the " +
                 "duplicate; overrides are NOT transferred to the canonical filter — reapply " +
                 "them with set_filter_overrides if needed (see overridesNotTransferred).");
+        }
+
+        if (visibilityNotTransferred.Count > 0)
+        {
+            outcome.Warnings.Add(
+                visibilityNotTransferred.Count + " view(s): the duplicate's visibility flag " +
+                "(V/G «Видимость») could not be read, so the canonical filter starts visible — " +
+                "check V/G on these views after the merge (see filterVisibilityNotTransferred). " +
+                "[Action: review the listed views and re-hide the filter with set_filter_overrides " +
+                "or the V/G dialog if needed]");
         }
 
         if (dryRun)
@@ -201,8 +231,14 @@ public sealed class MergeDuplicateFiltersTool : AgentWriteToolBase
             var applied = AgentFilterUsage.FiltersOf(view);
             try
             {
-                if (!applied.Contains(canonicalId.GetValue()))
+                var canonicalWasApplied = applied.Contains(canonicalId.GetValue());
+                if (!canonicalWasApplied)
+                {
                     view.AddFilter(canonicalId);
+                    if (savedVisibility.TryGetValue(view.Id.GetValue(), out var visible))
+                        view.SetFilterVisibility(canonicalId, visible);
+                }
+
                 if (applied.Contains(duplicateId.GetValue()))
                     view.RemoveFilter(duplicateId);
 
@@ -335,6 +371,18 @@ public sealed class MergeDuplicateFiltersTool : AgentWriteToolBase
         catch (Exception)
         {
             return false;
+        }
+    }
+
+    private static bool? TryReadFilterVisibility(View view, ElementId filterId)
+    {
+        try
+        {
+            return view.GetFilterVisibility(filterId);
+        }
+        catch (Exception)
+        {
+            return null;
         }
     }
 }

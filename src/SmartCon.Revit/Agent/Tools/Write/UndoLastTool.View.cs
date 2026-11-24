@@ -74,11 +74,14 @@ public sealed partial class UndoLastTool
             : BrowserOrganization.GetCurrentBrowserOrganizationForViews(doc);
         Parameter? parameter = null;
         string? reason = null;
+        var readOnlyOnly = false;
         if (organization is null
             || !SetBrowserFolderTool.TryGetGroupingParameter(
-                doc, organization, folderView, out parameter, out reason))
+                doc, organization, folderView, out parameter, out reason, out readOnlyOnly))
         {
-            return (false, "browser_folder_unavailable",
+            return (false, readOnlyOnly
+                    ? "browser_folder_parameter_read_only"
+                    : "browser_folder_unavailable",
                 reason ?? "The document has no browser organization.");
         }
 

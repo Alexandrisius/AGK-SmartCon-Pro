@@ -91,12 +91,20 @@ public sealed partial class ToolStormTracker
             _hostTimeoutStreak = 0;
         }
 
-        // Same tool, same error code, any arguments.
+        // Same tool, same error code, any arguments. The code alone is not the
+        // whole identity: an execute_plan failing on a different step of the plan
+        // is a different error, and calling it a repeat pushed the model to
+        // "change the path" where the path was fine (S.42).
         if (code is not null && !HarnessErrorCodes.Contains(code))
         {
-            var rounds = Rounds(_errorRounds, toolName + "\n" + code);
+            var detail = ErrorDetail(result);
+            var key = toolName + "\n" + code;
+            if (!string.IsNullOrEmpty(detail))
+                key += "\n" + detail;
+
+            var rounds = Rounds(_errorRounds, key);
             if (rounds.Count >= SameErrorThreshold - 1)
-                hints.Add(SameErrorHint(code, rounds));
+                hints.Add(SameErrorHint(code, rounds, detail));
             Remember(rounds, round);
         }
 
@@ -241,9 +249,27 @@ public sealed partial class ToolStormTracker
         Remember(call.Rounds, round);
     }
 
-    private string SameErrorHint(string code, List<int> rounds)
+    /// <summary>
+    /// The part of the failure that separates one error from another inside the
+    /// same call type: an execute_plan result names the step that failed, and
+    /// two plans failing on different steps must not count as one storm (S.42).
+    /// </summary>
+    private static string? ErrorDetail(ToolResult result)
+    {
+        if (result.Data is not { ValueKind: JsonValueKind.Object } data
+            || !data.TryGetProperty("failedStepId", out var stepId)
+            || stepId.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return stepId.GetString();
+    }
+
+    private string SameErrorHint(string code, List<int> rounds, string? detail)
     {
         var where = Where(rounds);
+        var onStep = string.IsNullOrEmpty(detail) ? string.Empty : " on step '" + detail + "'";
         if (string.Equals(code, InvalidArgumentsCode, StringComparison.Ordinal))
         {
             return "This call already failed " + where + " with invalid arguments. " +
@@ -257,7 +283,7 @@ public sealed partial class ToolStormTracker
             ? "Read the reason once more and "
             : string.Empty;
         return "This call already failed " + where + " with the same error (" + code +
-               "). " + readAgain + "choose another path: another tool, or tell the user " +
+               onStep + "). " + readAgain + "choose another path: another tool, or tell the user " +
                "what blocks it.";
     }
 

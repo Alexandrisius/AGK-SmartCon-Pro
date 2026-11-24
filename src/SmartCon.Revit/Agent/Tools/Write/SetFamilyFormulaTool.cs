@@ -145,7 +145,11 @@ public sealed class SetFamilyFormulaTool : AgentFamilyWriteToolBase
                 invalidSyntax ? "invalid_formula" : "formula_not_allowed",
                 "Revit rejected the formula '" + (newFormula ?? "(clear)") + "': " + ex.Message,
                 invalidSyntax
-                    ? "Check the formula syntax, parameter names and instance/type rules."
+                    ? "Check the formula syntax, parameter names and instance/type rules. " +
+                      "Constants: a bare number is read in the PARAMETER's own units (a length " +
+                      "parameter treats 100 as 100 internal feet = 30.5 m), and unit suffixes on " +
+                      "constants (\"100 mm\") are rejected by the API - for a fixed value use " +
+                      "set_family_parameter_values instead of a formula."
                     : "Check that the parameter can be formula-driven and that the formula " +
                       "does not create a circular chain.");
             return;

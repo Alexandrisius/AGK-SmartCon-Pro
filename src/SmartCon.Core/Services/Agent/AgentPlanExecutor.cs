@@ -12,6 +12,12 @@ public sealed class AgentPlanStepResult
 
     public bool DryRunOk { get; set; }
 
+    /// <summary>
+    /// The step failed and that failure was expected (onError="continue"): the
+    /// plan went on, the report shows the step as failed instead of aborting.
+    /// </summary>
+    public bool ExpectedFailure { get; set; }
+
     public int Changed { get; set; }
 
     public int Skipped { get; set; }
@@ -118,6 +124,9 @@ public sealed class AgentPlanExecutionResult
     /// change that a dry run cannot commit. The apply still runs those steps.
     /// </summary>
     public bool PreviewIncomplete { get; init; }
+
+    /// <summary>Steps whose failure was expected (onError="continue") and did not stop the plan.</summary>
+    public int ExpectedFailureCount { get; init; }
 
     public IReadOnlyList<string> NotPreviewed { get; init; } = Array.Empty<string>();
 
@@ -234,6 +243,7 @@ public sealed partial class AgentPlanExecutor
             NotVerifiable = notVerifiable,
             ExpectationsChecked = results.Sum(item => item.ExpectationsChecked),
             AffectedCount = writeResults.Sum(item => item.Changed),
+            ExpectedFailureCount = results.Count(item => item.ExpectedFailure),
             PreviewIncomplete = results.Any(item => item.PreviewSkipped),
             NotPreviewed = results
                 .Where(item => item.PreviewSkipped)
@@ -273,6 +283,7 @@ public sealed partial class AgentPlanExecutor
             AffectedCount = prepared.Results
                 .Where(item => IsWrite(item.ToolName))
                 .Sum(item => item.Changed),
+            ExpectedFailureCount = prepared.Results.Count(item => item.ExpectedFailure),
             PreviewIncomplete = prepared.Results.Any(item => item.PreviewSkipped),
             NotPreviewed = prepared.Results
                 .Where(item => item.PreviewSkipped)

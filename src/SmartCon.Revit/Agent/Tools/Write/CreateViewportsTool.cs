@@ -84,6 +84,7 @@ public sealed class CreateViewportsTool : AgentWriteToolBase
         // still needs a regeneration after earlier modifications.
         doc.Regenerate();
         var rows = new List<object>(items.Count);
+        var createdViewports = new List<object>();
 
         foreach (var item in items)
         {
@@ -204,10 +205,18 @@ public sealed class CreateViewportsTool : AgentWriteToolBase
                 Status = ChangeStatus.Applied
             });
             rows.Add(ItemRow(item, actualMmX, actualMmY, "placed"));
+            createdViewports.Add(new
+            {
+                viewportId = viewport.Id.GetValue(),
+                viewId = view.Id.GetValue()
+            });
         }
 
         outcome.Data["sheetId"] = sheet.Id.GetValue();
         outcome.Data["items"] = rows;
+        // The uniform created* block (S.42): a later plan step addresses the new
+        // viewports with {"$step":"<stepId>","path":"createdViewports.0.viewportId"}.
+        outcome.Data["createdViewports"] = createdViewports;
     }
 
     private static HashSet<long> CollectPlacedViewIds(Document doc, ViewSheet sheet)

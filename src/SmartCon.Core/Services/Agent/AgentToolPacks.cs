@@ -80,8 +80,8 @@ public static class AgentToolPacks
         new()
         {
             Name = "levels",
-            Description = "Уровни: список и переименование.",
-            Tools = new[] { "list_levels", "rename_levels" }
+            Description = "Уровни: список, создание и переименование.",
+            Tools = new[] { "list_levels", "create_level", "rename_levels" }
         },
         new()
         {

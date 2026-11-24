@@ -30,6 +30,14 @@ public sealed class AgentPlanStep
     /// <summary>Requested mode; the executor forces dry runs in the plan phase.</summary>
     public bool DryRun { get; init; } = true;
 
+    /// <summary>
+    /// What a step failure does to the plan: "stop" (default) aborts the plan,
+    /// "continue" records the failure as an expected one and keeps running the
+    /// remaining steps — for negative checks of a guard inside the same plan
+    /// (S.42, parity with start_job onError).
+    /// </summary>
+    public string OnError { get; init; } = "stop";
+
     public string? Rationale { get; init; }
 
     /// <summary>Expected changed-item count for L4 fidelity (null = not checked).</summary>

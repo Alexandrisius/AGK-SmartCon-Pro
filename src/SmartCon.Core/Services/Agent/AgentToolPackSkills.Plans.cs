@@ -1,4 +1,4 @@
-namespace SmartCon.Core.Services.Agent;
+﻿namespace SmartCon.Core.Services.Agent;
 
 public static partial class AgentToolPackSkills
 {
@@ -20,9 +20,21 @@ public static partial class AgentToolPackSkills
 ### Формат шага
 Минимальный скелет (обязательные ключи, `toolName` первым):
 `{""stepId"":""s1"",""toolName"":""set_view_template"",""arguments"":{""viewId"":123,""templateId"":45}}`.
-Полная форма: `{stepId, toolName, arguments, dependsOn[], dryRun, expectedChanges|expectedChangesAtLeast,
+Полная форма: `{stepId, toolName, arguments, dependsOn[], onError, dryRun, expectedChanges|expectedChangesAtLeast,
 readBackTool, readBackArguments, readBackExpectations[{path,expected}], rationale}`.
 До 20 шагов. `dependsOn` задаёт порядок; по умолчанию шаги идут как перечислены.
+
+### Ссылки между шагами: {""$step"": …}
+Аргументы шага могут ссылаться на результат предыдущего шага: `{""$step"":""s1"",""path"":""created.sheetId""}`
+— на apply это заменяется РЕАЛЬНЫМ id из результата шага s1, поэтому «создай → сразу размести/настрой»
+живёт одним планом (create_sheet → create_viewports, create_schedule → place_schedule_on_sheet,
+create_level → create_floor_plans). Сегменты пути — имена свойств или индексы массива
+(`createdViewports.0.viewportId`); точка внутри имени не поддерживается. Формы создающих тулов:
+`create_level` → `created.levelId`, `create_sheet` → `created.sheetId`, `create_schedule` →
+`created.scheduleId`, `create_viewports` → `createdViewports.N.viewportId`. Ссылка сама добавляет
+шаг в `dependsOn`; на превью такие шаги помечаются `preview_skipped`
+(`uses_step_reference:<stepId>`) — dry-run id не выживают; неразрешённая ссылка (шаг упал, путь
+не нашёлся) — typed `step_reference_unresolved`.
 
 ### Кухня Revit
 - В Revit нет программного Undo: после коммита операция необратима, откат — только
@@ -54,9 +66,14 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
 - В превью шаги, зависящие от ещё не применённой записи, пропускаются (`preview_skipped`,
   reason `depends_on_unapplied_step:<stepId>(<tool>)`); в apply они выполнятся. Флаг
   `previewIncomplete` = такие шаги есть; отчёт apply явно предупредит о них.
-- Apply: первый упавший шаг останавливает план (`plan_apply_failed`); зависевшие от него шаги
+- Apply: по умолчанию первый упавший шаг останавливает план (`plan_apply_failed`); зависевшие от него шаги
   получают `upstream_step_failed`, прочие последующие — `not_run`. **Автоотката плана нет** —
-  `undo_last` по шагам или `rollback_job`.
+  `undo_last` по шагам или `rollback_job`. `onError:""continue""` на шаге меняет это: сбой шага
+  (в превью и в apply) считается ОЖИДАЕМЫМ — шаг помечается `expectedFailure:true`, счётчик
+  `expectedFailures`, план продолжается со следующего шага. Это способ проверить guard внутри
+  плана (например `copy_crop_from_view` на виде под шаблоном должен упасть
+  `crop_controlled_by_template`); зависевшие от упавшего шага всё равно помечаются
+  `upstream_step_failed`.
 - `readBackExpectations` работает только вместе с `readBackTool` (без него план
   отклоняется на валидации) — способ доказать, что шаг сделал заявленное: путь + ожидаемое
   значение читаются после шага. Несовпадение попадает в `mismatches[]`, но общий `success`
@@ -85,7 +102,8 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
   указывают на существующие объекты. Остальные id не переименовываются, но тоже dry-run:
   `changed[].id` у создающего тула. Ни один из них не используй в
   следующих шагах и в `readBackArguments` — после apply объект получает другой id, и
-  read-back упадёт `*_not_found`. Адресуй созданное по имени или возьми id из отчёта apply.
+  read-back упадёт `*_not_found`. Внутри плана адресуй созданное `{{""$step"":…}}`-ссылкой,
+  между вызовами — по имени или возьми id из отчёта apply.
 - Шаг с `toolName`, которого нет в наборе доступных тулов, отклоняется на валидации: сначала
   `load_tool_pack`. `execute_plan` внутри шага запрещён.
 - `allowDestructive=true` требуется для шагов, удаляющих данные; конфликт шаблон/настройки
@@ -96,8 +114,9 @@ readBackTool, readBackArguments, readBackExpectations[{path,expected}], rational
    с `readBackExpectations` на итоговый `viewRange`.
 2. «Переименуй виды и обнови шаблон»: два шага с `dependsOn`, у второго read-back
    `templateName`.
-3. Перед планом соберите id: `list_views`/`query_elements` в отдельных вызовах, а в шаги
-   передавайте уже готовые id — план не умеет «догадываться».
+3. Перед планом соберите id существующих объектов: `list_views`/`query_elements` в отдельных
+   вызовах. Id ТОГО, что план создаёт сам, собирать не нужно — связывайте шаги
+   `{{""$step"":…}}`-ссылкой (create_level → create_floor_plans и т.п.).
 
 ### Что нельзя
 - Смешивать в одном шаге несколько несвязанных тулов — один шаг = один toolName.

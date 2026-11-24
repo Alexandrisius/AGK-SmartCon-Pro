@@ -145,5 +145,9 @@ public sealed class CreateSheetTool : AgentWriteToolBase
             titleBlockTypeId = titleBlockId!.GetValue(),
             titleBlockName
         };
+        // The uniform "created" block (S.42): {"$step":"<stepId>","path":"created.sheetId"}
+        // in a later plan step resolves against it — the documented example must
+        // match the real payload shape.
+        outcome.Data["created"] = new { sheetId, name = appliedName };
     }
 }

@@ -37,8 +37,11 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
             "parameter of the CURRENT browser organization (e.g. the 'Раздел'/'Sub-Discipline' " +
             "project parameter) of every target. folder='' removes the view from its folder. " +
             "Views and sheets are grouped by different organizations — the tool picks the right " +
-            "one per element. Guards: browser_folder_parameter_read_only (the active " +
-            "organization groups by a read-only property such as the view type — reorganize the " +
+            "one per element. On a multi-level scheme the folder value is written to the NEAREST " +
+            "WRITABLE grouping level (leaf first, then upwards); the parameter actually used is " +
+            "named per item (detail) and in parameterName. " +
+            "Guards: browser_folder_parameter_read_only (every grouping level of the active " +
+            "organization is read-only and listed in the message — reorganize the " +
             "browser around a writable parameter first), view_not_found. undo_last restores the " +
             "previous values. Dry run by default.",
         Risk = AgentToolRisk.Write,
@@ -87,6 +90,7 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
         outcome.Data["folder"] = folder;
 
         var seen = new HashSet<long>();
+        var usedParameters = new HashSet<string>(StringComparer.Ordinal);
         var failed = 0;
         var changed = 0;
 
@@ -104,15 +108,22 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
             var organization = target is ViewSheet ? sheetsOrganization : viewsOrganization;
             Parameter? parameter = null;
             string? reason = null;
+            var readOnlyOnly = false;
             if (organization is null
-                || !TryGetGroupingParameter(doc, organization, target, out parameter, out reason))
+                || !TryGetGroupingParameter(doc, organization, target, out parameter, out reason, out readOnlyOnly))
             {
-                report.ErrorCode = "browser_folder_unavailable";
+                report.ErrorCode = readOnlyOnly
+                    ? "browser_folder_parameter_read_only"
+                    : "browser_folder_unavailable";
                 report.Reason = reason ?? "The document has no browser organization.";
                 outcome.Batch.Failed.Add(report);
                 failed++;
                 continue;
             }
+
+            usedParameters.Add(ParameterName(doc, parameter));
+            report.Detail = (target is ViewSheet ? "sheet" : "view") +
+                            "; parameter '" + ParameterName(doc, parameter) + "'";
 
             if (parameter.IsReadOnly)
             {
@@ -183,10 +194,16 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
         }
 
         outcome.AffectedCount = changed;
+        // Present in the dry run too: the model sees which grouping level the
+        // folder will be written to before any write (S.42 follow-up).
+        if (usedParameters.Count > 0)
+        {
+            outcome.Data["resolvedParameter"] = string.Join(" / ", usedParameters);
+        }
+
         if (changed > 0)
         {
-            outcome.Data["parameterName"] = DescribeGroupingParameters(
-                doc, viewsOrganization, sheetsOrganization);
+            outcome.Data["parameterName"] = string.Join(" / ", usedParameters);
         }
 
         if (failed > 0)
@@ -211,21 +228,34 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
         }
     }
 
+    /// <summary>Five-arg overload for callers that only need the parameter or the reason.</summary>
+    internal static bool TryGetGroupingParameter(
+        Document doc,
+        BrowserOrganization organization,
+        View target,
+        out Parameter parameter,
+        out string? reason) =>
+        TryGetGroupingParameter(doc, organization, target, out parameter, out reason, out _);
+
     /// <summary>
-    /// The leaf grouping parameter of the current organization for this
-    /// element: the last FolderItemInfo of GetFolderItems carries the
-    /// parameter id path, and its last entry is the folder level the user
-    /// sees (e.g. 'Раздел' in a Discipline → Раздел scheme).
+    /// The nearest writable grouping parameter of the current organization for
+    /// this element. The folder the element sits in is the deepest level of the
+    /// scheme, but when it is read-only (e.g. «Семейство») the folder value must
+    /// be written on the nearest writable level above it (e.g. the stamp-section
+    /// parameter) — the view still moves (S.42). The rejection lists every
+    /// grouping level with its writability instead of naming only the leaf.
     /// </summary>
     internal static bool TryGetGroupingParameter(
         Document doc,
         BrowserOrganization organization,
         View target,
         out Parameter parameter,
-        out string? reason)
+        out string? reason,
+        out bool readOnlyOnly)
     {
         parameter = null!;
         reason = null;
+        readOnlyOnly = false;
 
         try
         {
@@ -236,28 +266,41 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
                 return false;
             }
 
-            var leaf = items[items.Count - 1];
+            // All grouping levels of the leaf path, shallow → deep. R26+ carries
+            // the full path on the leaf item; the older API exposes one folder
+            // item per level with its own parameter id.
+            var parameterIds = new List<ElementId>();
 #if REVIT2026_OR_GREATER
-            var path = leaf.GetGroupingParameterIdPath();
-            if (path is null || path.Count == 0)
+            var path = items[items.Count - 1].GetGroupingParameterIdPath();
+            if (path is not null)
+                parameterIds.AddRange(path);
+#else
+            // GetGroupingParameterIdPath exists from Revit 2026 only; the older
+            // API exposes the folder parameter id per level directly (not
+            // obsolete there).
+            foreach (var item in items)
+            {
+                if (item.ElementId is not null)
+                    parameterIds.Add(item.ElementId);
+            }
+#endif
+
+            if (parameterIds.Count == 0)
             {
                 reason = "The browser organization does not group '" + target.Name +
                          "' by a parameter.";
                 return false;
             }
 
-            var parameterId = path[path.Count - 1];
-#else
-            // GetGroupingParameterIdPath exists from Revit 2026 only; the older
-            // API exposes the folder parameter id directly (not obsolete there).
-            var parameterId = leaf.ElementId;
-#endif
-            Parameter? found = null;
-            if (parameterId is not null)
+            var readOnly = new List<string>();
+            for (var index = parameterIds.Count - 1; index >= 0; index--)
             {
+                var parameterId = parameterIds[index];
+
                 // The ElementId overload of Element.Parameter exists only in newer
                 // versions; the Parameters scan works everywhere (same trick as
                 // SetViewParametersTool).
+                Parameter? found = null;
                 foreach (Parameter candidate in target.Parameters)
                 {
                     if (candidate.Id.GetValue() == parameterId.GetValue())
@@ -266,16 +309,30 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
                         break;
                     }
                 }
+
+                if (found is null)
+                {
+                    readOnly.Add("level " + (index + 1) + ": not bound to '" + target.Name + "'");
+                    continue;
+                }
+
+                if (!found.IsReadOnly)
+                {
+                    parameter = found;
+                    return true;
+                }
+
+                readOnly.Add("level " + (index + 1) + ": '" + ParameterName(doc, found) +
+                             "' (read-only)");
             }
 
-            if (found is null)
-            {
-                reason = "The grouping parameter is not bound to '" + target.Name + "'.";
-                return false;
-            }
-
-            parameter = found;
-            return true;
+            reason =
+                "Every grouping level of the browser organization is not writable for '" +
+                target.Name + "': " + string.Join(", ", readOnly) +
+                ". Reorganize the browser around a writable view parameter " +
+                "(Browser Organization in the Revit UI) and retry.";
+            readOnlyOnly = true;
+            return false;
         }
         catch (Exception ex)
         {
@@ -391,98 +448,6 @@ public sealed class SetBrowserFolderTool : AgentWriteToolBase
 
     private static string ParameterName(Document doc, Parameter parameter) =>
         parameter.Definition?.Name ?? ("id " + parameter.Id.GetValue());
-
-    private static string DescribeGroupingParameters(
-        Document doc,
-        BrowserOrganization? viewsOrganization,
-        BrowserOrganization? sheetsOrganization)
-    {
-        var names = new List<string>();
-        AppendFolderParameterNames(doc, viewsOrganization, wantSheets: false, names);
-        AppendFolderParameterNames(doc, sheetsOrganization, wantSheets: true, names);
-        return string.Join(" / ", names.Distinct());
-    }
-
-    /// <summary>
-    /// The grouping parameter the folder is made of, read the same way
-    /// get_browser_organization reads it: from the folder items of a sample
-    /// element (a project's stamp-section parameter). organization.Parameters is a
-    /// different set — it showed category/type fields as the parameter name
-    /// while the folder value itself was written correctly (owner feedback
-    /// 2026-11-24).
-    /// </summary>
-    private static void AppendFolderParameterNames(
-        Document doc,
-        BrowserOrganization? organization,
-        bool wantSheets,
-        List<string> names)
-    {
-        if (organization is null)
-            return;
-
-        var before = names.Count;
-        ElementId? sampleId = null;
-        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(View)))
-        {
-            if (element is not View view || view.IsTemplate)
-                continue;
-
-            if (wantSheets != (view is ViewSheet))
-                continue;
-
-            sampleId = view.Id;
-            break;
-        }
-
-        if (sampleId is not null)
-        {
-            try
-            {
-                foreach (var item in organization.GetFolderItems(sampleId))
-                {
-#if REVIT2026_OR_GREATER
-                    var path = item.GetGroupingParameterIdPath();
-                    var parameterId = path is null || path.Count == 0
-                        ? null
-                        : path[path.Count - 1];
-#else
-                    var parameterId = item.ElementId;
-#endif
-                    var name = GetBrowserOrganizationTool.ParameterNameById(doc, parameterId);
-                    if (!string.IsNullOrEmpty(name) && !names.Contains(name!))
-                        names.Add(name!);
-                }
-            }
-            catch (Exception)
-            {
-                // Organization without readable folder items: fall through.
-            }
-        }
-
-        if (names.Count > before)
-            return;
-
-        try
-        {
-            var parameters = organization.Parameters;
-            if (parameters is null)
-                return;
-
-            foreach (Parameter parameter in parameters)
-            {
-                if (!string.IsNullOrEmpty(parameter.Definition?.Name)
-                    && !names.Contains(parameter.Definition!.Name))
-                {
-                    names.Add(parameter.Definition!.Name);
-                }
-            }
-        }
-        catch (Exception)
-        {
-            // Organization without readable parameters: the report shows the
-            // folder value only.
-        }
-    }
 
     private static void ReportReject(
         WriteOutcome outcome,

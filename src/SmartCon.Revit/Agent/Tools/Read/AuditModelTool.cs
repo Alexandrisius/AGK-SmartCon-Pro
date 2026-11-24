@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
@@ -296,8 +296,19 @@ public sealed class AuditModelTool : AgentReadToolBase
         return findings;
     }
 
+    /// <summary>
+    /// Applied change sets still tracked in agent.db. The journal cannot see a
+    /// manual Revit rollback (Ctrl+Z / undo history), so "can still be reverted"
+    /// would be a false claim after one: the audit samples each set's items and
+    /// checks their elements still exist — a missing element marks the set
+    /// STALE and points at discard_change_set (S.42). Values are not compared:
+    /// a value-level staleness check is a follow-up.
+    /// </summary>
     private List<AuditFinding> FindPendingChangeSets(Document doc, CancellationToken ct)
     {
+        const int maxSetsVerified = 30;
+        const int maxItemsPerSet = 5;
+
         var documentId = AgentDocumentIdentity.GetDocumentId(doc);
         var headers = AsyncBridge.RunSync(() => _changeSets.ListAsync(documentId, 100, 0, ct));
 
@@ -308,16 +319,69 @@ public sealed class AuditModelTool : AgentReadToolBase
                 applied.Add(header);
         }
 
-        return applied
-            .Select(header => new AuditFinding
+        var findings = new List<AuditFinding>();
+        foreach (var header in applied)
+        {
+            ct.ThrowIfCancellationRequested();
+            var detail = "changeSetId " + header.Id + "; applied " +
+                         header.AppliedAt!.Value.ToString(
+                             "u", System.Globalization.CultureInfo.InvariantCulture);
+
+            if (findings.Count < maxSetsVerified)
+            {
+                var staleness = DescribeChangeSetStaleness(doc, header.Id, maxItemsPerSet);
+                detail += staleness is null
+                    ? " — elements of the sampled items verified; revertibility of values is " +
+                      "NOT checked: if the model was rolled back in Revit, undo_last on this " +
+                      "set may conflict — prefer discard_change_set"
+                    : " — STALE: " + staleness + " no longer exist; the model was likely " +
+                      "rolled back in Revit — use discard_change_set instead of undo_last";
+            }
+            else
+            {
+                detail += " — can still be reverted (undo_last / undo_until); not verified " +
+                          "against the model";
+            }
+
+            findings.Add(new AuditFinding
             {
                 Kind = PendingChangeSets,
                 Name = header.Operation,
-                Detail = "Applied " + header.AppliedAt!.Value.ToString(
-                    "u", System.Globalization.CultureInfo.InvariantCulture) +
-                         " — can still be reverted (undo_last / undo_until)"
-            })
-            .ToList();
+                // The changeSetId lets the model call undo_until / discard_change_set
+                // without a list_change_sets round in between (S.42).
+                Detail = detail
+            });
+        }
+
+        return findings;
+    }
+
+    /// <summary>
+    /// Samples the set's items and reports how many of their elements are gone
+    /// from the document; null when every sampled element still exists.
+    /// </summary>
+    private string? DescribeChangeSetStaleness(Document doc, Guid changeSetId, int maxItems)
+    {
+        var details = AsyncBridge.RunSync(() => _changeSets.GetAsync(changeSetId, CancellationToken.None));
+        if (details is null || details.Items.Count == 0)
+            return null;
+
+        var missing = 0;
+        var sampled = 0;
+        foreach (var item in details.Items)
+        {
+            if (sampled >= maxItems)
+                break;
+
+            sampled++;
+            if (item.ElementId is > 0
+                && doc.GetElement(ElementIdCompat.Create(item.ElementId.Value)) is null)
+            {
+                missing++;
+            }
+        }
+
+        return sampled == 0 ? null : missing + " of " + sampled + " sampled element(s)";
     }
 
     private static IEnumerable<View> CollectListableViews(Document doc)

@@ -1086,6 +1086,22 @@
       "kind": "write"
     },
     {
+      "id": "r336",
+      "query": "Добавь уровень «Этаж 09» на отметке 28 500 мм",
+      "expectedTools": [
+        "create_level"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r337",
+      "query": "Нужен новый этаж в проекте",
+      "expectedTools": [
+        "create_level"
+      ],
+      "kind": "write"
+    },
+    {
       "id": "r136",
       "query": "Назначь шаблон «АР_План» видам этажей",
       "expectedTools": [
@@ -3183,7 +3199,7 @@
         "get_element_bounds"
       ],
       "kind": "read"
-    },
+    },
     {
       "id": "rTpl1",
       "query": "Создай шаблон вида из образцового вида и назначь его остальным",

@@ -40,7 +40,11 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
             "created{scheduleId, name} and the read-back field list; in a dry run the " +
             "scheduleId is PROVISIONAL — the schedule was built inside the rolled-back " +
             "transaction and does not exist, so do not reference it (re-run with " +
-            "dryRun:false and read the real id from the result). Not idempotent; dry run " +
+            "dryRun:false and read the real id from the result). The table text types " +
+            "(body/header/title) are inherited from an existing schedule — same category " +
+            "first, else any non-template one — and reported in textTypes + " +
+            "inheritedFromSchedule; when there is nothing to inherit, availableTextTypes[] " +
+            "lists what set_schedule_style accepts. Not idempotent; dry run " +
             "defaults to true.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
@@ -124,6 +128,13 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
             // Key schedules refuse IsItemized; a fresh schedule never is one.
         }
 
+        // A fresh schedule gets Revit's default text type («тело») for the body,
+        // the header and the title, so every created specification needed a manual
+        // set_schedule_style round (S.42). Adopt the table text types of an
+        // existing schedule — same category first, else any non-template one —
+        // and report the assignment so it stays transparent.
+        var inherited = AgentScheduleWriteHelper.InheritTableTextTypes(doc, schedule);
+
         outcome.Description = "Create schedule " + trimmedName;
 
         var addedFields = new List<string>();
@@ -195,6 +206,31 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
             fields = readBackFields
         };
         outcome.Data["addedFields"] = addedFields;
+        if (inherited is not null)
+        {
+            outcome.Data["textTypes"] = new
+            {
+                body = new { id = inherited.BodyTextTypeId, name = inherited.BodyTextTypeName },
+                header = new { id = inherited.HeaderTextTypeId, name = inherited.HeaderTextTypeName },
+                title = new { id = inherited.TitleTextTypeId, name = inherited.TitleTextTypeName }
+            };
+            outcome.Data["inheritedFromSchedule"] = new
+            {
+                scheduleId = inherited.SourceScheduleId,
+                name = inherited.SourceScheduleName
+            };
+        }
+        else
+        {
+            outcome.Data["availableTextTypes"] =
+                AgentScheduleWriteHelper.AvailableTextTypes(doc, 20);
+            outcome.Warnings.Add(
+                "The document has no schedule to inherit the table text types from, so the " +
+                "default type stays on body/header/title. [Action: pass headerTextTypeId/" +
+                "titleTextTypeId to set_schedule_style from availableTextTypes if the template " +
+                "convention requires one]");
+        }
+
         if (dryRun)
         {
             outcome.Warnings.Add(

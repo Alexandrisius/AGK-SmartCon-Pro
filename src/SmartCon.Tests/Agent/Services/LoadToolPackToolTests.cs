@@ -86,7 +86,7 @@ public sealed class LoadToolPackToolTests
             .ToList();
         Assert.Contains("rename_views", loaded);
         Assert.Contains("rename_levels", loaded);
-        Assert.Equal(12, session.PendingToolNames.Count);
+        Assert.Equal(13, session.PendingToolNames.Count);
     }
 
     [Fact]

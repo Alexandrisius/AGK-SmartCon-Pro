@@ -407,6 +407,37 @@ public static partial class AgentToolCards
                 Idempotent = false,
                 TimeoutMs = 120000,
                 Bulk = true
+            },
+            new AgentToolCard
+            {
+                ToolName = "create_level",
+                Pack = "levels",
+                Purpose =
+                    "Создание уровня с именем и отметкой в мм; план вида для нового уровня " +
+                    "создаёт create_floor_plans.",
+                WhenToUse =
+                    "Когда нужен новый этаж/уровень: сначала уровень, затем планы — в плане " +
+                    "связка идёт через {\"$step\":…} ссылку на created.levelId.",
+                WhenNotToUse = "Когда уровень уже есть (list_levels) или нужно только имя.",
+                Examples = new[]
+                {
+                    "Добавь уровень «Этаж 09» на отметке +28 500",
+                    "Создай уровни под уровень 3 с шагом 3 300 мм",
+                    "Новый этаж: уровень + план на нём"
+                },
+                Synonyms = new[]
+                {
+                    "создать уровень", "новый уровень", "новый этаж", "добавить этаж",
+                    "create level", "new level", "add level", "отметка уровня"
+                },
+                NegativeExamples = new[]
+                {
+                    "Переименуй уровень 2",
+                    "Покажи отметки уровней"
+                },
+                Idempotent = false,
+                TimeoutMs = 30000,
+                Bulk = false
             }
         };
 }

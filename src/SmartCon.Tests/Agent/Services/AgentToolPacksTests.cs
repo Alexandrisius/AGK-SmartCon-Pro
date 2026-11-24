@@ -56,7 +56,7 @@ public sealed class AgentToolPacksTests
                 "get_project_overview", "list_categories", "list_system_types",
                 "get_selected_elements", "load_classification_table"
             },
-            ["levels"] = new[] { "list_levels", "rename_levels" },
+            ["levels"] = new[] { "list_levels", "create_level", "rename_levels" },
             ["elements"] = new[]
             {
                 "query_elements", "summarize_elements", "get_element_details", "delete_elements",
@@ -150,7 +150,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(136, placements.Length);
+        Assert.Equal(137, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>
