@@ -248,6 +248,58 @@ public sealed class AgentRealCasesBenchmarkVerdictTests
     }
 
     [Test]
+    public async Task Case9_HeartComplete_AllFlangesAndPumpsFilled_Accepted()
+    {
+        // Сердце кейса: полный PASS — только когда ВСЕ фланцы и ВСЕ насосы
+        // с непустым параметром (passA r20261123: ложный PASS при фланцах 0/2).
+        await Assert.That(AgentRealCasesBenchmarkTests.Case9HeartComplete(
+                true, 2, 2, 2, 2, out _))
+            .IsTrue();
+    }
+
+    [Test]
+    public async Task Case9_HeartComplete_EmptyFlangesOrPumps_RejectedWithCounts()
+    {
+        // Причина отказа обязана называть фактические счётчики (detail вердикта).
+        await Assert.That(AgentRealCasesBenchmarkTests.Case9HeartComplete(
+                true, 2, 0, 2, 0, out var reason))
+            .IsFalse();
+        await Assert.That(reason).Contains("фланцы с параметром 0/2");
+        await Assert.That(reason).Contains("насосы 0/2");
+
+        await Assert.That(AgentRealCasesBenchmarkTests.Case9HeartComplete(
+                true, 2, 1, 2, 2, out reason))
+            .IsFalse();
+        await Assert.That(reason).Contains("1/2");
+
+        await Assert.That(AgentRealCasesBenchmarkTests.Case9HeartComplete(
+                true, 2, 2, 2, 1, out reason))
+            .IsFalse();
+        await Assert.That(reason).Contains("насосы 1/2");
+    }
+
+    [Test]
+    public async Task Case9_HeartComplete_NonSeededOrDegenerateSeed_Rejected()
+    {
+        // SEED DEGRADED (C4-04): без засидированных фланцев сердце не выполнено,
+        // даже если насосы заполнены; вырожденный сид «0 из 0» не считается.
+        await Assert.That(AgentRealCasesBenchmarkTests.Case9HeartComplete(
+                false, 0, 0, 2, 2, out var reason))
+            .IsFalse();
+        await Assert.That(reason).Contains("не засидированы");
+
+        await Assert.That(AgentRealCasesBenchmarkTests.Case9HeartComplete(
+                true, 0, 0, 2, 2, out reason))
+            .IsFalse();
+        await Assert.That(reason).Contains("фланцев 0");
+
+        await Assert.That(AgentRealCasesBenchmarkTests.Case9HeartComplete(
+                true, 2, 2, 0, 0, out reason))
+            .IsFalse();
+        await Assert.That(reason).Contains("насосов 0");
+    }
+
+    [Test]
     public async Task Case11_FormatJustification_RequiresNumberOrSheetSize()
     {
         // P3-5: голое слово «кратн»/«влез» обоснованием не является.

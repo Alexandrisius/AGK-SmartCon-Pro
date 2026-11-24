@@ -4,7 +4,7 @@ using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.DB.Structure;
 using SmartCon.Core.Compatibility;
-using SmartCon.IntegrationTests.Support;
+using SmartCon.IntegrationTests.Agent.Support;
 
 namespace SmartCon.IntegrationTests.Agent;
 
@@ -137,167 +137,19 @@ public sealed partial class AgentRealCasesBenchmarkTests
     }
 
     /// <summary>
-    /// Вложенный shared-фланец: FAMILY_SHARED=1 → SaveAs → LoadFamily в
-    /// семейство-хозяин (это и есть вложение) → хозяин в проект ФАЙЛОМ
-    /// (open-doc load не материализует вложенный shared-инстанс как
-    /// субкомпонент — механика AgentSystemFillJobTests). Вызывать ВНЕ
-    /// транзакции проекта.
+    /// Вложенный shared-фланец: общая механика сида кейса 4 —
+    /// <see cref="NestedSharedFamilySeed.TrySeed"/> (файловая загрузка хозяина
+    /// в проект ВНУТРИ транзакции, C4-04). Вызывать ВНЕ транзакции проекта.
     /// </summary>
     private bool Case9TrySeedFlangeHosts(out string? note)
     {
-        note = null;
-        var template = SampleFiles.FindFamilyTemplate(Application);
-        if (template is null)
-        {
-            note = "Нет family-шаблона (.rft) во встроенных шаблонах Revit";
-            return false;
-        }
-
-        var directory = Path.Combine(
-            Path.GetTempPath(), "SmartConCase9Seeds", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(directory);
-        var flangePath = Path.Combine(directory, "Фланец.rfa");
-        var hostPath = Path.Combine(directory, Case9HostFamilyName + ".rfa");
-        _case9TempFamilyPaths.Add(flangePath);
-        _case9TempFamilyPaths.Add(hostPath);
-
-        Document? flangeDoc = null;
-        Document? hostDoc = null;
-        try
-        {
-            flangeDoc = Application.NewFamilyDocument(template);
-            using (var transaction = new Transaction(flangeDoc, "Shared flange"))
-            {
-                transaction.Start();
-                flangeDoc.OwnerFamily.get_Parameter(BuiltInParameter.FAMILY_SHARED)?.Set(1);
-                if (flangeDoc.FamilyManager.CurrentType is null)
-                    flangeDoc.FamilyManager.NewType("Тип1");
-                if (transaction.Commit() != TransactionStatus.Committed)
-                {
-                    note = "Транзакция фланца не завершилась";
-                    return false;
-                }
-            }
-
-            flangeDoc.SaveAs(flangePath, new SaveAsOptions { OverwriteExistingFile = true });
-
-            hostDoc = Application.NewFamilyDocument(template);
-            using (var transaction = new Transaction(hostDoc, "Name host"))
-            {
-                transaction.Start();
-                hostDoc.OwnerFamily.Name = Case9HostFamilyName;
-                transaction.Commit();
-            }
-
-            var flangeFamily = flangeDoc.LoadFamily(hostDoc, new Case9NestLoadOptions());
-            if (flangeFamily is null)
-            {
-                note = "Фланец не загрузился в семейство-хозяин";
-                return false;
-            }
-
-            var symbolId = flangeFamily.GetFamilySymbolIds().FirstOrDefault();
-            if (symbolId is null || hostDoc.GetElement(symbolId) is not FamilySymbol flangeSymbol)
-            {
-                note = "У фланца нет типоразмера в семействе-хозяине";
-                return false;
-            }
-
-            using (var transaction = new Transaction(hostDoc, "Nest shared flange"))
-            {
-                transaction.Start();
-                flangeSymbol.Activate();
-                hostDoc.FamilyCreate.NewFamilyInstance(
-                    XYZ.Zero, flangeSymbol, StructuralType.NonStructural);
-                transaction.Commit();
-            }
-
-            hostDoc.SaveAs(hostPath, new SaveAsOptions { OverwriteExistingFile = true });
-            hostDoc.Close(false);
-            hostDoc = null;
-
-            // Файловая загрузка хозяина в проект требует ОТКРЫТУЮ ТРАНЗАКЦИЮ:
-            // строчный LoadFamily(string) без транзакиции молча возвращает false
-            // (механика Case14LoadFamilies: загрузка меняет базу) — именно так
-            // «Семейство-хозяин не загрузилось в проект из файла» ловилось во
-            // всех 7 прогонах (C4-04). Тёзка с другой категорией/содержимым на
-            // базе реального шаблона делает загрузку неразрешимым конфликтом —
-            // удаляем заранее (копия шаблона одноразовая).
-            RemoveCaseConflictingFamilies(Doc, Case9HostFamilyName);
-            Family? loadedHost = null;
-            using (var transaction = new Transaction(Doc, "Seed case 9 flange host"))
-            {
-                transaction.Start();
-                var loaded = Doc.LoadFamily(hostPath, new Case9NestLoadOptions(), out var family);
-                if (transaction.Commit() != TransactionStatus.Committed)
-                    loaded = false;
-                loadedHost = family;
-                if (!loaded || loadedHost is null)
-                {
-                    note = "Семейство-хозяин не загрузилось в проект из файла " +
-                           "(file LoadFamily в транзакции)";
-                    return false;
-                }
-            }
-
-            var hostFamily = loadedHost;
-
-            var hostSymbolId = hostFamily.GetFamilySymbolIds().FirstOrDefault();
-            if (hostSymbolId is null)
-            {
-                note = "У хозяина нет типоразмера в проекте";
-                return false;
-            }
-
-            _case9HostSymbolId = hostSymbolId.GetValue();
-            flangeDoc.Close(false);
-            flangeDoc = null;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            note = "Сид вложенного семейства упал: " + ex.GetType().Name + ": " + ex.Message;
-            return false;
-        }
-        finally
-        {
-            foreach (var open in new[] { flangeDoc, hostDoc })
-            {
-                if (open is null || !open.IsValidObject)
-                    continue;
-
-                try
-                {
-                    open.Close(false);
-                }
-                catch (Exception)
-                {
-                    // Уже закрыт или невалиден — ничего не делать.
-                }
-            }
-        }
-    }
-
-    /// <summary>Nesting load of a shared family: FamilySource.Project keeps the
-    /// shared behaviour (the nested instance is exposed as a subcomponent).</summary>
-    private sealed class Case9NestLoadOptions : IFamilyLoadOptions
-    {
-        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
-        {
-            overwriteParameterValues = true;
-            return true;
-        }
-
-        public bool OnSharedFamilyFound(
-            Family sharedFamily,
-            bool familyInUse,
-            out FamilySource source,
-            out bool overwriteParameterValues)
-        {
-            source = FamilySource.Project;
-            overwriteParameterValues = true;
-            return true;
-        }
+        var result = NestedSharedFamilySeed.TrySeed(
+            Application, Doc, Case9HostFamilyName,
+            Path.Combine(Path.GetTempPath(), "SmartConCase9Seeds"), _case9TempFamilyPaths);
+        note = result.Note;
+        if (result.Seeded)
+            _case9HostSymbolId = result.HostSymbolId;
+        return result.Seeded;
     }
 
     /// <summary>2 насоса (Н1/Н2) с вложенными фланцами; фланцы = GetSubComponentIds.</summary>

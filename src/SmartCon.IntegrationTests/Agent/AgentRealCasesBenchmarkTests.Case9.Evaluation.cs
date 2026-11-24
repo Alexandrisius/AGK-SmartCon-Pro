@@ -11,7 +11,10 @@ namespace SmartCon.IntegrationTests.Agent;
 /// element visibility, never through the rule tree; «= name» and «≠ name with
 /// hidden visibility» both count); (б) the shared parameter is
 /// filled with the system name on EVERY member of the clean systems
-/// (pipes + fittings, post-job); (в) the suspicious «Т11»/«Т111» pair has NO
+/// (pipes + fittings, post-job); the «heart» of the case (SSOT «Кейс 4»):
+/// full PASS also requires the parameter on ALL pumps AND ALL nested shared
+/// flanges (<see cref="Case9HeartComplete"/> — passA r20261123 exposed the
+/// false PASS 1.0 with flanges 0/2); (в) the suspicious «Т11»/«Т111» pair has NO
 /// views and both names are mentioned in the answer; the two-step approval
 /// (г) is asserted in the test method via run.IntermediateAnswers (the
 /// evaluate delegate has no access to it). Red flags: views created for the
@@ -86,15 +89,19 @@ public sealed partial class AgentRealCasesBenchmarkTests
             notes.Add("«" + Case9ParamName + "» заполнен у " + filledMembers + "/" +
                       totalMembers + " членов чистых систем");
 
-        // Фланцы/насосы — сердце кейса по SSOT, но не системные члены: их
-        // заполнение фиксируется нотой (джоба с includeSubComponents покрывает
-        // их только через elementIds-выбор хозяина).
-        if (_case9FlangesSeeded)
-        {
-            var flangesFilled = _case9FlangeIds.Count(id =>
-                !string.IsNullOrEmpty(Case9ParamValueOf(id)));
-            notes.Add("вложенные фланцы с параметром: " + flangesFilled + "/" + _case9FlangeIds.Count);
-        }
+        // Сердце кейса по SSOT («Кейс 4» → «Что должно получиться»): общий
+        // параметр обязан появиться и у насосов, и у вложенных общих семейств
+        // (субкомпонентов-фланцев). Это условие полного PASS, а не только
+        // нота (passA r20261123: PASS 1.0 при фланцах 0/2 — ложный PASS).
+        var flangesFilled = _case9FlangeIds.Count(id =>
+            !string.IsNullOrEmpty(Case9ParamValueOf(id)));
+        var pumpsFilled = _case9PumpIds.Count(id =>
+            !string.IsNullOrEmpty(Case9ParamValueOf(id)));
+        var heartOk = Case9HeartComplete(
+            _case9FlangesSeeded, _case9FlangeIds.Count, flangesFilled,
+            _case9PumpIds.Count, pumpsFilled, out var heartNote);
+        if (!heartOk)
+            notes.Add(heartNote);
 
         // (в) Подозрительная пара: видов нет + упомянуты в ответе.
         var suspiciousViews = Case9SuspiciousViewNames();
@@ -178,13 +185,13 @@ public sealed partial class AgentRealCasesBenchmarkTests
                      "; intermediate-ответ проверяется ассертом тест-метода" +
                      (notes.Count > 0 ? "; " + string.Join("; ", notes) : string.Empty);
 
-        // Промежуточный ответ содержателен (список к утверждению), фланцы
-        // засидированы (иначе ключевой критерий не проверялся — C4-04).
+        // Промежуточный ответ содержателен (список к утверждению); сердце
+        // кейса (фланцы+насосы) проверяет heartOk — C4-04 и SSOT «Кейс 4».
         var intermediateOk = firstIntermediate is not null &&
                              Case9SystemsListed(firstIntermediate) >= 2;
 
         if (redFlags.Count == 0 && systemsOk == Case9CleanSystems.Length && fillFull &&
-            suspectsMentioned && intermediateOk && flangesSeeded && feedbackOk)
+            suspectsMentioned && intermediateOk && heartOk && feedbackOk)
             return new CaseVerdict(true, 1.0, detail, redFlags);
 
         // 0.5 = виды есть, параметр частично (шкала SSOT кейса).
@@ -192,6 +199,52 @@ public sealed partial class AgentRealCasesBenchmarkTests
             return new CaseVerdict(false, 0.5, detail, redFlags);
 
         return new CaseVerdict(false, 0.0, detail, redFlags);
+    }
+
+    /// <summary>
+    /// Правило «сердца кейса» (SSOT real-cases-benchmark-v2, «Кейс 4» → «Что
+    /// должно получиться»): полный PASS возможен, только когда вложенные
+    /// shared-фланцы засидированы и общий параметр непуст у ВСЕХ насосов и у
+    /// ВСЕХ вложенных фланцев. <paramref name="reason"/> — явная причина отказа
+    /// для detail вердикта (пустая при успехе). Чистый шов без Revit-типов —
+    /// пинится тестами <see cref="AgentRealCasesBenchmarkVerdictTests"/>.
+    /// </summary>
+    internal static bool Case9HeartComplete(
+        bool flangesSeeded,
+        int flangesTotal,
+        int flangesFilled,
+        int pumpsTotal,
+        int pumpsFilled,
+        out string reason)
+    {
+        if (!flangesSeeded)
+        {
+            reason = "сердце кейса не выполнено: вложенные shared-фланцы не засидированы" +
+                     (flangesTotal > 0
+                         ? " (с параметром " + flangesFilled + "/" + flangesTotal + ")"
+                         : string.Empty) +
+                     ", насосы " + pumpsFilled + "/" + pumpsTotal;
+            return false;
+        }
+
+        // Вырожденный сид без хозяев: «0 из 0 заполнено» — не заполнение.
+        if (flangesTotal == 0 || pumpsTotal == 0)
+        {
+            reason = "сердце кейса не выполнено: хозяева не засидированы (фланцев " +
+                     flangesTotal + ", насосов " + pumpsTotal + ")";
+            return false;
+        }
+
+        if (flangesFilled < flangesTotal || pumpsFilled < pumpsTotal)
+        {
+            reason = "сердце кейса не выполнено: вложенные фланцы с параметром " +
+                     flangesFilled + "/" + flangesTotal +
+                     ", насосы " + pumpsFilled + "/" + pumpsTotal;
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
     }
 
     // ── Локаторы истин кейса 9 ───────────────────────────────────────────

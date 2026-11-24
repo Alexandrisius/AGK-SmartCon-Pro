@@ -6,6 +6,7 @@ using SmartCon.Agent.Services.Storage;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.IntegrationTests.Agent.Support;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Jobs;
@@ -21,15 +22,14 @@ namespace SmartCon.IntegrationTests.Agent;
 /// The receiver is a project-bound shared parameter — the RBS system name
 /// parameter itself is read-only and is never written.
 /// <para>
-/// The includeSubComponents test builds a shared nested family
-/// (FAMILY_SHARED=1 + flangeDoc.LoadFamily(hostDoc) nesting) but skips
-/// honestly in this test host: file loads of session-written .rfa return
-/// false and open-doc loads do not materialize the nested shared instance as
-/// a project subcomponent (probe chain in the skip reason). The nested case
-/// stays covered by the live dogfood of benchmark case 4.
+/// The nested shared family is seeded by the case-4 benchmark mechanics
+/// (<see cref="SmartCon.IntegrationTests.Agent.Support.NestedSharedFamilySeed"/>):
+/// the host .rfa is loaded into the project INSIDE an open transaction
+/// (C4-04 — a bare LoadFamily(string) silently returns false). The
+/// includeSubComponents path itself lives in the Nested partial.
 /// </para>
 /// </summary>
-public sealed class AgentSystemFillJobTests : RevitApiTest
+public sealed partial class AgentSystemFillJobTests : RevitApiTest
 {
     private const string SystemName = "SC_Т1";
     private const string ParamName = "SC_ИмяСистемы";
@@ -54,8 +54,6 @@ public sealed class AgentSystemFillJobTests : RevitApiTest
     private long _hostInstanceId;
     private long _nestedInstanceId;
     private long _hostSymbolIdValue;
-    private string _flangeSharedProbe = "";
-    private string _hostNestedProbe = "";
     private List<long>? _members;
 
     private Document Doc => _document!;
@@ -362,6 +360,10 @@ public sealed class AgentSystemFillJobTests : RevitApiTest
             new XYZ(30, 10, 0), hostSymbol, StructuralType.NonStructural);
         _hostInstanceId = host.Id.GetValue();
 
+        // Субкомпоненты вложенного shared-семейства материализуются только
+        // при регенерации (C4-04): сразу после NewFamilyInstance внутри той
+        // же транзакции GetSubComponentIds() возвращает пусто.
+        doc.Regenerate();
         foreach (var subId in host.GetSubComponentIds())
         {
             _nestedInstanceId = subId.GetValue();
@@ -370,175 +372,26 @@ public sealed class AgentSystemFillJobTests : RevitApiTest
 
         if (_nestedInstanceId == 0)
         {
-            var superScan = new FilteredElementCollector(doc)
-                .OfClass(typeof(FamilyInstance))
-                .Cast<FamilyInstance>()
-                .Count(instance => instance.SuperComponent?.Id.GetValue() == _hostInstanceId);
             _nestedSeeded = false;
-            _nestedSkipReason = "У экземпляра хозяина нет субкомпонентов; flangeSharedProbe={" +
-                                _flangeSharedProbe + "} " + _hostNestedProbe +
-                                " superScan=" + superScan;
+            _nestedSkipReason = "У экземпляра хозяина нет субкомпонентов после регенерации";
         }
     }
 
     /// <summary>
-    /// Builds host family A with a nested SHARED family B (flange shape of the
-    /// case 4 seed) and loads A into the project. Shared flag via
-    /// FAMILY_SHARED on the owner family; the nested instance is placed with
-    /// FamilyCreate.NewFamilyInstance inside A's document.
+    /// Host family with a nested SHARED family via the case-4 seed mechanics
+    /// (<see cref="SmartCon.IntegrationTests.Agent.Support.NestedSharedFamilySeed"/>):
+    /// file load of the host into the project INSIDE an open transaction
+    /// (C4-04 — a bare LoadFamily(string) silently returns false).
     /// </summary>
     private bool TrySeedNestedFamily()
     {
-        var template = SampleFiles.FindFamilyTemplate(Application);
-        if (template is null)
-        {
-            _nestedSkipReason = "В установленном Revit нет family-шаблона (.rft)";
-            return false;
-        }
-
-        var directory = Path.Combine(Path.GetTempPath(), "SmartConSystemFillTests");
-        Directory.CreateDirectory(directory);
-        var flangePath = Path.Combine(directory, Guid.NewGuid().ToString("N") + "-flange.rfa");
-        var hostPath = Path.Combine(directory, Guid.NewGuid().ToString("N") + "-host.rfa");
-        _tempFamilyPaths.Add(flangePath);
-        _tempFamilyPaths.Add(hostPath);
-
-        Document? flangeDoc = null;
-        Document? hostDoc = null;
-        try
-        {
-            flangeDoc = Application.NewFamilyDocument(template);
-            using (var transaction = new Transaction(flangeDoc, "Mark shared"))
-            {
-                transaction.Start();
-                var sharedParameter = flangeDoc.OwnerFamily.get_Parameter(BuiltInParameter.FAMILY_SHARED);
-                sharedParameter?.Set(1);
-                // Some .rft templates ship without a family type; a loaded family
-                // with zero types has no FamilySymbol to nest (FamilySeed pattern).
-                if (flangeDoc.FamilyManager.CurrentType is null)
-                    flangeDoc.FamilyManager.NewType("Тип1");
-                transaction.Commit();
-                _flangeSharedProbe = "param=" + (sharedParameter is null ? "null" :
-                    sharedParameter.AsInteger().ToString()) + " afterCommit=" +
-                    (flangeDoc.OwnerFamily.get_Parameter(BuiltInParameter.FAMILY_SHARED)
-                        ?.AsInteger().ToString() ?? "null");
-            }
-
-            flangeDoc.SaveAs(flangePath, new SaveAsOptions { OverwriteExistingFile = true });
-
-            // LoadFamily(Document, options) takes the TARGET. The open flange doc
-            // is the only transport that preserves types in this host (file loads
-            // of the shared .rfa return false), and the target may be a family
-            // document — that IS the nesting operation.
-            hostDoc = Application.NewFamilyDocument(template);
-            using (var transaction = new Transaction(hostDoc, "Name host"))
-            {
-                transaction.Start();
-                hostDoc.OwnerFamily.Name = HostFamilyName;
-                transaction.Commit();
-            }
-
-            var flangeFamily = flangeDoc.LoadFamily(hostDoc, new NestSharedLoadOptions());
-            if (flangeFamily is null)
-            {
-                _nestedSkipReason = "Фланец не загрузился в семейство-хозяин";
-                return false;
-            }
-
-            var flangeSymbolId = flangeFamily.GetFamilySymbolIds().FirstOrDefault();
-            if (flangeSymbolId is null || hostDoc.GetElement(flangeSymbolId) is not FamilySymbol flangeSymbol)
-            {
-                _nestedSkipReason = "У фланца нет типоразмера в семействе-хозяине: family='" +
-                                    flangeFamily.Name + "' symbols=" +
-                                    flangeFamily.GetFamilySymbolIds().Count;
-                return false;
-            }
-
-            using (var transaction = new Transaction(hostDoc, "Nest shared flange"))
-            {
-                transaction.Start();
-                flangeSymbol.Activate();
-                hostDoc.FamilyCreate.NewFamilyInstance(
-                    XYZ.Zero, flangeSymbol, StructuralType.NonStructural);
-                transaction.Commit();
-            }
-
-            hostDoc.SaveAs(hostPath, new SaveAsOptions { OverwriteExistingFile = true });
-            _hostNestedProbe = "hostDocInstances=" + new FilteredElementCollector(hostDoc)
-                .OfClass(typeof(FamilyInstance)).GetElementCount();
-            hostDoc.Close(false);
-            hostDoc = null;
-
-            // Host into the project BY FILE: an open-doc load does not materialize
-            // the nested SHARED instance as a subcomponent (probe: superScan=0),
-            // while a file load is the UI workflow that does.
-            if (!Doc.LoadFamily(hostPath, new NestSharedLoadOptions(), out var hostFamily) ||
-                hostFamily is null)
-            {
-                _nestedSkipReason = "Семейство-хозяин не загрузилось в проект из файла; " +
-                                    _hostNestedProbe;
-                return false;
-            }
-
-            var hostSymbolId = hostFamily.GetFamilySymbolIds().FirstOrDefault();
-            if (hostSymbolId is null)
-            {
-                _nestedSkipReason = "У хозяина нет типоразмера в проекте: family='" +
-                                    hostFamily.Name + "'";
-                return false;
-            }
-
-            _hostSymbolIdValue = hostSymbolId.GetValue();
-
-            flangeDoc.Close(false);
-            flangeDoc = null;
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _nestedSkipReason = "Сид вложенного семейства упал: " + ex.GetType().Name + ": " +
-                                ex.Message;
-            return false;
-        }
-        finally
-        {
-            foreach (var open in new[] { flangeDoc, hostDoc })
-            {
-                if (open is null || !open.IsValidObject)
-                    continue;
-
-                try
-                {
-                    open.Close(false);
-                }
-                catch (Exception)
-                {
-                    // Already closed or invalid.
-                }
-            }
-        }
-    }
-
-    /// <summary>Nesting load of a shared family: FamilySource.Project keeps the
-    /// shared behaviour (the nested instance is exposed as a subcomponent).</summary>
-    private sealed class NestSharedLoadOptions : IFamilyLoadOptions
-    {
-        public bool OnFamilyFound(bool familyInUse, out bool overwriteParameterValues)
-        {
-            overwriteParameterValues = true;
-            return true;
-        }
-
-        public bool OnSharedFamilyFound(
-            Family sharedFamily,
-            bool familyInUse,
-            out FamilySource source,
-            out bool overwriteParameterValues)
-        {
-            source = FamilySource.Project;
-            overwriteParameterValues = true;
-            return true;
-        }
+        var result = NestedSharedFamilySeed.TrySeed(
+            Application, Doc, HostFamilyName,
+            Path.Combine(Path.GetTempPath(), "SmartConSystemFillTests"), _tempFamilyPaths);
+        _nestedSkipReason = result.Note;
+        if (result.Seeded)
+            _hostSymbolIdValue = result.HostSymbolId;
+        return result.Seeded;
     }
 
     // ── Джоба ───────────────────────────────────────────────────────────
