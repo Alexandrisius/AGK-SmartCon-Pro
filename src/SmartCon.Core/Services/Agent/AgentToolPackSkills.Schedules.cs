@@ -120,10 +120,10 @@ public static partial class AgentToolPackSkills
      `set_parameters`/`remap_parameter_values`; предупреди: значения статичны, новый
      типовой каталог их не обновит, формулы семейства считают по-своему.
    - Точный аналог готовой ведомости: `get_schedule_definition` (guid полей и `placements[]`)
-     → `clone_schedule(sourceScheduleId, name=имя старой, fieldMapping: старое → targetGuid)`
-     → `rename_schedule` старой в архивную пометку → `remove_schedule_from_sheet` →
-     `place_schedule_on_sheet` новой на её `xMm/yMm` (при необходимости `rotation`);
-     `skippedFields` покажите списком.
+     → `rename_schedule` старой в архивную пометку →
+     `clone_schedule(sourceScheduleId, name=имя старой, fieldMapping: старое → targetGuid)` →
+     `remove_schedule_from_sheet` старой → `place_schedule_on_sheet` новой на её `xMm/yMm`
+     (`rotation` если нужно); `skippedFields` покажите списком.
    - Оба уровня возможны — два коротких вопроса (где ФОП; семейство или проект), второй не
      решай молча.
 
