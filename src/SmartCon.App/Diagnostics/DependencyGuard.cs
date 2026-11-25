@@ -44,18 +44,39 @@ internal static class DependencyGuard
 
             var conflicts = DependencyConflictAnalyzer.Analyze(loaded);
             if (conflicts.Count == 0)
-            {
                 SmartConLogger.Info($"Dependency scan: {loaded.Count} assemblies checked, no conflicts.");
-                return;
+            else
+            {
+                foreach (var conflict in conflicts)
+                {
+                    SmartConLogger.Warn(
+                        $"Dependency conflict: {conflict.Name} {conflict.LoadedVersion} already loaded " +
+                        $"(SmartCon requires >= {conflict.MinimumVersion}) from '{conflict.Location}' " +
+                        "[Action: identify the add-in at that path and update it; SmartCon is isolated " +
+                        "from this conflict, but the other add-in may fail instead]");
+                }
             }
 
-            foreach (var conflict in conflicts)
+            // System.Memory (Span/Memory) must exist as exactly one physical copy: two copies
+            // split ReadOnlySpan<T> identity and later calls die with MissingMethodException
+            // (dotnet/roslyn#66104, Issue #527).
+            foreach (var group in loaded
+                .Where(item => AssemblyResolutionPolicy.IsTypeIdentityCritical(item.Name))
+                .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
             {
-                SmartConLogger.Warn(
-                    $"Dependency conflict: {conflict.Name} {conflict.LoadedVersion} already loaded " +
-                    $"(SmartCon requires >= {conflict.MinimumVersion}) from '{conflict.Location}' " +
-                    "[Action: identify the add-in at that path and update it; SmartCon is isolated " +
-                    "from this conflict, but the other add-in may fail instead]");
+                var locations = group
+                    .Where(item => !string.Equals(item.Location, "(dynamic)", StringComparison.Ordinal))
+                    .Select(item => item.Location + " (v" + item.Version + ")")
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (locations.Count > 1)
+                {
+                    SmartConLogger.Warn(
+                        $"Identity-critical assembly '{group.Key}' is loaded in {locations.Count} copies: " +
+                        string.Join("; ", locations) +
+                        " [Action: статический конфликт загрузки — сообщите в поддержку SmartCon, " +
+                        "приложите smartcon.log; такие копии ломают Span/Memory-сигнатуры]");
+                }
             }
         }
         catch (Exception ex)

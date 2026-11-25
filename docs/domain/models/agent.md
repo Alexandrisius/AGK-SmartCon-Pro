@@ -301,6 +301,18 @@ partial-failure контракт. planDigest привязан к докумен�
 
 Исполнение отдельных шагов плана ( partial-файлы `AgentPlanExecutor.Steps.cs`).
 
+## AgentPlanExecutor.StepReferences
+
+Партиал `AgentPlanExecutor` (`Services/Agent/AgentPlanExecutor.StepReferences.cs`):
+разбор ссылок шага на элементы плана (`$step...`, id предыдущих шагов), чтобы
+модель могла строить зависимости между шагами без повторной адресации.
+
+## AgentPlanExecutor.Apply
+
+Партиал `AgentPlanExecutor` (`Services/Agent/AgentPlanExecutor.Apply.cs`):
+применение секций плана к Revit через `IRevitOps` — change set, undo-маркеры,
+per-section статусы и частичный отказ (partial-failure) без потери отчёта.
+
 ## AgentPlanExecutor.Audit
 
 Аудит исполнения плана (записи `AgentAuditEntry`, apply-отчёт из `ApplyResult`).
@@ -308,6 +320,18 @@ partial-failure контракт. planDigest привязан к докумен�
 ## AgentPlanExecutor.Conflicts
 
 Обработка конфликтов шагов плана (пересечения affected-элементов).
+
+## AgentPlanExecutor.Conflicts.Parameters
+
+Партиал `AgentPlanExecutor.Conflicts` (`Services/Agent/AgentPlanExecutor.Conflicts.Parameters.cs`):
+сравнение параметров конфликтующих шагов (какие значения расходятся и какой шаг
+побеждает), чтобы отчёт объяснял причину конфликта, а не только его факт.
+
+## AgentPlanExecutor.ReadBack
+
+Партиал `AgentPlanExecutor` (`Services/Agent/AgentPlanExecutor.ReadBack.cs`):
+read-back проверка ожиданий после apply — сверка фактического состояния модели
+с ожидаемым payload и honest-отчёт по непроверяемым ожиданиям.
 
 ## AgentPlanExecutor.Resolution
 

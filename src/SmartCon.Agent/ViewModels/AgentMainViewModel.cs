@@ -569,33 +569,44 @@ public sealed partial class AgentMainViewModel : ObservableObject, IDisposable
         if (_currentContext is not { HasDocument: true } context)
             return;
 
-        var header = new AgentConversationHeader
+        try
         {
-            Title = NewChatTitle,
-            DocumentId = context.DocumentId,
-            DocumentPath = context.PathName,
-            RevitVersion = context.RevitVersion,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
+            var header = new AgentConversationHeader
+            {
+                Title = NewChatTitle,
+                DocumentId = context.DocumentId,
+                DocumentPath = context.PathName,
+                RevitVersion = context.RevitVersion,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
 
-        var id = await _conversationStore
-            .CreateConversationAsync(header, CancellationToken.None)
-            .ConfigureAwait(true);
+            var id = await _conversationStore
+                .CreateConversationAsync(header, CancellationToken.None)
+                .ConfigureAwait(true);
 
-        var item = new AgentSessionItemViewModel(
-            id,
-            header.Title,
-            DateTime.UtcNow,
-            RequestDeleteSession,
-            ConfirmDeleteSession,
-            CancelDeleteSession);
-        Sessions.Insert(0, item);
-        SelectedSession = item;
-        Messages.Clear();
-        _toolCards.Clear();
-        StatusText = S("Agent_Status_NewChat", "Новый чат");
-        HasError = false;
+            var item = new AgentSessionItemViewModel(
+                id,
+                header.Title,
+                DateTime.UtcNow,
+                RequestDeleteSession,
+                ConfirmDeleteSession,
+                CancelDeleteSession);
+            Sessions.Insert(0, item);
+            SelectedSession = item;
+            Messages.Clear();
+            _toolCards.Clear();
+            StatusText = S("Agent_Status_NewChat", "Новый чат");
+            HasError = false;
+        }
+        catch (Exception ex)
+        {
+            HasError = true;
+            StatusText = S("Agent_Status_Error", "Ошибка") + ": " + ex.Message;
+            SmartCon.Core.Logging.SmartConLogger.Error(
+                $"CreateSessionAsync failed: {ex.GetType().Name}: {ex.Message} " +
+                "[Action: проверьте доступность agent.db и smartcon.log — сессия не создана]");
+        }
     }
 
     private async Task LoadSessionAsync(AgentSessionItemViewModel session)

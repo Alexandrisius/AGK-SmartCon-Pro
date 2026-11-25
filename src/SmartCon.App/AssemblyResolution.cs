@@ -81,6 +81,14 @@ public sealed partial class App
                 ("Assembly", name));
 
 #if NETFRAMEWORK
+            // One physical System.Memory per process is mandatory: Span/Memory types sit in
+            // public signatures of SQLitePCLRaw.core and the merged Microsoft.Data.Sqlite.
+            // Revit's own copy wins silently for exact-version refs, so every other request
+            // must resolve to that same copy — otherwise ReadOnlySpan<T> splits into two
+            // types and the JIT throws MissingMethodException (dotnet/roslyn#66104).
+            if (AssemblyResolutionPolicy.IsTypeIdentityCritical(name))
+                return ResolveIdentityCritical(requested, name);
+
             if (s_mergedAssemblyNames.Value.Contains(name))
             {
                 var merged = AppDomain.CurrentDomain.GetAssemblies()
@@ -173,6 +181,48 @@ public sealed partial class App
             return null;
         }
     }
+
+#if NETFRAMEWORK
+    /// <summary>
+    /// net48: resolves an identity-critical BCL assembly (System.Memory) to exactly one
+    /// physical copy per process. Host copy first — it is what exact-version references
+    /// elsewhere in the process bind to, so only that copy keeps type identity intact.
+    /// </summary>
+    private static Assembly? ResolveIdentityCritical(AssemblyName requested, string name)
+    {
+        var pluginDir = Path.GetDirectoryName(typeof(App).Assembly.Location);
+        var pluginPath = pluginDir is null ? null : Path.Combine(pluginDir, name + ".dll");
+        var hostPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, name + ".dll");
+        var loaded = AppDomain.CurrentDomain.GetAssemblies()
+            .FirstOrDefault(a => a.GetName().Name == name);
+
+        var source = AssemblyResolutionPolicy.ChooseIdentityCriticalSource(
+            hostCopyExists: File.Exists(hostPath),
+            loadedCopyExists: loaded is not null,
+            pluginCopyExists: pluginPath is not null && File.Exists(pluginPath));
+
+        var resolved = source switch
+        {
+            AssemblyResolutionSource.Host => Assembly.LoadFrom(hostPath),
+            AssemblyResolutionSource.Loaded => loaded,
+            AssemblyResolutionSource.Plugin => Assembly.LoadFrom(pluginPath!),
+            _ => null,
+        };
+
+        if (resolved is null)
+        {
+            SmartConLogger.Warn(
+                $"Identity-critical assembly '{requested.Name}' not found in host, loaded set or plugin folder " +
+                "[Action: reinstall SmartCon via setup.exe — deployment is incomplete]");
+            return null;
+        }
+
+        SmartConLogger.Debug(
+            $"Resolved identity-critical '{requested.Name}' from {source} copy " +
+            $"(v{resolved.GetName().Version}, {resolved.Location})");
+        return resolved;
+    }
+#endif
 
     /// <summary>
     /// Logs every HelixToolkit/SharpDX/Assimp assembly load with a minimal

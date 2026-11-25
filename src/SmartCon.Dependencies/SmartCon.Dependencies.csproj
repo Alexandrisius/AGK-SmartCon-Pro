@@ -42,10 +42,13 @@
     <PackageReference Include="System.Text.Json" PrivateAssets="all" />
     <PackageReference Include="System.Text.Encodings.Web" PrivateAssets="all" />
     <PackageReference Include="UTF.Unknown" PrivateAssets="all" />
-    <!-- M.D.Sqlite — managed-обёртка; мержим (#177-аудит): подписанных сторонних
-         потребителей нет, наш единственный потребитель — свой код. SQLitePCLRaw.*
-         и native e_sqlite3 остаются loose (native asset resolution). -->
-    <PackageReference Include="Microsoft.Data.Sqlite" PrivateAssets="all" />
+    <!-- M.D.Sqlite на net48 НЕ мержим (Issue #527). ILRepack унифицирует AssemblyRef:
+         System.Memory из остальных merged-пакетов (4.0.2.0) переписывал и ссылки
+         M.D.Sqlite, а SQLitePCLRaw.core ссылается на 4.0.1.1 — ту, что поставляет
+         Revit (app base). Две версии → два экземпляра System.Memory → разные
+         ReadOnlySpan<T> → MissingMethodException в sqlite3_prepare_v2.
+         Loose M.D.Sqlite 8.0.31 ссылается на System.Memory 4.0.1.1 (как core) —
+         обе связываются с копией Revit без участия AssemblyResolve. -->
     <!-- Транзитивы для LibraryPath (loose-файлы, не merge) -->
     <PackageReference Include="CommunityToolkit.Common" PrivateAssets="all" />
     <PackageReference Include="CommunityToolkit.Diagnostics" PrivateAssets="all" />

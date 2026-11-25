@@ -280,7 +280,11 @@ public sealed partial class App : AppBase
                         $"[Dispatcher.UnhandledException] {DescribeException(args.Exception)}\n{args.Exception.StackTrace}");
                 }
                 catch { }
-                args.Handled = false;
+
+                // A fault inside a SmartCon command must not terminate the Revit host:
+                // the panel/log already carry the error. Host exceptions stay unhandled
+                // so Revit's own crash reporting keeps working. See Issue #527.
+                args.Handled = IsSmartConException(args.Exception);
             };
             Mark("3b: subscribed to Dispatcher.UnhandledException");
         }
@@ -310,6 +314,33 @@ public sealed partial class App : AppBase
             sb.Append(cur.GetType().Name).Append(": ").Append(cur.Message);
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// True when at least one stack frame belongs to a SmartCon assembly. Such faults are
+    /// contained (log + panel error) instead of terminating the Revit process.
+    /// </summary>
+    private static bool IsSmartConException(Exception ex)
+    {
+        // Fatal conditions must keep the default behaviour — the process state is unknown.
+        if (ex is OutOfMemoryException or StackOverflowException)
+            return false;
+
+        try
+        {
+            var trace = new System.Diagnostics.StackTrace(ex, fNeedFileInfo: false);
+            for (var i = 0; i < trace.FrameCount; i++)
+            {
+                var assembly = trace.GetFrame(i)?.GetMethod()?.DeclaringType?.Assembly.GetName().Name;
+                if (assembly is not null && assembly.StartsWith("SmartCon.", StringComparison.Ordinal))
+                    return true;
+            }
+        }
+        catch
+        {
+            // Stack inspection is best-effort: on failure keep the host's default behaviour.
+        }
+        return false;
     }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, BestFitMapping = false)]

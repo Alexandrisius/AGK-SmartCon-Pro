@@ -1,8 +1,8 @@
 # ADR-051: Изоляция зависимостей — ILRepack (net48) + AssemblyLoadContext (net8) + конвейер миграции пользователей
 
 **Date:** 2026-07-17  
-**Status:** accepted  
-**Related:** Issue #134 (DLL hell у пользователя), #129 (System.Text.Json MissingMethodException, R21), #114 (CodePages pin), #177 (TypeLoadException IKeyedServiceProvider — Abstractions не была в net8 merge-списке), ADR-042 (HelixToolkit pins)
+**Status:** accepted (amended 2026-11-25 — Issue #527: M.D.Sqlite выведен из merge на net48)  
+**Related:** Issue #134 (DLL hell у пользователя), #129 (System.Text.Json MissingMethodException, R21), #114 (CodePages pin), #177 (TypeLoadException IKeyedServiceProvider — Abstractions не была в net8 merge-списке), #527 (MissingMethodException sqlite3_prepare_v2 на R23 — две копии System.Memory), ADR-042 (HelixToolkit pins)
 
 ## Context
 
@@ -18,14 +18,15 @@
 
 **Правило merge (критично, проверено инцидентом при реализации):** пакет можно сшивать, только если **ни один подписанный сторонний компонент** в нашей dependency-замыкания не ссылается на него по strong name. Подписанный потребитель отклоняет merged-замену: неподписанную — `0x80131044 «Strong name required»`, подписанную с другим identity — `0x80131040 «manifest does not match»` (так HelixToolkit → `CommunityToolkit.Diagnostics 8.3.0.0/4aff` уронил 3D preview: `XamlParseException → TypeInitializationException ViewBoxNode`). Правило проверяется перечислением `GetReferencedAssemblies()` всех подписанных третьих сторон (HelixToolkit, SharpDX, Roslyn, Logging.Abstractions, Sqlite, MahApps).
 
-**Финальный merge-список (7 пакетов, только наши неподписанные потребители):** CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, Microsoft.Bcl.AsyncInterfaces, System.Text.Json, System.Text.Encodings.Web, UTF.Unknown, Microsoft.Data.Sqlite (managed-обёртка; добавлена по аудиту #177 — наш код зовёт её напрямую, подписанных сторонних потребителей нет).
+**Merge-список (6 пакетов после #527, только наши неподписанные потребители):** CommunityToolkit.Mvvm, Microsoft.Extensions.DependencyInjection, Microsoft.Bcl.AsyncInterfaces, System.Text.Json, System.Text.Encodings.Web, UTF.Unknown. ~~Microsoft.Data.Sqlite~~ — выведен из merge на net48 по Issue #527 (см. «Update 2026-11-25» ниже): слияние переписывало его ссылку `System.Memory` на версию соседних merged-пакетов, что раздваивало `ReadOnlySpan<T>`.
 
 **Намеренно LOOSE (оригинальные подписанные файлы в output, net48-блок в SmartCon.App.csproj):**
 - CommunityToolkit.Common/.Diagnostics — HelixToolkit → 4aff 8.3.0.0 exact
 - Microsoft.Extensions.DependencyInjection.Abstractions — Logging.Abstractions → adb 8.0.0.2
 - System.Memory / Buffers / Unsafe / Tasks.Extensions / Numerics.Vectors — Roslyn/Helix/Sqlite (cc7b/b03f, токен-чувствительные)
 - System.Text.Encoding.CodePages — Roslyn → b03f 7.0.0.0
-- HelixToolkit/SharpDX/MahApps/Xaml.Behaviors — WPF (XmlnsDefinition/pack URI); SQLitePCLRaw.*/e_sqlite3 — native interop (managed-обёртка M.D.Sqlite при этом мержится); System.ValueTuple — фасад фреймворка
+- Microsoft.Data.Sqlite (net48) — Issue #527: ILRepack унифицирует AssemblyRef, и его `System.Memory 4.0.1.1` (та же, что у `SQLitePCLRaw.core` и у Revit) переписывалась на 4.0.2.0 → `MissingMethodException` в `sqlite3_prepare_v2`
+- HelixToolkit/SharpDX/MahApps/Xaml.Behaviors — WPF (XmlnsDefinition/pack URI); SQLitePCLRaw.*/e_sqlite3 — native interop; System.ValueTuple — фасад фреймворка
 
 **Механика:**
 - `Internalize=false` (типы публичны для потребителей); output подписан `SmartCon.snk` (коммит в репо, identity-стабильность; не обязательно при текущем списке, защита на будущее).
@@ -64,6 +65,22 @@
 - **Updater**: копирует также `.json` (`deps.json`/`runtimeconfig.json`); удаляет файлы по `obsolete-files.txt` из staging (парсер отвергает path traversal и не-dll; применяется **только для net48-папок** — на net8 те же имена нужны loose); бэкап целевой папки в `backup\{folder}-{timestamp}` (хранит 3); валидация путей маркера (всё внутри `%APPDATA%\SmartCon`); после обновления пишет манифесты для всех годов целевой папки (шаблон продублирован — Updater self-contained, грузить SmartCon.Core.dll нельзя; ManifestSettings только для 2026+).
 - **Installer**: `DeleteObsoleteDlls` (тот же список через `dontcopy` + `ExtractTemporaryFile`) на `ssInstall`; `WriteAddinFile` с `IncludeIsolation=True` только для 2026 (на 2025 тег отвергается парсером Revit).
 - Пользовательские данные (`%APPDATA%\SmartCon\FamilyManager`, `%APPDATA%\AGK\SmartCon`) лежат вне папок с DLL — чистка их не задевает.
+
+### 6. Update 2026-11-25 — M.D.Sqlite выведен из merge на net48 (Issue #527)
+
+**Инцидент.** Revit 2023 (net48, R23): `MissingMethodException` — `SQLitePCL.raw.sqlite3_prepare_v2(sqlite3, ReadOnlySpan<byte>, out sqlite3_stmt, out ReadOnlySpan<byte>)`; падали и `FamilyManager.InitializeAsync`, и создание сессии агента.
+
+**Root cause.** Revit 2023 поставляет `System.Memory.dll` **4.0.1.1** в своей папке (app base), и `SQLitePCLRaw.core` ссылается ровно на неё — биндинг молчаливый, без `AssemblyResolve`. При ILRepack-merge `Microsoft.Data.Sqlite` его AssemblyRef `System.Memory 4.0.1.1` **унифицировался** с версией соседних merged-пакетов (4.0.2.0); запрос 4.0.2.0 уходил в наш резолвер и грузил 4.0.5.0 из папки плагина → в процессе две `System.Memory` → `ReadOnlySpan<T>` вызывающего и метода принадлежат разным сборкам → JIT не находит метод (класс проблемы: dotnet/roslyn#66104; ericsink/SQLitePCL.raw#462).
+
+**Решение.**
+- `Microsoft.Data.Sqlite` на net48 поставляется **loose** (`Microsoft.Data.Sqlite.dll`), не сшивается; прямые `PackageReference` (net48) в Core/Agent/FamilyManager. Loose-сборка ссылается на `System.Memory 4.0.1.1` — как `SQLitePCLRaw.core`, обе биндятся к копии Revit, раздвоение невозможно по построению.
+- `SmartCon.Core.Deployment.AssemblyResolutionPolicy`: `System.Memory` — identity-critical; в процессе допускается одна физическая копия, приоритет — копия хоста (её же получают exact-version ссылки). `OnAssemblyResolve` применяет правило на net48.
+- `DependencyGuard` пишет Warn, если в процессе больше одной копии identity-critical сборки.
+- `Dispatcher.UnhandledException`: `Handled = true`, если в стеке есть кадр SmartCon (ошибка команды не завершает Revit; хостовые исключения и OOM/SO — не перехватываются).
+
+**Последствия.** На net48 M.D.Sqlite защищён от чужих версий не merge, а резолвером («загружена старше запрошенной → грузим нашу из папки плагина», механизм #134). Изоляция SQLite-типов на net48 слабее, чем при merge, но merge этого пакета физически несовместим с identity-critical `System.Memory`. Альтернатива с полной изоляцией (сшить весь SQLite-стек + обёртка `Batteries.Init` внутри Dependencies) — отложена отдельной задачей. net8 не затронут: merge-список прежний, там единый `System.Memory` из рантайма.
+
+**Verification.** Оффлайн-стенд с бинарниками поставки: до — тот же `MissingMethodException`, после — `OK`, одна копия `System.Memory`. Юнит 4671/4671 (FamilyManager 1976/1976); IT SQLite в Revit 2023 net48 — 1/1; ручной тест владельца на R23: панель агента (сессия + LLM-тур) и FamilyManager (каталог, `DbCompat`, `LoadTree`) — лог без ERR/WRN.
 
 ## Consequences
 

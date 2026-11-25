@@ -18,7 +18,9 @@ Microsoft.Bcl.AsyncInterfaces.dll
 System.Text.Json.dll
 System.Text.Encodings.Web.dll
 UtfUnknown.dll
-Microsoft.Data.Sqlite.dll
+# Microsoft.Data.Sqlite.dll на net48 НЕ сшивается (Issue #527) — поставляется loose:
+# слияние переписывало его ссылку System.Memory на 4.0.2.0, а SQLitePCLRaw.core
+# ссылается на 4.0.1.1 (копия Revit) → две System.Memory → MissingMethodException.
 # Исторический мусор (поставлялся версиями < 2.0.0 до Issue #129):
 SharpGLTF.Core.dll
 SharpGLTF.Toolkit.dll

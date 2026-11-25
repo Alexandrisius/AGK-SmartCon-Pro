@@ -71,3 +71,42 @@ public sealed record LoadedDependencyInfo(string Name, Version Version, string L
 ```csharp
 public sealed record DependencyConflict(string Name, Version LoadedVersion, Version MinimumVersion, string Location);
 ```
+
+---
+
+## AssemblyResolutionPolicy
+
+Политика разрешения identity-critical инфраструктуры BCL на net48 (Issue #527). `System.Memory`
+содержит типы `Span`/`Memory`, которые входят в публичные сигнатуры сторонних сборок
+(`SQLitePCLRaw.core`, `Microsoft.Data.Sqlite`): в процессе допустима ровно одна физическая
+копия, иначе `ReadOnlySpan<T>` вызывающего и метода окажутся разными типами и JIT бросит
+`MissingMethodException` (dotnet/roslyn#66104). Приоритет копий: хост (папка Revit) → уже
+загруженная → папка плагина. Используется `App.OnAssemblyResolve` и `DependencyGuard`.
+
+**Файл:** `SmartCon.Core/Deployment/AssemblyResolutionPolicy.cs`
+
+```csharp
+public static class AssemblyResolutionPolicy
+{
+    public static bool IsTypeIdentityCritical(string? simpleName);
+    public static AssemblyResolutionSource ChooseIdentityCriticalSource(
+        bool hostCopyExists, bool loadedCopyExists, bool pluginCopyExists);
+}
+```
+
+## AssemblyResolutionSource
+
+Источник копии identity-critical сборки при `AssemblyResolve`.
+
+**Файл:** `SmartCon.Core/Deployment/AssemblyResolutionPolicy.cs`
+
+```csharp
+public enum AssemblyResolutionSource
+{
+    None = 0,
+    Host = 1,
+    Loaded = 2,
+    Plugin = 3,
+}
+```
+

@@ -37,6 +37,12 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" />
   </ItemGroup>
 
+  <!-- net48: M.D.Sqlite loose, а не merged (Issue #527) — merge переписывал
+       ссылку System.Memory на 4.0.2.0, что давало MissingMethodException в SQLite. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
   <!-- ADR-042 / Issue #129: 3D geometry preview — HelixToolkit.Wpf.SharpDX для ОБЕИХ TFM (net8 + net48).
        GLB writer теперь custom zero-dependency (manual JSON + binary GLB container), поэтому
        SharpGLTF.Core больше не используется. CS1739 workaround для format specifiers остаётся

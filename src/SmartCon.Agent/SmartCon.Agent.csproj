@@ -52,6 +52,8 @@
     <!-- async iterators (IAsyncEnumerable) на net48 требуют ValueTask из этого пакета -->
     <PackageReference Include="System.Threading.Tasks.Extensions" />
     <PackageReference Include="System.Memory" />
+    <!-- loose, не merged (Issue #527): merge переписывал ссылку System.Memory на 4.0.2.0 -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 
   <ItemGroup>

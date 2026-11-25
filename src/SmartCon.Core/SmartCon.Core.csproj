@@ -24,10 +24,12 @@
     <ProjectReference Include="..\SmartCon.Dependencies\SmartCon.Dependencies.csproj" />
   </ItemGroup>
 
-  <!-- System.Memory (net48): раньше приезжал транзитивно через M.D.Sqlite → SQLitePCLRaw.core;
-       после merge M.D.Sqlite (#177) нужен явно — STJ API (ReadOnlySpan/ReadOnlyMemory). -->
+  <!-- System.Memory (net48): нужен явно — STJ API (ReadOnlySpan/ReadOnlyMemory).
+       M.D.Sqlite на net48 поставляется loose, а не merged (Issue #527): слияние
+       переписывало его ссылку System.Memory на 4.0.2.0 → MissingMethodException. -->
   <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <PackageReference Include="System.Memory" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 
 </Project>

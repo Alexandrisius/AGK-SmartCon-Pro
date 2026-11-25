@@ -51,7 +51,11 @@
       <InputAssemblies Include="$(OutputPath)System.Text.Json.dll" />
       <InputAssemblies Include="$(OutputPath)System.Text.Encodings.Web.dll" />
       <InputAssemblies Include="$(OutputPath)UtfUnknown.dll" />
-      <InputAssemblies Include="$(OutputPath)Microsoft.Data.Sqlite.dll" />
+      <!-- Microsoft.Data.Sqlite НЕ мержим на net48 (Issue #527): ILRepack унифицирует
+           AssemblyRef System.Memory до 4.0.2.0 (из STJ/M.E.DI), а SQLitePCLRaw.core
+           ссылается на 4.0.1.1 — копию, которую поставляет Revit. Два экземпляра
+           System.Memory дают разные ReadOnlySpan<T> → MissingMethodException в
+           sqlite3_prepare_v2. Loose M.D.Sqlite ссылается на 4.0.1.1, как core. -->
     </ItemGroup>
     <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
       <!-- M.E.DI.Abstractions мержим вместе с M.E.DI (#177): loose-версия резолвилась

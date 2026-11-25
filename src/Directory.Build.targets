@@ -167,7 +167,8 @@
     <PackageReference Include="System.Text.Json" ExcludeAssets="all" />
     <PackageReference Include="System.Text.Encodings.Web" ExcludeAssets="all" />
     <PackageReference Include="UTF.Unknown" ExcludeAssets="all" />
-    <PackageReference Include="Microsoft.Data.Sqlite" ExcludeAssets="all" />
+    <!-- Microsoft.Data.Sqlite на net48 НЕ сшивается и НЕ обрезается (Issue #527):
+         поставляется loose, иначе ILRepack меняет версию его ссылки System.Memory. -->
   </ItemGroup>
 
   <!-- net8/net10 merge-список (ADR-051): те же типы сшиты в SmartCon.Dependencies —
