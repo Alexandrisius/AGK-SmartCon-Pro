@@ -301,9 +301,76 @@ internal static partial class AgentViewWriteHelper
 
         if (spec.Worksets is { Count: > 0 })
         {
-            warnings.Add("Workset visibility is not supported: the active document is not " +
-                         "workshared, so there are no user worksets.");
+            ApplyWorksetVisibility(doc, view, spec.Worksets, warnings);
         }
+    }
+
+    private static void ApplyWorksetVisibility(
+        Document doc,
+        View view,
+        List<WorksetVisibilitySpec> worksets,
+        List<string> warnings)
+    {
+        if (!doc.IsWorkshared)
+        {
+            warnings.Add("Workset visibility was requested, but the document is not " +
+                         "workshared, so there are no user worksets.");
+            return;
+        }
+
+        foreach (var entry in worksets)
+        {
+            var workset = ResolveWorkset(doc, entry);
+            if (workset is null)
+            {
+                warnings.Add("Workset '" + (entry.Name ?? entry.WorksetId?.ToString() ?? "?") +
+                             "' was not found in the document.");
+                continue;
+            }
+
+            try
+            {
+                var target = entry.Hidden ? WorksetVisibility.Hidden : WorksetVisibility.Visible;
+                if (view.GetWorksetVisibility(workset.Id) == target)
+                    continue;
+
+                view.SetWorksetVisibility(workset.Id, target);
+            }
+            catch (Exception ex)
+            {
+                warnings.Add("Workset '" + workset.Name + "' visibility could not be changed on '" +
+                             view.Name + "': " + ex.Message);
+            }
+        }
+    }
+
+    private static Workset? ResolveWorkset(Document doc, WorksetVisibilitySpec entry)
+    {
+        var table = doc.GetWorksetTable();
+        if (entry.WorksetId is { } raw && raw > 0)
+        {
+            try
+            {
+                var byId = table.GetWorkset(new WorksetId((int)raw));
+                if (byId is not null)
+                    return byId;
+            }
+            catch (Exception)
+            {
+                // Fall back to the name.
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(entry.Name))
+            return null;
+
+        foreach (var workset in new FilteredWorksetCollector(doc).OfKind(WorksetKind.UserWorkset))
+        {
+            if (string.Equals(workset.Name, entry.Name!.Trim(), StringComparison.OrdinalIgnoreCase))
+                return workset;
+        }
+
+        return null;
     }
 
     private static bool TrySetVisibility(

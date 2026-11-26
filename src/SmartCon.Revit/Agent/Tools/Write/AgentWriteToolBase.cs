@@ -9,9 +9,10 @@ using SmartCon.Core.Services.Interfaces.Agent;
 namespace SmartCon.Revit.Agent.Tools.Write;
 
 /// <summary>
-/// Common pipeline for write tools (mvp-plan §9):
-/// guard document/worksharing → execute on the Revit thread → dry-run as
-/// run-and-rollback → apply in one transaction → persist a change set → report.
+/// Common pipeline for write tools (mvp-plan §9): guard the document, take
+/// ownership of the batch targets in a workshared local copy → execute on the
+/// Revit thread → dry-run as run-and-rollback → apply in one transaction →
+/// persist a change set → report.
 /// </summary>
 public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflight
 {
@@ -40,8 +41,6 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
     /// sums it as the tool-level verification of a step.
     /// </summary>
     internal const string ReadBackDataKey = "readBack";
-
-    /// </summary>
 
     public async Task<ToolResult> ExecuteAsync(
         AgentToolContext context,
@@ -163,7 +162,6 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
         bool dryRun,
         CancellationToken ct)
     {
-        WriteOutcome outcome;
         try
         {
             ct.ThrowIfCancellationRequested();
@@ -188,21 +186,31 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
                     "Start a new request in the current document.");
             }
 
-            if (document.IsWorkshared)
-            {
-                return WriteOutcome.Fail(
-                    "workshared_not_supported",
-                    "The active document is a workshared model. Writing to a workshared " +
-                    "document is not supported in this version.",
-                    "Open a detached copy (File > Save As > Detach from Central) and retry.");
-            }
-
-            outcome = new WriteOutcome
+            var outcome = new WriteOutcome
             {
                 DocumentPath = document.PathName,
                 RevitVersion = document.Application.VersionNumber,
                 DocumentVersion = AgentDocumentState.Capture(document)
             };
+
+            if (document.IsWorkshared)
+            {
+                // A local copy is a normal editable document. The only difference
+                // is ownership: an element owned by another user, an out-of-date
+                // element or a non-editable workset rolls the whole transaction
+                // back, so the batch takes ownership first and skips what stayed
+                // unavailable. A detached copy has no central to borrow from.
+                WorksharingScope = AgentWorksharingScope.Create(document);
+                var worksharingFailure =
+                    PrepareWorksharing(document, args, outcome, dryRun, ct);
+                if (worksharingFailure is not null)
+                    return worksharingFailure;
+            }
+            else
+            {
+                WorksharingScope = AgentWorksharingScope.None;
+                outcome.Data["worksharing"] = WorksharingScope.ToPayload();
+            }
 
             if (ManagesOwnTransactions)
             {
@@ -340,6 +348,8 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
             // A silent rollback must not close the change set: the model still holds the
             // applied state, so undo_last has to be able to target this very set again.
             outcome.RollBackChangeSetId = null;
+            AppendWorksharingRollbackHint(outcome, document);
+
             return;
         }
 
@@ -365,175 +375,6 @@ public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflig
         outcome.Batch.Changed.Clear();
         outcome.Items.RemoveAll(item => item.Status == ChangeStatus.Applied);
         outcome.AffectedCount = 0;
-    }
-
-    private async Task PersistChangeSetAsync(
-        WriteOutcome outcome,
-        string documentId,
-        Guid conversationId,
-        CancellationToken ct)
-    {
-        try
-        {
-            var header = new ChangeSetHeader
-            {
-                ConversationId = conversationId == Guid.Empty ? null : conversationId,
-                Operation = Definition.Name,
-                DocumentId = documentId,
-                DocumentPath = outcome.DocumentPath,
-                RevitVersion = outcome.RevitVersion,
-                Author = Environment.UserName,
-                Description = outcome.Description
-            };
-
-            var changeSetId = await _changeSets.BeginAsync(header, ct).ConfigureAwait(false);
-            await _changeSets
-                .AddItemsAsync(changeSetId, outcome.Items, ct)
-                .ConfigureAwait(false);
-            await _changeSets
-                .MarkAppliedAsync(changeSetId, DateTime.UtcNow, ct)
-                .ConfigureAwait(false);
-
-            outcome.Data["changeSetId"] = changeSetId.ToString("D");
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            SmartConLogger.Warn(
-                "Agent change set for '" + Definition.Name + "' was not recorded: " +
-                ex.GetType().Name + ": " + ex.Message +
-                " [Action: the model change is applied, but undo_last will not be able " +
-                "to revert it; check write access to agent.db]");
-            outcome.Warnings.Add(
-                "The change set could not be recorded, so undo_last will not revert " +
-                "this operation.");
-        }
-    }
-
-    private ToolResult BuildResult(WriteOutcome outcome, bool dryRun)
-    {
-        if (outcome.Success
-            && outcome.Batch.Changed.Count == 0
-            && outcome.Batch.Failed.Count > 0
-            && outcome.AffectedCount == 0)
-        {
-            // Every requested item failed — report the batch as failed so the
-            // model does not treat an empty result as a success.
-            outcome.Success = false;
-            var codes = outcome.Batch.Failed
-                .Select(item => item.ErrorCode)
-                .Where(code => !string.IsNullOrEmpty(code))
-                .ToList();
-            if (codes.Count > 0)
-            {
-                // A batch where every item failed for the same actionable reason should
-                // surface that code at the top level, not hide it in failed[] (rename_views
-                // returned all_items_failed while the real cause was duplicate_name). A
-                // dominant cause (≥60 % of failures) is promoted too, so a stray second
-                // code cannot bury the useful one.
-                var groups = codes
-                    .GroupBy(code => code!, StringComparer.Ordinal)
-                    .OrderByDescending(group => group.Count())
-                    .ThenBy(group => group.Key, StringComparer.Ordinal)
-                    .ToList();
-                if (groups.Count == 1 || groups[0].Count() * 100 >= codes.Count * 60)
-                    outcome.ErrorCode = groups[0].Key;
-                outcome.Data["errorCodes"] = groups
-                    .Select(group => new { code = group.Key, count = group.Count() })
-                    .ToList();
-            }
-
-            outcome.ErrorCode ??= "all_items_failed";
-            if (string.IsNullOrWhiteSpace(outcome.Message))
-            {
-                var first = outcome.Batch.Failed[0];
-                outcome.Message = outcome.Batch.Failed.Count + " item(s) failed";
-                if (!string.IsNullOrWhiteSpace(first.Name))
-                    outcome.Message += "; first: " + first.Name;
-                if (!string.IsNullOrWhiteSpace(first.ErrorCode))
-                    outcome.Message += " (" + first.ErrorCode + ")";
-                if (!string.IsNullOrWhiteSpace(first.Reason))
-                    outcome.Message += " — " + first.Reason;
-            }
-        }
-
-        outcome.Data["dryRun"] = dryRun;
-        // Partial batches are a success with a per-item failed[]: do not leak an
-        // item error code as the top-level code (it read as "the whole call failed").
-        if (outcome.Success && outcome.Batch.Failed.Count > 0)
-        {
-            outcome.ErrorCode = null;
-            outcome.Data["partialFailure"] = true;
-        }
-
-        // "Nothing to do" is a success, but an empty changed[] alone reads like a
-        // failure to the model (A8). One top-level flag removes the ambiguity.
-        if (outcome.Success
-            && outcome.Batch.Changed.Count == 0
-            && outcome.Batch.Failed.Count == 0)
-        {
-            outcome.Data["noChanges"] = true;
-        }
-        // A successful outcome can still carry a diagnostic code (no_changes): the
-        // model needs it to stop retrying an idempotent call (#400).
-        if (outcome.Success && !string.IsNullOrEmpty(outcome.ErrorCode))
-            outcome.Data["errorCode"] = outcome.ErrorCode;
-        outcome.Data["changed"] = outcome.Batch.Changed;
-        outcome.Data["skipped"] = outcome.Batch.Skipped;
-        outcome.Data["failed"] = outcome.Batch.Failed;
-        outcome.Data["total"] = outcome.Batch.Total;
-        outcome.Data["affected"] = outcome.AffectedCount;
-        if (outcome.Aborted)
-            outcome.Data["aborted"] = true;
-
-        var data = AgentJson.Serialize(outcome.Data);
-        var appliedText = dryRun
-            ? "Dry run: " + outcome.Batch.Changed.Count + " change(s) planned"
-            : outcome.Batch.Changed.Count == 0 && outcome.AffectedCount > 0
-                ? "Partial apply: " + outcome.AffectedCount + " change(s) applied"
-                : outcome.Batch.Changed.Count + " change(s) applied";
-        var summary = outcome.Message
-            ?? (dryRun
-                ? appliedText + ", " +
-                  outcome.Batch.Skipped.Count + " skipped, " + outcome.Batch.Failed.Count +
-                  " failed. Nothing was modified."
-                : appliedText + ", " +
-                  outcome.Batch.Skipped.Count + " skipped, " + outcome.Batch.Failed.Count +
-                  " failed.");
-
-        // Non-atomic partial dry run: the failed items are deterministic — they will
-        // fail on apply too, so tell the model to resend only the passing items.
-        if (dryRun && outcome.Success && outcome.Batch.Failed.Count > 0)
-        {
-            var failedIds = string.Join(", ", outcome.Batch.Failed
-                .Take(10)
-                .Select(item => item.Id?.ToString() ?? item.Name ?? "?"));
-            summary += " " + outcome.Batch.Failed.Count +
-                       " item(s) failed validation and will fail again: [" + failedIds +
-                       "] (max 10). Repeat the SAME call with dryRun:false WITHOUT the " +
-                       "failed items — the passing items are ready to apply.";
-        }
-
-        var result = outcome.Success
-            ? ToolResult.Ok(data, summary, outcome.AffectedCount, outcome.Warnings)
-            : ToolResult.Fail(
-                outcome.ErrorCode ?? "write_failed",
-                summary,
-                outcome.Warnings,
-                data,
-                affectedCount: outcome.AffectedCount);
-        if (!outcome.Success
-            && outcome.ErrorCode is not null
-            && outcome.ErrorCode.EndsWith("_not_found", StringComparison.Ordinal))
-        {
-            result = result.WithMessageSuffix(
-                AgentDocumentState.NotFoundHint(outcome.DocumentVersion));
-        }
-
-        return result.WithDocumentVersion(outcome.DocumentVersion);
     }
 
     private sealed class WriteAbortSignal : Exception

@@ -46,6 +46,9 @@ public sealed partial class AgentClassificationMatcher
     public AgentClassificationMatcher(AgentSemanticRanker ranker) =>
         _ranker = ranker ?? throw new ArgumentNullException(nameof(ranker));
 
+    /// <summary>Per-model question budget seen through the ranker (S.49, #534).</summary>
+    public int QuestionBudget => _ranker.MaxQuestionsPerToolCall;
+
     /// <summary>
     /// Runs the whole pipeline over the grouped snapshot. Decision-layer
     /// failures never throw - they surface as <see cref="ClassifyMatchResult.Error"/>

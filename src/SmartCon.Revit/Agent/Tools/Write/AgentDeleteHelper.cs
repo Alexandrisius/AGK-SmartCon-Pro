@@ -68,12 +68,26 @@ internal static class AgentDeleteHelper
         List<DeleteTarget> targets,
         WriteOutcome outcome,
         string what,
-        CancellationToken ct)
+        CancellationToken ct,
+        AgentWorksharingScope? worksharing = null)
     {
         var deletable = new List<DeleteTarget>(targets.Count);
         foreach (var target in targets)
         {
             ct.ThrowIfCancellationRequested();
+
+            if (worksharing is not null
+                && worksharing.TryGetBlock(ElementIdCompat.Create(target.Id), out var block))
+            {
+                outcome.Batch.Skipped.Add(new WriteItemReport
+                {
+                    Id = target.Id,
+                    Name = target.Name,
+                    ErrorCode = block.Code,
+                    Reason = block.Reason
+                });
+                continue;
+            }
 
             var element = doc.GetElement(ElementIdCompat.Create(target.Id));
             if (element is null)

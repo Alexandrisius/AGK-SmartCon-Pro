@@ -308,6 +308,13 @@ P.6–P.9 (P2) — отдельной сессией.
 | `S.40` | Fixed discovery cost: предзагрузка/кэш паков тулов по контексту вместо новых аргументов | P2 | `backlog` | #524 |
 | `S.41` | Harness feedback v7: честный отчёт `set_schedule_field_format`, маркер `isMulticategory`, `fieldType` vs `scope` | P1 | `in-progress` | #525 |
 | `S.42` | Harness feedback v8 (стресс-тест): кросс-шаговое превью параметров, `onError` шагов, видимость фильтров при merge, ближайший writable уровень браузера, стили `create_schedule`, storm-дискриминатор, `$step`-ссылки между шагами, `create_level` | P1 | `in-progress` | #526 |
+| `S.43` | Worksharing-write: батч-checkout до транзакции, Probe dry-run, per-item skip чужих/stale, detached-копии, undo-гейт владения | P0 | `done` | #528 |
+| `S.44` | Harness feedback v9: `get_schedule_elements` (FEC по спеке), scope типового общего параметра, `list_families`(OST_*), `list_family_types`(placedOnly), `documentKind`/`isDetached`, `get_current_view_info` на ведомостях | P1 | `done` | #529 |
+| `S.45` | Harness feedback v10: петли чтений — `PaginationGuard` (warn 4/block 6), `duplicate_call`, сводка `byCategory` в digest, `invalid_arguments`, `list_views(viewIds)` | P0 | `done` | #530 |
+| `S.46` | Harness feedback v11 (дефекты): `start_job` per-action select, `classify_types` oversized-батч (`decision_batch_too_large`/авто-дробление), `summarize_elements` честность (typeId collapse, `(empty)`/`(no value)`), classification leaf-фолбэк | P1 | `done` | #531 |
+| `S.47` | Harness feedback v11 (round-экономия): `resultHandle` всегда, `skippedByReason`, `byType`, `values[]` в start_job, `typeId` в query/groupBy, `$result`-проекция как аргумент, `undo_last` для джобы | P2 | `done` | #532 |
+| `S.48` | ФОП-миграция (подготовка): impact(`fieldGuid`) по спецификациям + prefix-summary `list_shared_parameters` | P2 | `done` | #533 |
+| `S.49` | Decision-канал: бюджет промптов на вызов classify_types (`AgentClassificationBudget`, настройка `SMARTCON_DECIDER_MAX_QUESTIONS`, loop-safe чанкирование) | P1 | `done` | #534 |
 
 ### G — Missing operations: удаления, спецификации, листы, ФОП, семейства, MEP
 

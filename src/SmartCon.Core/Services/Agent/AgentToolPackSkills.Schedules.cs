@@ -12,125 +12,110 @@ public static partial class AgentToolPackSkills
     private const string Schedules = @"## Пак schedules: ведомости и спецификации
 
 ### Карта тулов
-- `list_schedules` — список: `categories`, `nameContains`, `includeTemplates`, `fields`.
-  `fieldCount` = все поля, `fields[]` — видимые; пустые — `emptySchedules`; дубли по
-  определению — `duplicateGroups`. `isMulticategory` — сквозная (у неё `categoryName` null;
-  null сам по себе не доказывает).
+- `list_schedules` — `categories`, `nameContains`, `includeTemplates`, `fields`; `fieldCount` —
+  все поля, `fields[]` — видимые, пустые — `emptySchedules`, дубли по определению —
+  `duplicateGroups`. `isMulticategory` — сквозная (`categoryName` null сам по себе не доказывает).
 - `get_schedule_data` — строки: `scheduleId|scheduleName`, `limit` ≤500, `offset`,
-  `includeHidden` (скрытые колонки с выборками значений). 0 строк под фильтром со
-  значением → предупреждение «проверь значение фильтра».
-- `get_schedule_definition` — структура: поля (у общих — `guid` + `parameterName`, у built-in —
-  имя; у каждого `heading`, `columnWidthMm`, `totalsDisplay`, `hidden`, `fieldType`, `scope`),
-  сортировка/группировка с флагами, фильтры (фазные — `phaseFilters`,
-  ссылки — `valueName`), стиль и `placements[]` (лист/точка/поворот) +
-  `isMulticategory`/`placedOnSheet`/`sheetNumbers`. `scope` — уровень для write-тулов: у
-  built-in `fieldType` = `scope`, у общих `fieldType` всегда Instance.
-- `create_schedule` — `category` (OST-имя / русское / id / `multicategory` — сквозная по
-  категориям, поля только общие), `name`, `fields` (0..15), `itemized`; dry-run id — PROVISIONAL.
-- `add_schedule_field` / `remove_schedule_field` — поля (1..15) по отображаемым именам; undo
-  возвращает.
-- `set_schedule_field_order` — порядок колонок: ПОЛНЫЙ список имён в новом порядке.
-- `set_schedule_field_visibility` — скрыть/показать: `fields[{name,hidden}]`.
-- `set_schedule_totals` — итоги: `fields[{name,mode}]` (standard|totals|min|max|minmax) +
-  `grandTotal`/`grandTotalCount`/`grandTotalTitle` (grandTotal:false снимает строку и зависимые
-  флаги без ошибки).
-- `set_schedule_filter` — фильтры (0..8, только AND; `[]` — очистить); dry-run показывает
-  `estimatedRowsAfter` + `estimatedSampleNames` (до 5).
-- `set_schedule_sort` — сортировка (0..4) и `itemized`; флаги группы
-  `showHeader/showFooter/showBlankLine`.
-- `set_schedule_field_format` — заголовки и ширины: `fields[{field,heading?,widthMm?}]` (мм;
-  вычисляемым колонкам ширины недоступны — `field_not_formatable`). `changed[]` — только
-  фактические изменения; no-op — в `detail`/`skipped[]`.
-- `set_schedule_style` — `stripedRows`/`useStripedRowsOnSheets` (2021+) и текстовые стили
-  body/header/title.
-- `rename_schedule` — переименовать (шаг архива: освободить имя старой); имя должно быть свободно.
-- `place_schedule_on_sheet` — координаты ЛЕВОГО ВЕРХНЕГО угла в мм, `rotation: none|cw90|ccw90`.
-- `move_schedule_on_sheet` — переместить (`instanceId|лист+спецификация`, мм) и/или повернуть.
-- `remove_schedule_from_sheet` — снять вынос (спецификация остаётся); undo возвращает точку и
-  поворот.
-- `clone_schedule` — аналог ведомости на других параметрах: `fieldMapping[{sourceField,
-  targetGuid|targetField}]` (guid — из `get_schedule_definition`), переносит порядок/заголовки/
-  ширины/скрытость, фильтры, сортировку, итоги и стиль; колонки без аналога — `skippedFields`;
-  составные (CombinedParameter) — по имени; фильтр/сортировка переезжают на цель. Одна спека
-  за вызов; `created{}` PROVISIONAL.
-- `delete_schedules` — `scheduleIds`/`scheduleNames` (≤50) + `confirmNames`; снятие с листа
-  убирает только instance, сама спека — `delete_schedules`.
+  `includeHidden`; 0 строк под фильтром со значением → предупреждение «проверь значение».
+- `get_schedule_elements` — id за строками: `scheduleId|scheduleName`, `includeTypes`,
+  `limit/offset`; `rows[{elementId, kind, typeId, …}]`, `total/truncated` и сводка
+  `byCategory`/`uniqueTypes` по ВСЕМУ набору (не странице) — «что внутри» видно без
+  листания. Фильтры и стадия применены; мост к `set_parameters`; текст ячеек —
+  `get_schedule_data`. Не листать по 1–3 строки — guard петли заблокирует (pagination_loop).
+- `get_schedule_definition` — поля (`guid` + `parameterName` у общих; `heading`, `widthMm`,
+  `totalsDisplay`, `hidden`, `fieldType`, `scope`, `scopeSource`), сортировка/группировка
+  с флагами, фильтры (фазные — `phaseFilters`, ссылки — `valueName`), стиль, `placements[]` +
+  `isMulticategory`/`placedOnSheet`/`sheetNumbers`. `scope`: у built-in = `fieldType`, у общих
+  всегда Instance — берите из `scopeSource`; `scopeConflict=true` — привязка разошлась.
+- `create_schedule` — `category` (OST/русское/id/`multicategory`), `name`, `fields` (0..15),
+  `itemized`; dry-run id — PROVISIONAL.
+- `add_schedule_field` / `remove_schedule_field` — поля (1..15) по отображаемым именам; undo.
+- `set_schedule_field_order` — ПОЛНЫЙ список имён в новом порядке.
+- `set_schedule_field_visibility` — `fields[{name,hidden}]`.
+- `set_schedule_totals` — `fields[{name,mode}]` (standard|totals|min|max|minmax) +
+  `grandTotal*` (false снимает строку и зависимые флаги).
+- `set_schedule_filter` — 0..8, только AND, `[]` — очистить; dry-run даёт `estimatedRowsAfter`
+  и `estimatedSampleNames` (до 5).
+- `set_schedule_sort` — 0..4 и `itemized`; флаги группы `showHeader/showFooter/showBlankLine`.
+- `set_schedule_field_format` — `fields[{field,heading?,widthMm?}]` (мм; вычисляемым ширина
+  недоступна — `field_not_formatable`); `changed[]` — только фактические, no-op в `skipped[]`.
+- `set_schedule_style` — `stripedRows`/`useStripedRowsOnSheets` (2021+) и текстовые стили.
+- `rename_schedule` — имя старой освобождается для архива; новое должно быть свободно.
+- `place_schedule_on_sheet` — координаты ЛЕВОГО ВЕРХНЕГО угла, мм; `rotation: none|cw90|ccw90`.
+- `move_schedule_on_sheet` — переместить (`instanceId|лист+спецификация`) и/или повернуть.
+- `remove_schedule_from_sheet` — снять вынос (спека остаётся); undo вернёт точку и поворот.
+- `clone_schedule` — аналог на других параметрах: `fieldMapping[{sourceField,targetGuid|targetField}]`
+  (guid — из `get_schedule_definition`); переносит порядок/заголовки/ширины/скрытость, фильтры,
+  сортировку, итоги, стиль; без аналога — `skippedFields`; CombinedParameter — по имени; одна
+  спека за вызов; `created{}` PROVISIONAL.
+- `delete_schedules` — `scheduleIds`/`scheduleNames` (≤50) + `confirmNames`; снятие с листа — не
+  удаление спеки.
 
 ### Кухня Revit
-- `ViewSchedule` — вид, но не `ViewSheet`: без вьюпорта, на лист ставится `ScheduleSheetInstance`.
-- `CreateSchedule(doc, categoryId)` — пустое; InvalidElementId — мультикатегорийное;
-  key/material — отдельные фабрики; в транзакции.
+- `ViewSchedule` — вид без вьюпорта; на лист ставится `ScheduleSheetInstance`.
+- `CreateSchedule(doc, categoryId)` — пустое; InvalidElementId — мультикатегорийное; key/material —
+  отдельные фабрики; в транзакции.
 - Копия расписания — `View.Duplicate(ViewDuplicateOption)`, не «создать заново».
-- `GetSchedulableFields()` — допустимые не-вычисляемые поля; `AddField` в конец (порядок —
-  `SetFieldOrder`), повтор — `ArgumentException`.
-- `IsHidden=true` скрывает колонку, но поле работает в фильтрах/сортировке/группировке;
-  служебные поля (уровень, маркер) прячут, а не удаляют.
-- Итоги — `DisplayType` (Totals/Min/Max, `CanTotal()`); «Итого» — `ShowGrandTotal*` (пока строка
-  выключена, зависимые флаги не ставятся). Split на листе — только UI.
-- Фильтры — только AND, лимит 8; подстрочные (`contains`/`beginswith`/`endswith`) — только строковым полям (`CanFilterBySubstring`).
+- `GetSchedulableFields()` — не-вычисляемые поля; `AddField` в конец (порядок — `SetFieldOrder`),
+  повтор — `ArgumentException`.
+- `IsHidden=true` прячет колонку, но поле работает в фильтрах/сортировке; служебные поля
+  (уровень, маркер) прячут, а не удаляют.
+- Итоги — `DisplayType` (`CanTotal()`); «Итого» — `ShowGrandTotal*` (выключенная строка не ставит
+  зависимые флаги). Split на листе — только UI.
+- Фильтры — только AND, ≤8; подстрочные — только строковым полям (`CanFilterBySubstring`).
 - Изменённый `ScheduleFilter` не применяется сам — нужен `SetFilter(index, filter)`.
-- Тело читается `GetTableData()` → `GetCellText(row, col)`; обход большого расписания — секунды: `limit/offset` обязательны.
-- Группировка: `IsItemized=false` сливает одинаковые строки; итоги — `ShowFooter*`.
-- Фильтр/сортировка — только по колонкам спеки (`ScheduleFieldId`, не имя параметра):
-  нет колонки → `field_not_in_schedule` → сначала `add_schedule_field`.
-- `ScheduleSheetInstance.Create(doc, sheetId, scheduleId, XYZ)` — точка это **левый верхний
-  угол** таблицы (не центр, как у Viewport). Один вынос на лист: дубль → no_changes.
-- Поворот выноса — `instance.Rotation` (ViewportRotation): только `none`/`cw90`/`ccw90`
-  (±90°); 180° API не умеет. Полосатые строки и ширины колонок — API 2021+;
-  на старых — честная ошибка.
+- Тело — `GetTableData()` → `GetCellText(row, col)`; обход большого расписания — секунды:
+  `limit/offset` обязательны.
+- `IsItemized=false` сливает одинаковые строки; итоги — `ShowFooter*`.
+- Фильтр/сортировка — только по колонкам спеки (`ScheduleFieldId`): нет колонки →
+  `field_not_in_schedule` → сначала `add_schedule_field`.
+- `ScheduleSheetInstance.Create(doc, sheetId, scheduleId, XYZ)` — точка **левый верхний угол**;
+  один вынос на лист, дубль → no_changes.
+- Поворот — `instance.Rotation` (ViewportRotation): `none`/`cw90`/`ccw90` (±90°), 180° API не
+  умеет; полосатые строки и ширины — API 2021+, иначе честная ошибка.
+
+### Кухня: порядок групп
+«Инженерный порядок» без явного списка — шкала значимости: 10 Оборудование → 20 Арматура →
+30 Трубопроводы → 40 Фитинги → 50 Материалы (шаг 10; массивнее — выше).
 
 ### Инварианты
-- Критичное = на листе: `placedOnSheet`/`sheetNumbers` отличают отчётность от черновиков;
-  `audit_fill_rate` (пак elements) считает только ЛИСТОВЫЕ спеки.
+- Критичное = на листе: `placedOnSheet`/`sheetNumbers`; `audit_fill_rate` считает только листовые.
 - «Покажи спецификацию» — `get_schedule_definition`, потом `get_schedule_data` с `limit`.
-- Значения в ячейках — отформатированный текст; числа — из параметров (`query_elements`).
+- Значения ячеек — форматированный текст; числа — из параметров (`query_elements`).
 - «Сделай спецификацию по X и помести на лист»: `create_schedule` → `add_schedule_field` (если
   полей мало) → `set_schedule_filter` → `set_schedule_sort` → `place_schedule_on_sheet`; каждый
   шаг dry-run → apply, после apply — read-back.
-- Фильтров не больше 8 (`filter_limit_exceeded`), условия только AND — для «ИЛИ» отдельные
-  спецификации.
-- Паттерн правки наборов (фильтры/порядок колонок): `get_schedule_definition` → измени →
-  передай ПОЛНЫЙ набор — `set_schedule_filter`/`set_schedule_field_order` заменяют целиком.
-- `scheduleName` — точное имя; несколько совпадений → `ambiguous_schedule` (берите id),
-  шаблон → `schedule_is_template`; надёжнее `scheduleId` из `list_schedules`.
+- Фильтров ≤8 (`filter_limit_exceeded`), только AND — для «ИЛИ» отдельные спеки.
+- Паттерн правки наборов: `get_schedule_definition` → измени → передай ПОЛНЫЙ набор
+  (`set_schedule_filter`/`set_schedule_field_order` заменяют целиком).
+- `scheduleName` — точное имя; несколько → `ambiguous_schedule` (берите id), шаблон →
+  `schedule_is_template`; надёжнее `scheduleId`.
 - Внутренние (keynote) и titleblock-revision спеки скрыты по умолчанию
   (`includeInternal`/`includeRevision=false`); `delete_schedules` их не удаляет
   (`schedule_not_deletable`) — ими управляет Revit.
-- `delete_schedules` необратим (`undoSupported=false`): `dryRun=true` вернёт `names[]`, apply —
-  с `confirmNames` СВЕЖЕГО dry-run; `confirm_names_required`/`confirm_names_mismatch` = модель
-  изменилась → повтори dry-run и передай свежий names[]. Остальные write-тулы откатываются
-  `undo_last`.
+- `delete_schedules` необратим (`undoSupported=false`): `dryRun=true` → `names[]`, apply — с
+  `confirmNames` СВЕЖЕГО dry-run; `confirm_names_*` = модель изменилась → повтори dry-run.
+  Остальные write-тулы откатываются `undo_last`.
 - Лист-вынос ищется через `get_sheet_content`, не по номеру листа в параметре.
 
 ### Рецепты
 1. «Что в спецификации дверей?»: `list_schedules(nameContains:""Двери"")` → `get_schedule_definition` → `get_schedule_data(limit=50)`.
-2. «Сколько строк в ведомости?»: `get_schedule_data(limit=1)` → `total`/`rowCount`.
+2. «Сколько строк?»: `get_schedule_data(limit=1)` → `total`/`rowCount`.
 3. «Где эта спецификация стоит?»: `list_schedules(fields=[name,sheetNumbers])`.
 4. «Сделай спецификацию по трубам и помести на лист»: `list_categories` →
    `create_schedule(category=""OST_Pipes"", name=""Спецификация труб"", fields=[...])` →
    `set_schedule_filter` → `set_schedule_sort` → `create_sheet`/`list_sheets` →
-   `place_schedule_on_sheet(pointMmX=..., pointMmY=...)` → `get_sheet_content` (проверка).
+   `place_schedule_on_sheet(pointMmX=..., pointMmY=...)` → `get_sheet_content`.
 5. «Удали тестовые спецификации»: `list_schedules(nameContains:""ТЕСТ"")` → `delete_schedules(dryRun=true)` → подтверждение → `delete_schedules(dryRun=false, confirmNames=names[])`.
-6. «Переведи ведомость / оборудование на ФОП заказчика» — сначала развилка уровня:
-   - **по умолчанию — семейство** (данные переживают перезагрузку и новые типы):
-     `list_shared_parameters` → `start_job(action:""map_family_parameters"")` с
-     `createTarget:true` (mode formula — вычисляемые, mode values — текстовые) → новая
-     спецификация из полей-семейных общих параметров ФОП, старая в архив.
-   - **проектный путь — только по явному запросу**: `add_project_shared_parameter` +
-     `set_parameters`/`remap_parameter_values`; предупреди: значения статичны, новый
-     типовой каталог их не обновит, формулы семейства считают по-своему.
-   - Точный аналог готовой ведомости: `get_schedule_definition` (guid полей и `placements[]`)
-     → `rename_schedule` старой в архивную пометку →
-     `clone_schedule(sourceScheduleId, name=имя старой, fieldMapping: старое → targetGuid)` →
-     `remove_schedule_from_sheet` старой → `place_schedule_on_sheet` новой на её `xMm/yMm`
-     (`rotation` если нужно); `skippedFields` покажите списком.
-   - Оба уровня возможны — два коротких вопроса (где ФОП; семейство или проект), второй не
-     решай молча.
-
-### Кухня: порядок групп
-«Инженерный порядок» без явного списка — шкала значимости: 10 Оборудование →
-20 Арматура → 30 Трубопроводы → 40 Фитинги → 50 Материалы (шаг 10; массивнее — выше).
-
+6. «Переведи ведомость на ФОП заказчика» — сначала уровень: по умолчанию **семейство**
+   (`list_shared_parameters` → `start_job(map_family_parameters, createTarget:true)`); проектный
+   путь — только по явному запросу (`add_project_shared_parameter` + `set_parameters`: значения
+   статичны, новый типовой каталог их не обновит, формулы семейства считают по-своему). Точный
+   аналог: `get_schedule_definition` (guid/placements) → `clone_schedule` →
+   `remove_schedule_from_sheet` старой → `place_schedule_on_sheet` новой на её xMm/yMm.
+7. «Заполни параметр у элементов спецификации»: `get_schedule_definition` (scope) →
+   `get_schedule_elements` (elementId/typeId) → `set_parameters(dryRun)` → apply; в workshared
+   занятые — в `skipped[]`, повтори после relinquish/Reload Latest.
 ### Что нельзя
 - Считать спецификацию обычным видом: нет подрезки/диапазона.
 - Переводить данные на параметры ПРОЕКТА по умолчанию: сначала уровень семейства (см.

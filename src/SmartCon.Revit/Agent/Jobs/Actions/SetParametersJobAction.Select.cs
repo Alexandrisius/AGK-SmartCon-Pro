@@ -208,7 +208,7 @@ public sealed partial class SetParametersJobAction
         collector = collector.WhereElementIsNotElementType();
         if (categories.Count > 0)
             collector = collector.WherePasses(new ElementMulticategoryFilter(categoryIds));
-        if (!string.IsNullOrWhiteSpace(select.FamilyName))
+        if (!string.IsNullOrWhiteSpace(select.FamilyName) || select.FamilyNames is { Count: > 0 })
             collector = collector.OfClass(typeof(FamilyInstance));
         var scannedAll = 0;
         foreach (var element in collector)
@@ -246,6 +246,9 @@ public sealed partial class SetParametersJobAction
         var (familyName, typeName) = ReadFamilyAndType(document, element);
         if (!string.IsNullOrWhiteSpace(select.FamilyName) &&
             !string.Equals(familyName, select.FamilyName, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (select.FamilyNames is { Count: > 0 } &&
+            (familyName is null || !select.FamilyNames.Contains(familyName, StringComparer.OrdinalIgnoreCase)))
             return false;
         if (!string.IsNullOrWhiteSpace(select.TypeName) &&
             !string.Equals(typeName, select.TypeName, StringComparison.OrdinalIgnoreCase))
@@ -307,6 +310,18 @@ public sealed partial class SetParametersJobAction
             : (null, document.GetElement(typeId)?.Name);
     }
 
+    /// <summary>categoryNames plus its plural alias categories, without duplicates (S.46, #531).</summary>
+    private static IEnumerable<string> EnumerateCategoryNames(ParametersSelectSpec select)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var list in new[] { select.CategoryNames, select.Categories })
+        foreach (var name in list ?? new List<string>())
+        {
+            if (!string.IsNullOrWhiteSpace(name) && seen.Add(name))
+                yield return name;
+        }
+    }
+
     private static bool TryResolveCategories(
         Document document,
         ParametersSelectSpec select,
@@ -333,7 +348,7 @@ public sealed partial class SetParametersJobAction
             error = ex.Message;
             return false;
         }
-        foreach (var name in select.CategoryNames ?? new List<string>())
+        foreach (var name in EnumerateCategoryNames(select))
         {
             if (string.IsNullOrWhiteSpace(name))
                 continue;

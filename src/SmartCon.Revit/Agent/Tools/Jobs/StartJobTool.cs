@@ -60,9 +60,9 @@ public sealed class StartJobTool : IAgentTool
             "onSheet": { "type": "boolean" },
             "familyIds": { "type": "array", "items": { "type": "integer" } },
             "familyUniqueIds": { "type": "array", "items": { "type": "string" } },
-            "familyNames": { "type": "array", "items": { "type": "string" }, "maxItems": 200, "description": "Family names to include; stable across reloads (preferred over familyIds which change on every reload)" },
+            "familyNames": { "type": "array", "items": { "type": "string" }, "maxItems": 200, "description": "Family names to include; stable across reloads (preferred over familyIds which change on every reload). set_parameters: any-of — one job over several families" },
             "categoryIds": { "type": "array", "items": { "type": "integer" } },
-            "categoryNames": { "type": "array", "items": { "type": "string" } },
+            "categoryNames": { "type": "array", "items": { "type": "string" }, "description": "set_parameters also accepts the alias \"categories\"" },
             "typeIds": { "type": "array", "items": { "type": "integer" } },
             "familyName": { "type": "string" },
             "typeName": { "type": "string" },
@@ -162,7 +162,21 @@ public sealed class StartJobTool : IAgentTool
         "builtInParameter": { "type": "string" },
         "scope": { "type": "string", "enum": ["instance", "type"] },
         "value": { "type": "string" },
-        "unit": { "type": "string" }
+        "unit": { "type": "string" },
+        "values": {
+          "type": "array",
+          "maxItems": 50,
+          "description": "set_parameters only: several {select, value} pairs in one job - one preview and one apply for N groups instead of N sequential jobs. parameter/guid/scope/unit are shared by every entry. Mutually exclusive with select/value.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "select": { "type": "object", "description": "Same selector keys as spec.select" },
+              "value": { "type": "string" }
+            },
+            "required": ["select", "value"],
+            "additionalProperties": false
+          }
+        }
       }
     },
     "mode": { "type": "string", "enum": ["preview", "apply", "resume"], "description": "Optional alias for dryRun/resumeJobId; dryRun and resumeJobId remain the primary contract." },
@@ -365,7 +379,9 @@ public sealed class StartJobTool : IAgentTool
 
         var preview = JobToolPayloads.Preview(job);
         var failedItems = await JobToolPayloads.LoadFailedItemsAsync(_store, job, ct).ConfigureAwait(false);
-        var payload = JobToolPayloads.Describe(job, includeSample: includeSample, failedItems: failedItems);
+        var skippedItems = await JobToolPayloads.LoadSkippedItemsAsync(_store, job, ct).ConfigureAwait(false);
+        var payload = JobToolPayloads.Describe(
+            job, includeSample: includeSample, failedItems: failedItems, skippedItems: skippedItems);
         var failed = preview?.FailedCount ?? 0;
         var totals = JobToolPayloads.Totals(job);
         var causes = JobToolPayloads.CausesLine(failedItems);
@@ -388,6 +404,9 @@ public sealed class StartJobTool : IAgentTool
             JobState.Completed or JobState.CompletedWithFailures or JobState.CompletedUnverified =>
                 "Job finished: " + job.State + " — " + totals.Done + " done, " + totals.Skipped +
                 " skipped, " + totals.Failed + " failed, " + totals.Mismatch + " mismatch." +
+                (skippedItems is { Count: > 0 }
+                    ? " Skipped: " + JobToolPayloads.SkippedReasonsLine(skippedItems) + "."
+                    : string.Empty) +
                 (failedItems is { Count: > 0 }
                     ? causes + " Fix the causes, then retry_failed_items or call get_job_report."
                     : " Call get_job_report for the per-item diff."),

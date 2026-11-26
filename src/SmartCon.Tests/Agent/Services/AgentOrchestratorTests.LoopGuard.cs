@@ -10,6 +10,50 @@ namespace SmartCon.Tests.Agent.Services;
 public sealed partial class AgentOrchestratorTests
 {
     [Fact]
+    public async Task RunTurn_IdenticalReadRunsOnce_ThenDuplicateCallError()
+    {
+        // S.45: five identical get_project_overview calls looped the model -
+        // warnings did not help. The first identical repeat is served from the
+        // turn cache, the second is refused with duplicate_call.
+        var store = new InMemoryConversationStore();
+        var tool = new CountingTool(risk: AgentToolRisk.Read);
+        var registry = new AgentToolRegistry(new IAgentTool[] { tool });
+        var executor = CreateExecutor(registry);
+        var llm = new FakeAgentLlmClient();
+        llm.EnqueueAssistant(
+            null,
+            new[]
+            {
+                new AgentToolCall { Id = "call_1", Name = "get_test", ArgumentsJson = "{}" },
+                new AgentToolCall { Id = "call_2", Name = "get_test", ArgumentsJson = "{}" },
+                new AgentToolCall { Id = "call_3", Name = "get_test", ArgumentsJson = "{}" },
+                new AgentToolCall { Id = "call_4", Name = "get_test", ArgumentsJson = "{}" }
+            });
+        llm.EnqueueAssistant("done");
+        var orchestrator = CreateOrchestrator(llm, executor, registry, store);
+
+        var result = await orchestrator.RunTurnAsync(
+            Guid.NewGuid(),
+            "повтор",
+            Array.Empty<AgentAttachment>(),
+            null,
+            CancellationToken.None);
+
+        Assert.Equal("done", result.FinalText);
+        Assert.Equal(4, result.ToolCallCount);
+        Assert.Equal(1, tool.Calls);
+
+        var toolMessages = llm.Requests[1].Messages
+            .Where(message => message.Role == AgentRole.Tool)
+            .ToList();
+        Assert.Equal(4, toolMessages.Count);
+        Assert.DoesNotContain("duplicate_call", toolMessages[0].Content, StringComparison.Ordinal);
+        Assert.Contains("Identical repeated call", toolMessages[1].Content, StringComparison.Ordinal);
+        Assert.Contains("duplicate_call", toolMessages[2].Content, StringComparison.Ordinal);
+        Assert.Contains("duplicate_call", toolMessages[3].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunTurn_ThirdIdenticalCall_IsBlockedWithoutExecution()
     {
         var store = new InMemoryConversationStore();
@@ -159,7 +203,9 @@ public sealed partial class AgentOrchestratorTests
     [Fact]
     public async Task RunTurn_RepeatedReadCalls_AreNotBlockedByTheLoopGuard()
     {
-        // Re-reading state is legitimate; the guard must not consume the turn.
+        // Re-reading state is legitimate; the loop guard must not consume the
+        // turn. S.45 adds the softer duplicate-call path: one execution, the
+        // repeat is served from the cache, further repeats get duplicate_call.
         var store = new InMemoryConversationStore();
         var tool = new CountingTool();
         var registry = new AgentToolRegistry(new IAgentTool[] { tool });
@@ -185,8 +231,16 @@ public sealed partial class AgentOrchestratorTests
             null,
             CancellationToken.None);
 
-        Assert.Equal(5, tool.Calls);
+        Assert.Equal(1, tool.Calls);
         Assert.Equal(5, result.ToolCallCount);
+
+        var toolMessages = llm.Requests[1].Messages
+            .Where(message => message.Role == AgentRole.Tool)
+            .ToList();
+        Assert.Equal(5, toolMessages.Count);
+        Assert.Contains("Identical repeated call", toolMessages[1].Content, StringComparison.Ordinal);
+        for (var index = 2; index < toolMessages.Count; index++)
+            Assert.Contains("duplicate_call", toolMessages[index].Content, StringComparison.Ordinal);
         Assert.Equal("done", result.FinalText);
     }
 

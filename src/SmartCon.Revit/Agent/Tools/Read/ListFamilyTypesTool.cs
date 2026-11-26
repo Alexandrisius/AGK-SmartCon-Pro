@@ -47,10 +47,12 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
             "Records are compact by default " +
             "(typeId, name, familyId, familyName): fields adds isPlaced, parameters and " +
             "parameterCount, compact=false returns the full record, parameterNames adds the " +
-            "values of the listed parameters per type.",
+            "values of the listed parameters per type. placedOnly=true keeps only types with " +
+            "at least one placed instance - use it when a large family (100+ types) with " +
+            "parameterNames would be trimmed by the context budget.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families in one call (#471)""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families by NAME in one call. Every name must resolve like familyName (case-insensitive exact name; an ambiguous name fails). Pass either familyIds or familyNames, not both""},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""maxItems"":200,""description"":""Direct type selection, in addition to the family selectors. Every id must resolve to an element type: family types AND system family types (WallType, PipeType, …) both work; system types come back in systemTypes[] with familyKind=system.""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: typeId, name, familyId, familyName, isPlaced, parameters, parameterCount. Default: typeId, name, familyId, familyName. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields (plus values when parameterNames is passed). false: the full record, including parameters, parameterCount and parametersTruncated.""},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":10,""description"":""Adds values {parameter: display string} to each type for the listed parameters. A parameter the type does not have is omitted from that type's values; a parameter it has without a value is null. missingParameters lists names no returned type has.""},""valueScope"":{""type"":""string"",""enum"":[""type"",""instance""],""default"":""type"",""description"":""type: the type's own parameters. instance: parameters read from placed instances; a type without placed instances gets no values, valuesVary=true when other placed instances differ.""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families in one call (#471)""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families by NAME in one call. Every name must resolve like familyName (case-insensitive exact name; an ambiguous name fails). Pass either familyIds or familyNames, not both""},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""maxItems"":200,""description"":""Direct type selection, in addition to the family selectors. Every id must resolve to an element type: family types AND system family types (WallType, PipeType, …) both work; system types come back in systemTypes[] with familyKind=system.""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""placedOnly"":{""type"":""boolean"",""default"":false,""description"":""Keep only types with at least one placed instance in the model. A full model scan; use it to keep a large family's parameter values inside one response.""},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: typeId, name, familyId, familyName, isPlaced, parameters, parameterCount. Default: typeId, name, familyId, familyName. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields (plus values when parameterNames is passed). false: the full record, including parameters, parameterCount and parametersTruncated.""},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":10,""description"":""Adds values {parameter: display string} to each type for the listed parameters. A parameter the type does not have is omitted from that type's values; a parameter it has without a value is null. missingParameters lists names no returned type has.""},""valueScope"":{""type"":""string"",""enum"":[""type"",""instance""],""default"":""type"",""description"":""type: the type's own parameters. instance: parameters read from placed instances; a type without placed instances gets no values, valuesVary=true when other placed instances differ.""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -94,6 +96,7 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
             DefaultParameterLimit,
             MaxParameterLimit);
         var includePlaced = AgentJson.GetBool(args, "includePlaced", true);
+        var placedOnly = AgentJson.GetBool(args, "placedOnly", false);
         var compact = AgentJson.GetBool(args, "compact", true);
         var instanceScope = string.Equals(
             AgentJson.GetString(args, "valueScope"), "instance", StringComparison.OrdinalIgnoreCase);
@@ -104,6 +107,16 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
             return fieldsFailure;
 
         var types = CollectTypes(doc, families, directTypes);
+        if (placedOnly)
+        {
+            var placed = CollectPlacedInstances(
+                doc, new HashSet<long>(), needPlacedFlag: true, instanceScope: false, ct)
+                .PlacedTypeIds;
+            types = placed is null
+                ? new List<FamilySymbol>()
+                : types.Where(type => placed.Contains(type.Id.GetValue())).ToList();
+        }
+
         var page = AgentPaging.Slice(types, offset, limit);
         var pageTypeIds = new HashSet<long>(page.Select(type => type.Id.GetValue()));
         var reportFields = compact
@@ -152,6 +165,7 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
             ["familyName"] = singleFamily?.Name,
             ["familyCount"] = families.Count,
             ["category"] = singleFamily?.FamilyCategory?.Name,
+            ["placedOnly"] = placedOnly,
             ["types"] = reports
         };
         pageEnvelope.AddTo(payload);

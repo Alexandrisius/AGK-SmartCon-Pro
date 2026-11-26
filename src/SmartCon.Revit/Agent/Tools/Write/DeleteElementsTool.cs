@@ -148,7 +148,8 @@ public sealed class DeleteElementsTool : AgentWriteToolBase
             targets.Cast<AgentDeleteHelper.DeleteTarget>().ToList(),
             outcome,
             "elements",
-            ct);
+            ct,
+            WorksharingScope);
         outcome.AffectedCount = deletedCount;
 
         if (outcome.Batch.Failed.Count > 0)

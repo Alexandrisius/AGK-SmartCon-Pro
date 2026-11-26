@@ -109,6 +109,7 @@ public sealed class AgentToolCardsTests
         "set_view_parameters",
         "rename_filter",
         "get_schedule_definition",
+        "get_schedule_elements",
         "list_shared_parameters",
         "start_job",
         "get_job_status",
@@ -150,7 +151,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(137, AgentToolCards.Count);
+        Assert.Equal(138, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

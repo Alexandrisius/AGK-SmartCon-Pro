@@ -46,10 +46,10 @@ public abstract partial class AgentWriteToolBase
                     "The active document changed before the plan started.");
             }
 
-            if (document.IsWorkshared)
+            if (document.IsReadOnly)
                 return PlanPreflightResult.Fail(
-                    "workshared_not_supported",
-                    "The active document is a workshared model.");
+                    "document_not_modifiable",
+                    "The document is read-only, so a write plan cannot be applied.");
 
             return PreflightCore(document, args, ct);
         }
@@ -122,63 +122,6 @@ public abstract partial class AgentWriteToolBase
         return null;
     }
 
-    private static IEnumerable<(string Key, long Id)> EnumerateIdReferences(JsonElement args)
-    {
-        if (args.ValueKind != JsonValueKind.Object)
-            yield break;
-
-        foreach (var property in args.EnumerateObject())
-        {
-            foreach (var reference in Enumerate(property.Name, property.Value))
-                yield return reference;
-        }
-
-        static IEnumerable<(string Key, long Id)> Enumerate(string key, JsonElement value)
-        {
-            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt64(out var id))
-            {
-                if (IsIdKey(key) && id > 0)
-                    yield return (key, id);
-                yield break;
-            }
-
-            if (value.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in value.EnumerateArray())
-                {
-                    foreach (var reference in Enumerate(key, item))
-                        yield return reference;
-                }
-
-                yield break;
-            }
-
-            if (value.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var property in value.EnumerateObject())
-                {
-                    foreach (var reference in Enumerate(property.Name, property.Value))
-                        yield return reference;
-                }
-            }
-        }
-
-        static bool IsIdKey(string key)
-        {
-            var normalized = key.ToLowerInvariant();
-            if (normalized.EndsWith("categoryid", StringComparison.Ordinal)
-                || normalized.EndsWith("categoryids", StringComparison.Ordinal)
-                || normalized.EndsWith("worksetid", StringComparison.Ordinal)
-                || normalized.EndsWith("worksetids", StringComparison.Ordinal)
-                || normalized.EndsWith("parameterid", StringComparison.Ordinal)
-                || normalized.EndsWith("parameterids", StringComparison.Ordinal))
-            {
-                // A parameter id (including negative built-in ids) is not an element id.
-                return false;
-            }
-
-            return normalized.EndsWith("id", StringComparison.Ordinal)
-                   || normalized.EndsWith("ids", StringComparison.Ordinal);
-        }
-    }
+    private static IEnumerable<(string Key, long Id)> EnumerateIdReferences(JsonElement args) =>
+        AgentJsonIds.Scan(args);
 }

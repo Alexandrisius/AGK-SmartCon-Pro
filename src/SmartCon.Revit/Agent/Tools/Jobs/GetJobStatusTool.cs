@@ -125,13 +125,16 @@ public sealed class GetJobStatusTool : IAgentTool
 
         var includeSample = AgentJson.GetBool(args, "includeSample", false);
         // Failure causes belong to every status: grouped by the code of the cause,
-        // so the model learns why units failed without get_job_report.
+        // so the model learns why units failed without get_job_report. Skip
+        // reasons ride along for the same reason (S.47, #532).
         var failedItems = await JobToolPayloads.LoadFailedItemsAsync(_store, job, ct).ConfigureAwait(false);
+        var skippedItems = await JobToolPayloads.LoadSkippedItemsAsync(_store, job, ct).ConfigureAwait(false);
         var payload = JobToolPayloads.Describe(
             job,
             includeSample,
             JobToolPayloads.History(recent),
-            failedItems);
+            failedItems,
+            skippedItems);
         var totals = JobToolPayloads.Totals(job);
         var summary = totals.Done + " done, " + totals.Skipped + " skipped, " +
                       totals.Failed + " failed, " + totals.Mismatch + " mismatch";

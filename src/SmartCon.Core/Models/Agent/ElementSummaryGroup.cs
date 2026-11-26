@@ -23,6 +23,16 @@ public sealed class ElementSummaryGroup
     public long? TypeId { get; init; }
 
     /// <summary>
+    /// How many distinct types share the group key BY NAME (groupBy=type): several
+    /// families may carry identically named types. 1 for a normal group; above 1
+    /// typeId is null and typeIds lists a sample (S.46, #531).
+    /// </summary>
+    public int? TypeIdCount { get; init; }
+
+    /// <summary>Sample (up to 10) of the type ids behind a name-collapsed group.</summary>
+    public IReadOnlyList<long>? TypeIds { get; init; }
+
+    /// <summary>
     /// Category display name of the group (groupBy=type and groupBy=family). Absent
     /// when several categories share the group key.
     /// </summary>

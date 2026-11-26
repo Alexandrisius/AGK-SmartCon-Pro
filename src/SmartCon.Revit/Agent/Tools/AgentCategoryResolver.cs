@@ -1,3 +1,4 @@
+using System.Globalization;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 
@@ -24,6 +25,20 @@ internal static class AgentCategoryResolver
         {
             if (string.IsNullOrWhiteSpace(name))
                 continue;
+
+            // A category id is accepted too (list_categories returns it as categoryId).
+            if (long.TryParse(name, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rawId))
+            {
+                var byId = Category.GetCategory(doc, ElementIdCompat.Create(rawId));
+                if (byId is not null)
+                {
+                    AddOnce(ids, byId.Id);
+                    continue;
+                }
+
+                unknown.Add(name);
+                continue;
+            }
 
             if (Enum.TryParse<BuiltInCategory>(name, ignoreCase: true, out var builtIn))
             {

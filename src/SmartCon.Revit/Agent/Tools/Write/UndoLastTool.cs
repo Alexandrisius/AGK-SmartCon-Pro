@@ -16,12 +16,16 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 /// </summary>
 public sealed partial class UndoLastTool : AgentWriteToolBase
 {
+    private readonly IJobStore? _jobs;
+
     public UndoLastTool(
         IRevitContext revitContext,
         ITransactionService transactions,
-        IAgentChangeSetStore changeSets)
+        IAgentChangeSetStore changeSets,
+        IJobStore? jobs = null)
         : base(revitContext, transactions, changeSets)
     {
+        _jobs = jobs;
     }
 
     /// <summary>
@@ -35,16 +39,22 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         JsonElement args,
         WriteOutcome outcome,
         bool dryRun,
-        CancellationToken ct) =>
+        CancellationToken ct,
+        AgentWorksharingScope? worksharing = null)
+    {
+        if (worksharing is not null)
+            UseWorksharingScope(worksharing);
+
         Apply(doc, args, outcome, dryRun, ct);
+    }
 
     public override AgentToolDefinition Definition { get; } = new()
     {
         Name = "undo_last",
         Description =
             "Reverts the last change set that SmartCon applied to the active document by a write " +
-            "tool. Changes applied by start_job are not change sets — revert those with " +
-            "rollback_job(jobId). " +
+            "tool. Changes applied by start_job are not change sets — when the newest write is a " +
+            "job, the answer names the exact rollback_job(jobId) call to make. " +
             "Items changed by somebody else after the operation are reported as conflicts " +
             "and skipped (pass force=true to restore them anyway). Category visibility is " +
             "compared on the categories this view can toggle, so a later edit of its template is " +
@@ -100,9 +110,33 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
             details = AsyncBridge.RunSync(() => ChangeSets.GetLastAppliedAsync(documentId, ct));
             if (details is null)
             {
+                // The last write may be a JOB, which is not a change set: one
+                // honest redirect with the concrete command beats a dead-end
+                // "nothing to undo" (S.47, #532).
+                var jobRedirect = LastAppliedJobRedirect(documentId, ct);
+                if (jobRedirect is not null)
+                {
+                    outcome.Success = false;
+                    outcome.ErrorCode = "job_needs_rollback_job";
+                    outcome.Message = jobRedirect;
+                    return;
+                }
+
                 outcome.Success = false;
                 outcome.ErrorCode = "nothing_to_undo";
                 outcome.Message = "There is no applied change set for the active document.";
+                return;
+            }
+
+            // A job applied AFTER the newest change set is the newer operation:
+            // reverting the older set silently would skip it. Redirect unless the
+            // caller named the change set explicitly.
+            var newerJob = LastAppliedJobRedirect(documentId, ct, after: details.Header.AppliedAt);
+            if (newerJob is not null)
+            {
+                outcome.Success = false;
+                outcome.ErrorCode = "job_needs_rollback_job";
+                outcome.Message = newerJob;
                 return;
             }
         }
@@ -131,6 +165,16 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
 
             var item = details.Items[index];
             var key = item.ParameterName ?? string.Empty;
+
+            // An element owned by another user or out of date rolls back the whole
+            // undo transaction: skip that item and keep the rest.
+            var ownershipTarget = ResolveElement(doc, item);
+            if (ownershipTarget is not null
+                && WorksharingScope.TryGetBlock(ownershipTarget.Id, out var ownershipBlock))
+            {
+                Skip(outcome, CreateReport(item), ownershipBlock);
+                continue;
+            }
 
             // Family edits are reverted after the project transaction: restoring a
             // family requires EditFamily/LoadFamily, which cannot run while the
@@ -372,6 +416,20 @@ public sealed partial class UndoLastTool : AgentWriteToolBase
         {
             if (notReverted == 0)
             {
+                // Everything that was not reverted is blocked by worksharing: the set
+                // must stay applied and the caller gets the actionable code, not
+                // "nothing to undo".
+                var blockedItem = outcome.Batch.Skipped
+                    .FirstOrDefault(item => IsWorksharingSkip(item.ErrorCode));
+                if (blockedItem is not null)
+                {
+                    outcome.RollBackChangeSetId = null;
+                    outcome.Success = false;
+                    outcome.ErrorCode = blockedItem.ErrorCode;
+                    outcome.Message = blockedItem.Reason;
+                    return;
+                }
+
                 // A dry run must never change state: do not close the set. Only a
                 // real undo that found nothing to revert closes it so the next
                 // unnamed undo_last can reach earlier change sets.

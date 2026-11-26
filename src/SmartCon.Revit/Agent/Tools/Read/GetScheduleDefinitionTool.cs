@@ -44,7 +44,10 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
             "when the level does not apply (a calculated, room or material field) or cannot be " +
             "established yet (a family parameter that is not bound in the project and has no " +
             "element to ask, or one bound to types in some families and to instances in " +
-            "others). Use it to explain why a " +
+            "others). scopeSource says which signal produced it (fieldType, binding or the " +
+            "scheduled elements); scopeConflict=true means the binding map disagreed with the " +
+            "elements and the element verdict won. This tool does not return element ids: use " +
+            "get_schedule_elements for the elements behind the rows. Use it to explain why a " +
             "schedule shows zero rows or fewer rows than the model has, to check whether a " +
             "schedule is issued documentation (placed on a sheet) or a draft, and to verify " +
             "changes made by the schedule write tools (add_schedule_field, set_schedule_filter, " +
@@ -56,7 +59,7 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
     {
         var scheduleId = AgentJson.GetLong(args, "scheduleId", 0);
         var scheduleName = AgentJson.GetString(args, "scheduleName");
-        var schedule = FindSchedule(doc, scheduleId, scheduleName);
+        var schedule = AgentScheduleReader.FindSchedule(doc, scheduleId, scheduleName);
         if (schedule is null)
         {
             return ToolResult.Fail(
@@ -82,6 +85,7 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
 
         var fields = new List<Dictionary<string, object?>>();
         var fieldNames = new Dictionary<int, string>();
+        var sourceElements = CollectScopeSourceElements(doc, definition, ct);
         try
         {
             foreach (var fieldId in definition.GetFieldOrder())
@@ -109,7 +113,9 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
                     // Calculated/combined fields have no parameter id.
                 }
 
-                fields.Add(new Dictionary<string, object?>
+                var scope = AgentScheduleParameterScope.Describe(
+                    doc, definition, field, sourceElements);
+                var entry = new Dictionary<string, object?>
                 {
                     ["fieldId"] = fieldId.IntegerValue,
                     ["name"] = name,
@@ -120,11 +126,17 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
                     ["guid"] = AgentScheduleReader.DescribeParameterGuid(doc, field),
                     ["parameterName"] = AgentScheduleReader.DescribeParameter(doc, field),
                     ["fieldType"] = field.FieldType.ToString(),
-                    ["scope"] = AgentScheduleParameterScope.Describe(doc, definition, field),
+                    ["scope"] = scope.Scope,
+                    ["scopeSource"] = scope.Source,
                     ["columnWidthMm"] = AgentScheduleWriteHelper.GetColumnWidthMm(field),
                     ["totalsDisplay"] = SafeText(() =>
                         AgentScheduleWriteHelper.ModeName(field.DisplayType))
-                });
+                };
+                if (scope.Conflict)
+                    entry["scopeConflict"] = true;
+                if (scope.Note is not null)
+                    entry["scopeNote"] = scope.Note;
+                fields.Add(entry);
             }
         }
         catch (Exception)
@@ -284,31 +296,36 @@ public sealed class GetScheduleDefinitionTool : AgentReadToolBase
                 : ", not placed on any sheet") + ".");
     }
 
-    private static ViewSchedule? FindSchedule(
+    /// <summary>
+    /// Elements the schedule rows come from, collected once for all fields: the
+    /// scope probe uses them instead of a full collector per field.
+    /// </summary>
+    private static IReadOnlyList<Element> CollectScopeSourceElements(
         Document doc,
-        long scheduleId,
-        string? scheduleName)
+        ScheduleDefinition definition,
+        CancellationToken ct)
     {
-        if (scheduleId > 0
-            && doc.GetElement(ElementIdCompat.Create(scheduleId)) is ViewSchedule byId)
+        var elements = new List<Element>();
+        try
         {
-            return byId;
-        }
-
-        if (string.IsNullOrWhiteSpace(scheduleName))
-            return null;
-
-        var trimmed = scheduleName!.Trim();
-        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(ViewSchedule)))
-        {
-            if (element is ViewSchedule schedule
-                && string.Equals(schedule.Name, trimmed, StringComparison.OrdinalIgnoreCase))
+            foreach (var element in AgentScheduleReader.CollectSourceElements(doc, definition, 400))
             {
-                return schedule;
+                ct.ThrowIfCancellationRequested();
+                elements.Add(element);
+                if (elements.Count >= 400)
+                    break;
             }
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // The element probe is optional; fieldType/binding still answer.
+        }
 
-        return null;
+        return elements;
     }
 
     private static ScheduleField? SafeField(

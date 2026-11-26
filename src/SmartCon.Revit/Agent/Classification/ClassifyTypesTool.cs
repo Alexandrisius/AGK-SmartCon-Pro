@@ -21,6 +21,13 @@ public sealed partial class ClassifyTypesTool : IAgentTool
 {
     public const string ToolName = "classify_types";
 
+
+    private const string DecisionCallFailedHint =
+        "The decision model call failed or timed out. [Action: retry classify_types " +
+        "with a smaller selection (maxFamilies 5-10, familyIds or nameContains narrow " +
+        "it), or pick the codes manually - list_classification_entries shows the " +
+        "table, set_parameters writes the chosen code]";
+
     private const string DecisionUnavailableHint =
         "The decision model is not available, so codes cannot be proposed automatically. " +
         "Tell the user the small decision model is not configured; the codes can still be " +
@@ -112,9 +119,7 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             snapshot.Table.Entries.Count + " row(s), not writable " + snapshot.SkippedNotWritable +
             (truncated ? ", truncated (" + notProcessed.Count + " families left)" : string.Empty));
 
-        var result = await _matcher
-            .MatchAsync(groups, snapshot.Table, options, ct)
-            .ConfigureAwait(false);
+        var result = await MatchInChunksAsync(groups, snapshot.Table, options, ct).ConfigureAwait(false);
         if (result.Error is not null)
             return DecisionFailed(result);
 
@@ -127,7 +132,10 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             (result.Incomplete ? ", INCOMPLETE" : string.Empty));
 
         var warnings = result.Warnings.Concat(snapshot.Warnings).ToList();
-        var payload = BuildPayload(snapshot, groups, result, truncated, familiesTotal, notProcessed);
+        var payload = BuildPayload(
+            snapshot, groups, result, truncated, familiesTotal, notProcessed,
+            AgentClassificationBudget.Normalize(_matcher.QuestionBudget),
+            AgentClassificationBudget.EstimateQuestions(groups));
         var message = payload.Message;
         return ToolResult.Ok(
                 payload.Data,
@@ -137,25 +145,130 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             .WithDocumentVersion(snapshot.DocumentVersion);
     }
 
+    /// <summary>
+    /// Runs the matcher in chunks bounded by the QUESTION budget (S.49, #534):
+    /// the session fb3b66f6 died on 416 prompts of one call, while narrow
+    /// calls answered in seconds. One family counts as 1 + its types; a single
+    /// family above the budget is never deferred - it goes alone so the run
+    /// cannot loop. A failed chunk never sinks the whole run; only a run where
+    /// every chunk failed is an error (S.46, #531).
+    /// </summary>
+    private async Task<ClassifyMatchResult> MatchInChunksAsync(
+        IReadOnlyList<ClassifyFamilyGroup> groups,
+        AgentClassificationTable table,
+        ClassifyOptions options,
+        CancellationToken ct)
+    {
+        var budget = AgentClassificationBudget.Normalize(_matcher.QuestionBudget);
+        var estimated = AgentClassificationBudget.EstimateQuestions(groups);
+        if (estimated <= budget)
+            return await _matcher.MatchAsync(groups, table, options, ct).ConfigureAwait(false);
+
+        var chunks = AgentClassificationBudget.ChunkByQuestionBudget(groups, budget, out var oversized);
+        var succeeded = new List<ClassifyMatchResult>();
+        var failedNames = new List<string>();
+        var failedCalls = 0;
+        string? firstError = null;
+        string? firstErrorDetail = null;
+        foreach (var chunk in chunks)
+        {
+            var chunkResult = await _matcher.MatchAsync(chunk, table, options, ct).ConfigureAwait(false);
+            if (chunkResult.Error is not null)
+            {
+                firstError ??= chunkResult.Error;
+                firstErrorDetail ??= chunkResult.ErrorDetail;
+                failedCalls += chunkResult.DecisionCalls;
+                failedNames.AddRange(chunk.Select(family => family.FamilyName));
+                continue;
+            }
+
+            succeeded.Add(chunkResult);
+        }
+
+        var oversizedWarning = oversized.Count > 0
+            ? "Family(ies) whose own question load exceeds the budget of " + budget +
+              " went as single chunks: " +
+              string.Join(", ", oversized.Select(family =>
+                  family.FamilyName + " (" + AgentClassificationBudget.EstimateQuestions(family) + ")").Take(5)) +
+              ". [Action: narrow them with typeIds or nameContains if their chunks keep failing]"
+            : null;
+
+        if (succeeded.Count == 0)
+        {
+            // A channel that is disabled/not configured stays what it is, no
+            // matter how many families were asked: "batch too large" would blame
+            // the size for a configuration problem (S.46 review, #531).
+            var batchTooLarge = chunks.Count > 1
+                                && oversized.Count < chunks.Count
+                                && firstError != "decision_unavailable";
+            return new ClassifyMatchResult
+            {
+                Error = batchTooLarge ? "decision_batch_too_large" : firstError,
+                ErrorDetail = firstErrorDetail,
+                Incomplete = true,
+                NotProcessed = failedNames.ToArray(),
+                Warnings = oversizedWarning is null ? Array.Empty<string>() : new[] { oversizedWarning },
+                DecisionCalls = failedCalls
+            };
+        }
+
+        var warnings = new List<string>
+        {
+            "The decision layer failed for " + failedNames.Count + " of " + groups.Count +
+            " families (auto-split into " + chunks.Count + " chunks by the question budget of " +
+            budget + "; estimated " + estimated + " questions): " +
+            string.Join(", ", failedNames.Take(10)) + (failedNames.Count > 10 ? " …" : string.Empty) +
+            ". [Action: re-run classify_types narrowed to these families or pick their codes manually]"
+        };
+        if (oversizedWarning is not null)
+            warnings.Add(oversizedWarning);
+        return new ClassifyMatchResult
+        {
+            Types = succeeded.SelectMany(chunk => chunk.Types).ToArray(),
+            Assignments = succeeded.SelectMany(chunk => chunk.Assignments).ToArray(),
+            SetParameterBatches = succeeded.SelectMany(chunk => chunk.SetParameterBatches).ToArray(),
+            Incomplete = true,
+            NotProcessed = succeeded.SelectMany(chunk => chunk.NotProcessed)
+                .Concat(failedNames)
+                .ToArray(),
+            Warnings = warnings.Concat(succeeded.SelectMany(chunk => chunk.Warnings)).ToArray(),
+            DecisionUsed = succeeded.Any(chunk => chunk.DecisionUsed),
+            DecisionCalls = succeeded.Sum(chunk => chunk.DecisionCalls),
+            FamiliesProcessed = succeeded.Sum(chunk => chunk.FamiliesProcessed),
+            AlreadySetItems = succeeded.SelectMany(chunk => chunk.AlreadySetItems).Take(50).ToArray()
+        };
+    }
+
     private ToolResult DecisionFailed(ClassifyMatchResult result)
     {
         var detail = string.IsNullOrEmpty(result.ErrorDetail)
             ? string.Empty
             : " " + result.ErrorDetail + ".";
+        var budget = AgentClassificationBudget.Normalize(_matcher.QuestionBudget);
+        var batchTooLarge = result.Error == "decision_batch_too_large";
+        var hint = batchTooLarge
+            ? "The decision model did not answer even after the run was auto-split into chunks " +
+              "by the question budget of " + budget + ". [Action: re-run classify_types with " +
+              "maxFamilies=5..10 per call (familyIds/nameContains narrow it) or pick the codes " +
+              "manually - list_classification_entries shows the table, set_parameters writes " +
+              "the chosen code]"
+            : result.Error == "decision_unavailable"
+                ? DecisionUnavailableHint
+                : DecisionCallFailedHint;
         SmartConLogger.Warn(
             "classify_types: the decision layer failed (" + result.Error + detail + "). " +
-            "[Action: " + AgentClassificationMatcher.DecisionHint + "]");
+            "[Action: " + hint + "]");
         return ToolResult.Fail(
             result.Error!,
-            result.Error + ": the decision layer did not answer." + detail + " " +
-            DecisionUnavailableHint + ".",
+            result.Error + ": the decision layer did not answer." + detail + " " + hint + ".",
             warnings: result.Warnings.Count == 0 ? null : result.Warnings,
             data: AgentJson.Serialize(new
             {
                 decisionUsed = false,
                 reason = result.Error,
                 detail = result.ErrorDetail,
-                hint = DecisionUnavailableHint
+                questionBudget = AgentClassificationBudget.Normalize(_matcher.QuestionBudget),
+                hint = hint
             }));
     }
 
@@ -261,7 +374,7 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             @"""onlyEmpty"":{""type"":""boolean"",""default"":true,""description"":""true: only types whose Assembly Code is empty; false: also types that already have a code (reported as current)""}," +
             @"""maxTypes"":{""type"":""integer"",""default"":2000,""maximum"":2000,""description"":""At most this many types per call; a family is never cut in the middle""}," +
             @"""textParameters"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Extra parameter names (type or instance scope) whose values join the matching text""}," +
-            @"""maxFamilies"":{""type"":""integer"",""default"":600,""maximum"":600,""description"":""At most this many families per call; families left out are named in notProcessed""}," +
+            @"""maxFamilies"":{""type"":""integer"",""default"":600,""maximum"":600,""description"":""At most this many families per call; families left out are named in notProcessed. The run is auto-split into chunks by a QUESTION budget (default 40 prompts: 1 per family + 1 per type; SMARTCON_DECIDER_MAX_QUESTIONS tunes it per model); a chunk the decision model does not answer is named in warnings, not lost""}," +
             @"""minScore"":{""type"":""number"",""minimum"":0,""maximum"":1,""default"":0.5,""description"":""Below this score a proposal lands in uncertain""}," +
             @"""candidateDepth"":{""type"":""integer"",""minimum"":2,""maximum"":15,""default"":6,""description"":""How many codes survive the per-family stage""}," +
             @"""instructions"":{""type"":""string"",""description"":""Extra selection context for the decision model, max 1500 chars""}},""additionalProperties"":false}";
@@ -291,7 +404,8 @@ public sealed partial class ClassifyTypesTool : IAgentTool
             SupportsBulk = true,
             Category = "Read",
             Pack = "semantic",
-            TimeoutMs = 300000,
+            AlwaysStoreResult = true,
+            TimeoutMs = 600000,
             InputSchemaJson = schema
         };
     }

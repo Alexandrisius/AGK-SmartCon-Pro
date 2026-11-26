@@ -3,6 +3,7 @@ using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Tools.Write;
 
 namespace SmartCon.Revit.Agent.Jobs;
 
@@ -83,8 +84,40 @@ public sealed partial class JobRunner
             var committed = true;
             ITransactionScope? scope = null;
 
-            try
+            // Undo writes the same elements back: take ownership before the batch,
+            // otherwise one element owned by another user rolls back the whole undo.
+            var worksharing = AgentWorksharingScope.Create(document);
+            if (worksharing.NeedsCentral)
             {
+                var targets = new HashSet<ElementId>();
+                foreach (var item in items)
+                {
+                    foreach (var id in UnitTargets(document, item.ArgsJson))
+                        targets.Add(id);
+                }
+
+                worksharing.Checkout(targets, CancellationToken.None);
+                if (worksharing.FailureCode is not null)
+                {
+                    var message = worksharing.FailureMessage ?? "The central model is unavailable.";
+                    foreach (var item in items)
+                    {
+                        updates.Add(new JobItemUpdate
+                        {
+                            Seq = item.Seq,
+                            State = JobItemState.UndoFailed,
+                            ErrorCode = worksharing.FailureCode,
+                            ErrorDetail = message
+                        });
+                        batchFailed++;
+                    }
+                }
+            }
+
+            if (worksharing.FailureCode is null)
+            {
+                try
+                {
                 if (action.Scope is JobActionScope.ProjectInstance or JobActionScope.ProjectType)
                 {
                     scope = _transactions.BeginTransaction(document, "SmartCon job rollback: " + action.Name);
@@ -92,6 +125,19 @@ public sealed partial class JobRunner
 
                 foreach (var item in items)
                 {
+                    var unavailable = FindUnavailable(document, worksharing, item);
+                    if (unavailable is not null)
+                    {
+                        updates.Add(new JobItemUpdate
+                        {
+                            Seq = item.Seq,
+                            State = JobItemState.UndoFailed,
+                            ErrorCode = unavailable.Code,
+                            ErrorDetail = unavailable.Reason
+                        });
+                        batchFailed++;
+                        continue;
+                    }
                     JobUnitUndo undo;
                     try
                     {
@@ -195,6 +241,7 @@ public sealed partial class JobRunner
             finally
             {
                 scope?.Dispose();
+            }
             }
 
             restored += batchRestored;

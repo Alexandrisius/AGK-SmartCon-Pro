@@ -100,7 +100,7 @@ public static partial class AgentToolPackSkills
   display-имя и псевдоним вида `OST_Pipes` = display «Pipes». Структурные поля — зарезервированные
   слова, для них только
   строковые операторы; числовой оператор с ними → `invalid_query`.
-- `summarize_elements` — сводка: `groupBy: category|level|type|family|parameter`, `sumParameter`, `topN`, `includeZeroCount`; группы типов несут `family`, `typeId`, `category`.
+- `summarize_elements` — сводка: `groupBy: category|level|type|family|parameter|typeId`, `sumParameter`, `topN`, `includeZeroCount`; группы типов несут `family`, `typeId`, `category`.
 - `get_element_details` — детали ≤10 элементов: `parameterClasses: system|shared|family`, `includeTypeParameters`, `parameterNames`, `maxParametersPerElement` ≤200.
 - `get_element_bounds` — координаты и габариты ≤50 элементов в мм (координаты модели): `location`
   (точка вставки либо start/end/mid/lengthMm кривой размещения), `boundingBox` (min/max/size/center);

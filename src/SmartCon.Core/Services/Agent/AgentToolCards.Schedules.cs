@@ -98,6 +98,45 @@ public static partial class AgentToolCards
             },
             new AgentToolCard
             {
+                ToolName = "get_schedule_elements",
+                Pack = "schedules",
+                Purpose =
+                    "ID элементов за строками спецификации: экземпляры, которые спецификация " +
+                    "показывает, с typeId, семейством, типом и категорией + сводка по всему " +
+                    "набору (byCategory/uniqueTypes). Фильтры и стадия уже применены.",
+                WhenToUse =
+                    "Когда по спецификации нужно массово прочитать или заполнить параметр у её " +
+                    "элементов: один вызов даёт elementId/typeId для set_parameters или " +
+                    "query_elements, а сводка byCategory отвечает «что внутри» без листания. " +
+                    "Перед этим — list_schedules (id) и get_schedule_definition (поля/scope).",
+                WhenNotToUse =
+                    "Когда нужны только значения ячеек как в таблице — get_schedule_data; когда " +
+                    "нужно описание полей и фильтров — get_schedule_definition.",
+                Examples = new[]
+                {
+                    "Какие элементы входят в эту спецификацию?",
+                    "Дай id элементов спецификации дверей",
+                    "Покажи типы из ведомости отделки",
+                    "Получи состав ВОР по спецификации"
+                },
+                Synonyms = new[]
+                {
+                    "элементы ведомости", "элементы спецификации", "id строк спецификации",
+                    "какие элементы в ведомости", "состав спецификации", "schedule elements",
+                    "element ids of schedule", "типы в спецификации"
+                },
+                NegativeExamples = new[]
+                {
+                    "Покажи строки спецификации как в таблице",
+                    "Опиши фильтры и поля спецификации",
+                    "Сколько ведомостей в проекте?"
+                },
+                Idempotent = true,
+                TimeoutMs = 60000,
+                Bulk = false
+            },
+            new AgentToolCard
+            {
                 ToolName = "create_schedule",
                 Pack = "schedules",
                 Purpose =

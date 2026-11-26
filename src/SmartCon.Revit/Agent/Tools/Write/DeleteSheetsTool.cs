@@ -95,17 +95,26 @@ public sealed class DeleteSheetsTool : AgentWriteToolBase
 
         if (dryRun)
         {
+            var planned = 0;
             foreach (var target in targets)
             {
+                if (WorksharingScope.TryGetBlock(
+                        SmartCon.Core.Compatibility.ElementIdCompat.Create(target.Id), out var block))
+                {
+                    Skip(outcome, new WriteItemReport { Id = target.Id, Name = target.Name }, block);
+                    continue;
+                }
+
                 outcome.Batch.Changed.Add(new WriteItemReport
                 {
                     Id = target.Id,
                     Name = target.Name,
                     Reason = "Dry run: the sheet would be deleted."
                 });
+                planned++;
             }
 
-            deleted = targets.Count;
+            deleted = planned;
             outcome.AffectedCount = deleted;
             if (failed > 0)
             {
@@ -129,6 +138,13 @@ public sealed class DeleteSheetsTool : AgentWriteToolBase
             ct.ThrowIfCancellationRequested();
 
             var report = new WriteItemReport { Id = target.Id, Name = target.Name };
+            if (WorksharingScope.TryGetBlock(
+                    SmartCon.Core.Compatibility.ElementIdCompat.Create(target.Id), out var block))
+            {
+                Skip(outcome, report, block);
+                continue;
+            }
+
             var sheet = doc.GetElement(SmartCon.Core.Compatibility.ElementIdCompat.Create(target.Id))
                 as ViewSheet;
             if (sheet is null)

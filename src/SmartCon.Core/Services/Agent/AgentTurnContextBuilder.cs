@@ -150,7 +150,9 @@ public static class AgentTurnContextBuilder
         var parts = new List<string>(5)
         {
             Value(context.Title),
-            "workshared " + (context.IsWorkshared ? "yes" : "no")
+            Value(context.DocumentKind),
+            "workshared " + (context.IsWorkshared ? "yes" : "no") +
+            (context.IsDetached ? " (detached)" : string.Empty)
         };
 
         if (!string.IsNullOrWhiteSpace(context.Units))

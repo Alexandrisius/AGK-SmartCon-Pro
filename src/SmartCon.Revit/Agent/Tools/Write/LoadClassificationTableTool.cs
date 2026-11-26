@@ -25,6 +25,9 @@ public sealed class LoadClassificationTableTool : AgentWriteToolBase
     {
     }
 
+    // A DataStorage element is not a view: it is created in the active workset.
+    protected override bool RequiresActiveWorkset => true;
+
     public override AgentToolDefinition Definition { get; } = new()
     {
         Name = "load_classification_table",

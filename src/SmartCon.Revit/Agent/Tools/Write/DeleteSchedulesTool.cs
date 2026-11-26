@@ -120,7 +120,8 @@ public sealed class DeleteSchedulesTool : AgentWriteToolBase
             return;
         }
 
-        var deletedCount = AgentDeleteHelper.DeleteBatch(doc, targets, outcome, "schedules", ct);
+        var deletedCount = AgentDeleteHelper.DeleteBatch(
+            doc, targets, outcome, "schedules", ct, WorksharingScope);
         outcome.AffectedCount = deletedCount;
 
         if (outcome.Batch.Failed.Count > 0)

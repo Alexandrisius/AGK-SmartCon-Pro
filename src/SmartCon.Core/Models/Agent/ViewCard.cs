@@ -101,7 +101,13 @@ public sealed class ProjectOverview
 
     public required string RevitVersion { get; init; }
 
+    /// <summary>"project" or "family": the Family Editor is the active window for a family.</summary>
+    public string DocumentKind { get; init; } = "project";
+
     public bool IsWorkshared { get; init; }
+
+    /// <summary>A workshared document opened detached from its central model.</summary>
+    public bool IsDetached { get; init; }
 
     public bool IsModified { get; init; }
 

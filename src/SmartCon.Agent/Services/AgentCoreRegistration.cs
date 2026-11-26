@@ -100,6 +100,15 @@ public static class AgentCoreRegistration
             new HttpDecisionClient(
                 sp.GetRequiredService<AgentDecisionsSettings>(),
                 costTracker: sp.GetRequiredService<DecisionCostTracker>()));
+        // One ranker for the whole graph, carrying the per-model question
+        // budget (S.49, #534) into classify_types and semantic matching.
+        services.AddSingleton(sp => new AgentSemanticRanker(
+                sp.GetRequiredService<IAgentDecisionClient>())
+        {
+            MaxQuestionsPerToolCall =
+                SmartCon.Core.Services.Agent.AgentClassificationBudget.Normalize(
+                    sp.GetRequiredService<AgentDecisionsSettings>().MaxQuestionsPerToolCall)
+        });
         services.AddSingleton(sp =>
         {
             // Always wrapped: the decision router falls back to BM25 when the

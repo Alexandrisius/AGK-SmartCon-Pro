@@ -29,43 +29,112 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
         var specError = ValidateSpec(spec);
         if (specError is not null)
             return ExpansionFail(JobErrorCodes.InvalidSpec, specError);
-        var select = spec!.Select!;
+
+        var warnings = new List<string>();
+        var units = new List<JobUnit>();
+        var scope = string.Equals(spec!.Scope, "type", StringComparison.OrdinalIgnoreCase) ? "type" : "instance";
+        var parameterKey = ParameterKey(spec);
+        var resolveName = string.IsNullOrWhiteSpace(spec.BuiltInParameter)
+            ? spec.Parameter
+            : spec.BuiltInParameter;
+        var allowUnverified = spec.AllowUnverifiedClassification ?? false;
+
+        if (spec.Values is { Count: > 0 })
+        {
+            // values[] form: several {select, value} groups in ONE job - one
+            // preview and one apply instead of 2N calls (S.47, #532).
+            for (var index = 0; index < spec.Values.Count; index++)
+            {
+                var entry = spec.Values[index];
+                var remaining = MaxUnits - units.Count;
+                if (remaining <= 0)
+                {
+                    warnings.Add("values[" + index + "] not expanded: the job already holds " + units.Count +
+                                 " units (cap " + MaxUnits + "); put the rest in another job");
+                    break;
+                }
+
+                var entryError = ExpandSelection(
+                    context, spec, entry.Select!, entry.Value ?? string.Empty,
+                    parameterKey, resolveName, scope, allowUnverified,
+                    remaining, index, warnings, units);
+                if (entryError is not null)
+                    return ExpansionFail(entryError.Value.Code, "values[" + index + "]: " + entryError.Value.Detail);
+            }
+        }
+        else
+        {
+            var singleError = ExpandSelection(
+                context, spec, spec.Select!, spec.Value ?? string.Empty,
+                parameterKey, resolveName, scope, allowUnverified,
+                MaxUnits, null, warnings, units);
+            if (singleError is not null)
+                return ExpansionFail(singleError.Value.Code, singleError.Value.Detail);
+        }
+
+        if (units.Count == 0)
+            return ExpansionFail(JobErrorCodes.SelectorEmpty,
+                "The selector matched no elements; check the ids, level ids, category names and the " +
+                "system/condition filters");
+        if (string.Equals(scope, "type", StringComparison.Ordinal))
+            warnings.Add("scope=type: each write changes the type element, so every instance of that type changes");
+        if (allowUnverified)
+            warnings.Add("allowUnverifiedClassification=true: an Assembly Code is written even when no row " +
+                         "of the classification table loaded in the document backs it");
+        return new JobExpansion { Units = units, Warnings = warnings };
+    }
+
+    /// <summary>
+    /// One {select, value} pair of the spec (the classic form has exactly one;
+    /// values[] has several). Appends units, reports per-pair problems through
+    /// warnings; a broken selector returns a typed error for the whole expansion.
+    /// </summary>
+    private (string Code, string Detail)? ExpandSelection(
+        JobActionContext context,
+        SetParametersSpec spec,
+        ParametersSelectSpec select,
+        string value,
+        string parameterKey,
+        string? resolveName,
+        string scope,
+        bool allowUnverified,
+        int cap,
+        int? valuesIndex,
+        List<string> warnings,
+        List<JobUnit> units)
+    {
+        var where = valuesIndex.HasValue ? "values[" + valuesIndex.Value + "].select" : "select";
         if (!TryResolveCategories(context.Document, select, out var categoryIds, out var categoryError))
-            return ExpansionFail(JobErrorCodes.InvalidSpec, categoryError!);
+            return (JobErrorCodes.InvalidSpec, where + ": " + categoryError!);
         HashSet<long>? systemMemberIds = null;
         if (!string.IsNullOrWhiteSpace(select.SystemName))
         {
             if (!TrySelectSystemMembers(
                     context.Document, select, context.CancellationToken, out systemMemberIds, out var systemError))
-                return ExpansionFail("system_not_found", systemError!);
+                return ("system_not_found", where + ": " + systemError!);
         }
+
         var limit = select.Limit ?? int.MaxValue;
-        var cap = Math.Min(limit, MaxUnits);
-        var warnings = new List<string>();
-        var elements = Select(context, select, categoryIds, systemMemberIds, cap + 1, warnings);
+        var pairCap = Math.Min(limit, cap);
+        var elements = Select(context, select, categoryIds, systemMemberIds, pairCap + 1, warnings);
         if (select.IncludeSubComponents == true)
-            ExpandWithSubComponents(context.Document, elements, cap + 1, warnings, context.CancellationToken);
-        if (elements.Count > cap)
+            ExpandWithSubComponents(context.Document, elements, pairCap + 1, warnings, context.CancellationToken);
+        if (elements.Count > pairCap)
         {
-            if (limit > MaxUnits)
-                return ExpansionFail(JobErrorCodes.LimitExceeded, "The selector matches more than " + MaxUnits +
-                    " elements; narrow select.* or set limit");
+            if (limit > cap)
+                return (JobErrorCodes.LimitExceeded,
+                    where + " matches more than " + cap + " elements; narrow it or set limit");
             elements.RemoveRange(limit, elements.Count - limit);
-            warnings.Add("select.limit truncated the selection to " + limit + " element(s)");
+            warnings.Add(where + ".limit truncated the selection to " + limit + " element(s)");
         }
+
         if (elements.Count == 0)
-            return ExpansionFail(JobErrorCodes.SelectorEmpty,
-                "The selector matched no elements; check the ids, level ids, category names and the " +
+            return (JobErrorCodes.SelectorEmpty,
+                where + " matched no elements; check the ids, level ids, category names and the " +
                 "system/condition filters");
+
         elements.Sort((left, right) => left.Id.GetValue().CompareTo(right.Id.GetValue()));
-        var scope = string.Equals(spec.Scope, "type", StringComparison.OrdinalIgnoreCase) ? "type" : "instance";
-        var parameterKey = ParameterKey(spec);
-        var resolveName = string.IsNullOrWhiteSpace(spec.BuiltInParameter)
-            ? spec.Parameter
-            : spec.BuiltInParameter;
-        var units = new List<JobUnit>(elements.Count);
         var missing = 0;
-        var allowUnverified = spec.AllowUnverifiedClassification ?? false;
         foreach (var element in elements)
         {
             var resolution = AgentParameterWriteHelper.Resolve(
@@ -74,9 +143,12 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
                 missing++;
             units.Add(new JobUnit
             {
-                UnitKey = element.UniqueId + "|" + parameterKey + "|" + scope,
+                // The values[] form may aim several values at one element: the
+                // entry index keeps the unit keys distinct.
+                UnitKey = element.UniqueId + "|" + parameterKey + "|" + scope +
+                          (valuesIndex.HasValue ? "|v" + valuesIndex.Value : string.Empty),
                 Label = scope + " " + (resolution.Parameter?.Definition?.Name ?? parameterKey) + " = " +
-                        TargetText(spec.Value, spec.Unit),
+                        TargetText(value, spec.Unit),
                 ArgsJson = Json(new SetParameterUnitArgs
                 {
                     ElementId = element.Id.GetValue(),
@@ -88,7 +160,7 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
                     SharedParameterGuid = spec.SharedParameterGuid,
                     BuiltInParameter = spec.BuiltInParameter,
                     Scope = scope,
-                    Value = spec.Value,
+                    Value = value,
                     Unit = spec.Unit,
                     ErrorCode = resolution.Ok ? null : resolution.ErrorCode,
                     Error = resolution.Ok ? null : resolution.Reason + " " + ResolutionHint,
@@ -96,15 +168,15 @@ public sealed partial class SetParametersJobAction : RevitJobActionBase
                 })
             });
         }
+
         if (missing > 0)
-            warnings.Add(missing + " selected element(s) do not resolve parameter '" + parameterKey +
+            warnings.Add((valuesIndex.HasValue ? "values[" + valuesIndex.Value + "]: " : string.Empty) +
+                         missing + " selected element(s) do not resolve parameter '" + parameterKey +
                          "' for scope " + scope + "; those units fail in the preview");
-        if (string.Equals(scope, "type", StringComparison.Ordinal) && units.Count > missing)
-            warnings.Add("scope=type: each write changes the type element, so every instance of that type changes");
-        if (allowUnverified)
-            warnings.Add("allowUnverifiedClassification=true: an Assembly Code is written even when no row " +
-                         "of the classification table loaded in the document backs it");
-        return new JobExpansion { Units = units, Warnings = warnings };
+        if (valuesIndex.HasValue)
+            warnings.Add("values[" + valuesIndex.Value + "]: " + elements.Count +
+                         " element(s) = '" + TargetText(value, spec.Unit) + "'");
+        return null;
     }
 
     public override JobUnitPreview Preview(JobActionContext context, JobUnit unit)

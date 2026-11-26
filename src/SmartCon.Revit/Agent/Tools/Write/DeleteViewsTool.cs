@@ -115,17 +115,26 @@ public sealed class DeleteViewsTool : AgentWriteToolBase
 
         if (dryRun)
         {
+            var planned = 0;
             foreach (var target in targets)
             {
+                if (WorksharingScope.TryGetBlock(
+                        SmartCon.Core.Compatibility.ElementIdCompat.Create(target.Id), out var block))
+                {
+                    Skip(outcome, new WriteItemReport { Id = target.Id, Name = target.Name }, block);
+                    continue;
+                }
+
                 outcome.Batch.Changed.Add(new WriteItemReport
                 {
                     Id = target.Id,
                     Name = target.Name,
                     Reason = "Dry run: the view would be deleted."
                 });
+                planned++;
             }
 
-            deleted = targets.Count;
+            deleted = planned;
             outcome.AffectedCount = deleted;
             if (failed > 0)
             {
@@ -149,6 +158,13 @@ public sealed class DeleteViewsTool : AgentWriteToolBase
             ct.ThrowIfCancellationRequested();
 
             var report = new WriteItemReport { Id = target.Id, Name = target.Name };
+            if (WorksharingScope.TryGetBlock(
+                    SmartCon.Core.Compatibility.ElementIdCompat.Create(target.Id), out var block))
+            {
+                Skip(outcome, report, block);
+                continue;
+            }
+
             var view = doc.GetElement(SmartCon.Core.Compatibility.ElementIdCompat.Create(target.Id)) as View;
             if (view is null)
             {

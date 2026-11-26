@@ -173,7 +173,8 @@ public static class AgentToolPacks
                 "Ведомости и спецификации: список, данные, определение, создание, поля (добавление, удаление, порядок, видимость, итоги), фильтры, сортировка, размещение и перемещение на листе и удаление.",
             Tools = new[]
             {
-                "list_schedules", "get_schedule_data", "get_schedule_definition", "delete_schedules",
+                "list_schedules", "get_schedule_data", "get_schedule_definition",
+                "get_schedule_elements", "delete_schedules",
                 "create_schedule", "add_schedule_field", "remove_schedule_field",
                 "set_schedule_field_order", "set_schedule_field_visibility", "set_schedule_totals",
                 "set_schedule_filter", "set_schedule_sort", "place_schedule_on_sheet",

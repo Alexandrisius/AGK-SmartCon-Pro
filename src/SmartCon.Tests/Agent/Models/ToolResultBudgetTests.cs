@@ -264,6 +264,54 @@ public sealed class ToolResultBudgetTests
     }
 
     [Fact]
+    public void Serialize_OverBudget_DigestKeepsScheduleComposition()
+    {
+        // S.45: a paged schedule read that turns into a digest must still say
+        // what the set holds, or the model pages one row at a time.
+        var rows = Enumerable.Range(0, 300)
+            .Select(index => new
+            {
+                elementId = 100000 + index,
+                kind = "instance",
+                typeId = 200000 + index % 55,
+                typeName = "type_" + index % 55,
+                category = index % 3 == 0 ? "Трубы" : "Оборудование"
+            })
+            .ToArray();
+        var byCategory = new[]
+        {
+            new { category = "Оборудование", count = 200 },
+            new { category = "Трубы", count = 100 }
+        };
+
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new
+            {
+                total = 300,
+                returned = 300,
+                offset = 0,
+                byCategory,
+                uniqueTypes = 55,
+                sampleTypeNames = new[] { "type_1", "type_2" },
+                note = "composition summary survives the digest",
+                rows
+            }),
+            "big");
+
+        var json = ToolResultBudget.Serialize(result, maxCharacters: 3000);
+
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("data");
+        Assert.True(data.GetProperty("truncated").GetBoolean());
+        Assert.Equal(2, data.GetProperty("byCategory").GetArrayLength());
+        Assert.Equal(55, data.GetProperty("uniqueTypes").GetInt32());
+        Assert.Equal("type_1", data.GetProperty("sampleTypeNames")[0].GetString());
+        Assert.Equal(
+            "composition summary survives the digest",
+            data.GetProperty("note").GetString());
+    }
+
+    [Fact]
     public void Serialize_OverBudget_SchemasYieldBeforeSkills()
     {
         var schemas = Enumerable.Range(0, 8)
@@ -286,5 +334,31 @@ public sealed class ToolResultBudgetTests
         Assert.Equal(8, data.GetProperty("schemasTotal").GetInt32());
         Assert.True(data.GetProperty("schemasReturned").GetInt32() < 8);
         Assert.Equal(markdown, data.GetProperty("skills")[0].GetProperty("markdown").GetString());
+    }
+
+    [Fact]
+    public void InjectResultHandle_UntrimmedResult_CarriesTheHandleInData()
+    {
+        // AlwaysStoreResult tools: even a result that fits the budget exposes
+        // resultHandle, so a $result reference works for every call (S.47, #532).
+        var result = ToolResult.Ok(
+            JsonSerializer.SerializeToElement(new { setParameters = new { items = new[] { 1, 2 } } }),
+            "ok");
+
+        var full = ToolResultBudget.SerializeFull(result);
+        var json = ToolResultBudget.InjectResultHandle(full, "call_7");
+
+        using var document = JsonDocument.Parse(json);
+        var data = document.RootElement.GetProperty("data");
+        Assert.Equal("call_7", data.GetProperty("resultHandle").GetString());
+        Assert.Equal(2, data.GetProperty("setParameters").GetProperty("items").GetArrayLength());
+    }
+
+    [Fact]
+    public void InjectResultHandle_NotAnObjectData_ReturnsJsonUnchanged()
+    {
+        var json = "[1,2,3]";
+
+        Assert.Equal(json, ToolResultBudget.InjectResultHandle(json, "call_7"));
     }
 }

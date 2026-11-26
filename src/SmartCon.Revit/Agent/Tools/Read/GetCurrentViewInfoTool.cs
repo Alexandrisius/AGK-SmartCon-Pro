@@ -44,7 +44,8 @@ public sealed class GetCurrentViewInfoTool : AgentReadToolBase
         var templateId = view.ViewTemplateId;
         var hasTemplate = templateId != ElementId.InvalidElementId;
         var template = hasTemplate ? doc.GetElement(templateId) : null;
-        var level = view.GenLevel;
+        var level = SafeClass(() => view.GenLevel);
+        var schedule = view as ViewSchedule;
 
         var payload = new
         {
@@ -54,18 +55,94 @@ public sealed class GetCurrentViewInfoTool : AgentReadToolBase
             viewType = view.ViewType.ToString(),
             levelId = level is null ? (long?)null : level.Id.GetValue(),
             levelName = level?.Name,
-            scale = view.Scale,
-            detailLevel = view.DetailLevel.ToString(),
-            discipline = view.Discipline.ToString(),
+            scale = SafeInt(() => view.Scale),
+            detailLevel = SafeText(() => view.DetailLevel.ToString()),
+            discipline = SafeText(() => view.Discipline.ToString()),
             isTemplate = view.IsTemplate,
             templateId = hasTemplate ? templateId.GetValue() : (long?)null,
             templateName = template?.Name,
-            cropActive = view.CropBoxActive,
-            cropVisible = view.CropBoxVisible
+            // Schedules and legends have no crop box: the property throws there.
+            cropActive = SafeBool(() => view.CropBoxActive),
+            cropVisible = SafeBool(() => view.CropBoxVisible),
+            schedule = schedule is null ? null : DescribeSchedule(schedule)
         };
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
-            "Active view is '" + view.Name + "' (" + view.ViewType + ").");
+            "Active view is '" + view.Name + "' (" + view.ViewType + ")" +
+            (schedule is not null
+                ? " — a schedule, not a graphical view; its rows' element ids come from " +
+                  "get_schedule_elements."
+                : string.Empty) + ".");
+    }
+
+    /// <summary>
+    /// The schedule block of the payload. A schedule is a view without a crop box,
+    /// so the regular view properties are read defensively; this part is what the
+    /// agent uses to reach the rows' element ids.
+    /// </summary>
+    internal static Dictionary<string, object?> DescribeSchedule(ViewSchedule schedule)
+    {
+        return new Dictionary<string, object?>
+        {
+            ["scheduleId"] = schedule.Id.GetValue(),
+            ["isMulticategory"] = SafeBool(() => schedule.Definition is null
+                                                || schedule.Definition.CategoryId is null
+                                                || schedule.Definition.CategoryId ==
+                                                ElementId.InvalidElementId),
+            ["rowCount"] = SafeInt(() => schedule.GetTableData()
+                .GetSectionData(SectionType.Body)
+                .NumberOfRows),
+            ["hint"] = "This view is a schedule: the element ids behind its rows come from " +
+                       "get_schedule_elements(scheduleId)."
+        };
+    }
+
+    private static T? SafeClass<T>(Func<T> read) where T : class
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static int? SafeInt(Func<int> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static bool? SafeBool(Func<bool> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string? SafeText(Func<string?> read)
+    {
+        try
+        {
+            return read();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 }

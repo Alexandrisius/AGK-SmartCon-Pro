@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Linq;
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using SmartCon.Core.Compatibility;
@@ -67,7 +68,24 @@ public sealed class ListFamiliesTool : AgentReadToolBase
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
-        var categories = ReadCategories(args);
+        var categoryNames = ReadCategories(args);
+        var unknownCategories = new List<string>();
+        HashSet<long>? categoryIds = null;
+        if (categoryNames.Count > 0)
+        {
+            var resolved = AgentCategoryResolver.Resolve(doc, categoryNames, unknownCategories);
+            if (unknownCategories.Count > 0)
+            {
+                return ToolResult.Fail(
+                    "unknown_category",
+                    "Unknown categories: " + string.Join(", ", unknownCategories) +
+                    AgentCategoryResolver.SuggestSuffix(doc, unknownCategories[0]) +
+                    ". Use list_categories to see available names.");
+            }
+
+            categoryIds = new HashSet<long>(resolved.Select(id => id.GetValue()));
+        }
+
         var compact = AgentJson.GetBool(args, "compact", true);
         var withSummary = AgentJson.GetBool(args, "summary", false);
         var selection = AgentListPayload.SelectFields(
@@ -104,8 +122,12 @@ public sealed class ListFamiliesTool : AgentReadToolBase
                 continue;
             }
 
-            if (!MatchesAnyCategory(family, categories))
+            if (categoryIds is not null
+                && (family.FamilyCategory is null
+                    || !categoryIds.Contains(family.FamilyCategory.Id.GetValue())))
+            {
                 continue;
+            }
 
             var inWindow = ++summary.Total > offset && families.Count < limit;
             var categoryName = family.FamilyCategory?.Name;
@@ -188,40 +210,6 @@ public sealed class ListFamiliesTool : AgentReadToolBase
         var text = value.GetString();
         if (!string.IsNullOrWhiteSpace(text))
             categories.Add(text!.Trim());
-    }
-
-    private static bool MatchesAnyCategory(RevitFamily family, List<string> categories)
-    {
-        foreach (var category in categories)
-        {
-            if (MatchesCategory(family, category))
-                return true;
-        }
-
-        return categories.Count == 0;
-    }
-
-    private static bool MatchesCategory(RevitFamily family, string category)
-    {
-        var name = family.FamilyCategory?.Name;
-        if (!string.IsNullOrEmpty(name)
-            && string.Equals(name, category.Trim(), StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var trimmed = category.Trim();
-        var builtIn = trimmed.StartsWith("OST_", StringComparison.OrdinalIgnoreCase)
-            ? trimmed
-            : "OST_" + trimmed;
-        var categoryId = family.FamilyCategory?.Id;
-        if (categoryId is null)
-            return false;
-
-        return string.Equals(
-            ((BuiltInCategory)categoryId.GetValue()).ToString(),
-            builtIn,
-            StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

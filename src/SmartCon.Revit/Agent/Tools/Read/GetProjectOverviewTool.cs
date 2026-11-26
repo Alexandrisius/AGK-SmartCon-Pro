@@ -104,7 +104,9 @@ public sealed class GetProjectOverviewTool : AgentReadToolBase
             Title = doc.Title,
             PathName = string.IsNullOrWhiteSpace(doc.PathName) ? null : doc.PathName,
             RevitVersion = AgentDocumentIdentity.GetRevitVersion(doc),
+            DocumentKind = doc.IsFamilyDocument ? "family" : "project",
             IsWorkshared = doc.IsWorkshared,
+            IsDetached = doc.IsWorkshared && doc.IsDetached,
             IsModified = doc.IsModified,
             ProjectNumber = projectInfo?.Number,
             ProjectName = projectInfo?.Name,
@@ -119,8 +121,12 @@ public sealed class GetProjectOverviewTool : AgentReadToolBase
 
         return ToolResult.Ok(
             AgentJson.Serialize(WithClassification(overview, AgentClassificationReader.Read(doc))),
-            "Project '" + doc.Title + "': " + levels.Count + " levels, " +
-            views.Count + " views, " + sheetCount + " sheets.");
+            (doc.IsFamilyDocument ? "Family document" : "Project") + " '" + doc.Title + "': " +
+            levels.Count + " levels, " + views.Count + " views, " + sheetCount + " sheets." +
+            (doc.IsFamilyDocument
+                ? " This is a family document (Family Editor), not a project: project-level " +
+                  "writes are refused with not_a_project_document."
+                : string.Empty));
     }
 
     /// <summary>

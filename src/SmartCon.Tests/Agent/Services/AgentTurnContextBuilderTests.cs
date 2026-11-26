@@ -40,7 +40,7 @@ public sealed class AgentTurnContextBuilderTests
         Assert.Contains("touched_elements: 101, 102", text);
         Assert.Contains("open_questions: user rejected rename_views", text);
         Assert.Contains(
-            "document: Test &amp; Project; workshared no; units mm; " +
+            "document: Test &amp; Project; project; workshared no; units mm; " +
             "levels 3/views 10/sheets 2",
             text);
 

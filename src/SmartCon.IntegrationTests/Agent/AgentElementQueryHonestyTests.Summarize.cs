@@ -30,6 +30,26 @@ public sealed partial class AgentElementQueryHonestyTests
     }
 
     [Test]
+    public async Task SummarizeElements_GroupByTypeId_KeysAreTheTypeIdsThemselves()
+    {
+        // S.47 (#532): the typeId list of a category in one call - the keys are
+        // the ids, ready for select.typeIds.
+        RequireWall();
+        var type = WallTypeOf();
+
+        var result = Summarize("{\"categories\":[\"OST_Walls\"],\"groupBy\":\"typeId\"}");
+
+        if (!result.Success)
+            throw new Exception("GroupByTypeId failed: " + result.ErrorCode + " | " + result.Message);
+        var groups = Groups(result);
+        var byKey = groups.Single(item =>
+            item.GetProperty("key").GetString() == type.Id.GetValue().ToString());
+        await Assert.That(byKey.GetProperty("count").GetInt32()).IsGreaterThanOrEqualTo(1);
+        await Assert.That(groups.Select(item => item.GetProperty("key").GetString()))
+            .Contains(type.Id.GetValue().ToString());
+    }
+
+    [Test]
     public async Task SummarizeElements_GroupByType_CarriesFamilyTypeAndCategory()
     {
         RequireWall();

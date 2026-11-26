@@ -41,7 +41,7 @@ public sealed class ListViewsTool : AgentReadToolBase
             "ignoredFields with availableFields.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,folderPath|browserFolderPath,folderParameters|browserFolderParameters,inBrowser,section. folderParameters lists each grouping level with parameterId/parameterName/isShared/isBuiltIn; section is the project parameter 'Раздел' value (null when absent). Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""types"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""viewIds"":{""type"":""array"",""description"":""Return only these view ids (with totalAll/totalTemplates still counting the whole inventory)."",""items"":{""type"":""integer""}},""nameContains"":{""type"":""string""},""folders"":{""type"":""array"",""items"":{""type"":""string""}},""includeTemplates"":{""type"":""boolean"",""default"":false},""summaryOnly"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: viewId,id,name,type|viewType,level|levelName,levelId,elevation,template|templateName,templateId,sheet|sheetNumber,isTemplate,isOnSheet,uniqueId,folder|browserFolder,folderPath|browserFolderPath,folderParameters|browserFolderParameters,inBrowser,section. folderParameters lists each grouping level with parameterId/parameterName/isShared/isBuiltIn; section is the project parameter 'Раздел' value (null when absent). Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -51,6 +51,7 @@ public sealed class ListViewsTool : AgentReadToolBase
     {
         var requestedTypes = AgentJson.GetStringArray(args, "types");
         var levelIds = AgentJson.GetLongArray(args, "levelIds");
+        var viewIds = AgentJson.GetLongArray(args, "viewIds");
         var nameContains = AgentJson.GetString(args, "nameContains");
         var folders = AgentJson.GetStringArray(args, "folders");
         var includeTemplates = AgentJson.GetBool(args, "includeTemplates", false);
@@ -79,6 +80,8 @@ public sealed class ListViewsTool : AgentReadToolBase
             ct.ThrowIfCancellationRequested();
 
             if (!IsSupportedView(view))
+                continue;
+            if (viewIds.Count > 0 && !viewIds.Contains(view.Id.GetValue()))
                 continue;
             if (!MatchesType(view, requestedTypes))
                 continue;

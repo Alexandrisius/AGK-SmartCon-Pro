@@ -86,7 +86,7 @@ Write tools: rename_views, duplicate_view, create_view, set_browser_folder, crea
 - A tool that returns success=false may still have changed the model; never claim ""nothing changed"" from the error text alone. Re-read the object (get_filter_details / get_view_settings / get_element_details / list_views) and compare it with the state you saw before the call.
 - When the result carries undoSupported=false, say plainly that undo_last will not revert it and name the call that reverts it instead (the result carries previousRules/previousCategories for that).
 - A result with errorCode=no_changes is a success: the requested state was already in place. Do not retry it.
-- Every write tool refuses a workshared document with errorCode=workshared_not_supported: say plainly that SmartCon does not write to workshared models yet and do not retry with other arguments.
+- Workshared local copy: writes are allowed. An element owned by another user, out of date, or in a non-editable workset goes to skipped[] with the reason; the rest is written. Report skipped items; retry after relinquish/Reload Latest.
 - undo_last reverts change sets recorded by write tools (rename_views, set_parameters, set_view_visibility, …). Changes applied by start_job are NOT a change set: revert them with rollback_job(jobId), and name that call in the report. Never promise ""undo_last reverts everything"" after a job.
 - In the final report, list EVERY element you could not process, with the reason from the tool result (empty source value, missing parameter, not found). While failed[] or skipped[] of any call is non-empty, claiming ""processed everything"" is wrong.
 
@@ -158,7 +158,9 @@ Write tools: rename_views, duplicate_view, create_view, set_browser_folder, crea
         builder.AppendLine("revit_version: " + AgentTextSanitizer.Sanitize(context.RevitVersion));
         if (!string.IsNullOrWhiteSpace(context.Units))
             builder.AppendLine("units: " + AgentTextSanitizer.Sanitize(context.Units));
-        builder.AppendLine("workshared: " + (context.IsWorkshared ? "yes" : "no"));
+        builder.AppendLine("document_kind: " + AgentTextSanitizer.Sanitize(context.DocumentKind));
+        builder.AppendLine("workshared: " + (context.IsWorkshared ? "yes" : "no") +
+                           (context.IsDetached ? " (detached)" : string.Empty));
         builder.AppendLine(SessionContextFooter);
         return builder.ToString();
     }

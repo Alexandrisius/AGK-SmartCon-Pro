@@ -178,7 +178,7 @@ public sealed class DeleteFilterTool : AgentWriteToolBase
         }
 
         var deletedCount = AgentDeleteHelper.DeleteBatch(
-            doc, deletableTargets, outcome, "filter(s)", ct);
+            doc, deletableTargets, outcome, "filter(s)", ct, WorksharingScope);
         outcome.AffectedCount = deletedCount;
 
         outcome.Data["quarantine"] = new

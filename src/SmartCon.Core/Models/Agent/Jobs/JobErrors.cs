@@ -33,7 +33,6 @@ public static class JobErrorCodes
     public const string DocumentChanged = "job_document_changed";
     public const string DocumentNotSaved = "job_document_not_saved";
     public const string DocumentReadOnly = "job_document_read_only";
-    public const string WorksharedUnsupported = "job_workshared_unsupported";
     public const string InvalidState = "job_invalid_state";
     public const string InvalidSpec = "job_spec_invalid";
     public const string ActionUnknown = "job_action_unknown";
@@ -135,11 +134,6 @@ public static class JobErrors
         new(JobErrorCodes.DocumentReadOnly,
             "The document file is read-only, so progress cannot be made durable",
             "save a writable copy (File > Save As) and start the job in that copy");
-
-    public static JobError Workshared() =>
-        new(JobErrorCodes.WorksharedUnsupported,
-            "Workshared documents are not supported by the job engine yet",
-            "detach the model (or work in a non-workshared copy) and start the job again");
 
     public static JobError DocumentChanged(string expected, string actual) =>
         new(JobErrorCodes.DocumentChanged,

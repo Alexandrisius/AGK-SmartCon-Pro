@@ -90,15 +90,13 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
             return JobStartResult.Fail(JobErrors.DocumentMismatch(spec.DocumentId, documentId));
         }
 
-        if (document.IsWorkshared)
-        {
-            return JobStartResult.Fail(JobErrors.Workshared());
-        }
-
         if (document.IsReadOnly)
         {
             return JobStartResult.Fail(JobErrors.DocumentReadOnly());
         }
+
+        // A workshared local copy is a normal document: ownership is taken per
+        // batch and units owned by other users are skipped (JobRunner.ApplyBatch).
 
         if (!_actions.TryGetValue(spec.Action, out var action))
         {

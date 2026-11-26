@@ -153,6 +153,12 @@ public sealed class RemoveScheduleFromSheetTool : AgentWriteToolBase
 
         try
         {
+            if (WorksharingScope.TryGetBlock(instance.Id, out var block))
+            {
+                Skip(outcome, report, block);
+                return;
+            }
+
             doc.Delete(instance.Id);
         }
         catch (Exception ex)

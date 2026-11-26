@@ -1753,6 +1753,22 @@
       "kind": "read"
     },
     {
+      "id": "rSchedEl1",
+      "query": "Какие элементы входят в эту спецификацию? Дай elementId элементов спецификации",
+      "expectedTools": [
+        "get_schedule_elements"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "rSchedEl2",
+      "query": "Покажи типы и elementId за строками ведомости отделки",
+      "expectedTools": [
+        "get_schedule_elements"
+      ],
+      "kind": "read"
+    },
+    {
       "id": "r217",
       "query": "Можно ли отфильтровать трубы и фитинги по имени системы?",
       "expectedTools": [

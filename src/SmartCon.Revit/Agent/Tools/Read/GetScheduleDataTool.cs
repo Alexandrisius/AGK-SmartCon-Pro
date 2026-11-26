@@ -147,6 +147,8 @@ public sealed class GetScheduleDataTool : AgentReadToolBase
             nextOffset = hasMore ? offset + rows.Count : (int?)null,
             truncated = hasMore,
             headerRowSkipped = headerSkipped,
+            note = "Cell text of the displayed table. The element ids behind these rows come " +
+                   "from get_schedule_elements(scheduleId).",
             rows
         };
 

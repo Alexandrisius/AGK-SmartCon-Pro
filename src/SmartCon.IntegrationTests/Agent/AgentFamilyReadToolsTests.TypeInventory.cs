@@ -133,6 +133,32 @@ public sealed partial class AgentFamilyReadToolsTests
     }
 
     [Test]
+    public async Task ListFamilyTypes_PlacedOnly_KeepsOnlyPlacedTypes()
+    {
+        var symbols = SeedSymbols();
+        using (var transaction = new Transaction(Doc, "Place one inventory type"))
+        {
+            transaction.Start();
+            PlaceWithNote(symbols[FamilySeed.Type1], new XYZ(0, 0, 0), "placed-only");
+            if (transaction.Commit() != TransactionStatus.Committed)
+                throw new InvalidOperationException("Транзакция размещения не завершилась");
+        }
+
+        var tool = new ListFamilyTypesTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc, FamilyArgs(",\"placedOnly\":true"), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = Data(result);
+        await Assert.That(data.GetProperty("placedOnly").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("total").GetInt32()).IsEqualTo(1);
+        var records = data.GetProperty("types").EnumerateArray().ToList();
+        await Assert.That(records.Count).IsEqualTo(1);
+        await Assert.That(records[0].GetProperty("name").GetString())
+            .IsEqualTo(FamilySeed.Type1);
+    }
+
+    [Test]
     public async Task ListFamilyTypes_InstanceScope_ReadsValuesFromPlacedInstances()
     {
         var symbols = SeedSymbols();

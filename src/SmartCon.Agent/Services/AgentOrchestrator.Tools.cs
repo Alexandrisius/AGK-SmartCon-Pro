@@ -132,26 +132,36 @@ public sealed partial class AgentOrchestrator
     /// Redacts and trims the tool result for the model. A result that exceeds the
     /// character budget is stored in full first, and the trimmed envelope carries
     /// its handle so <c>read_tool_result</c> can page through the rest later.
+    /// <paramref name="existingHandle"/> serves a repeated identical read from the
+    /// blob that is already stored: no second copy of the same payload (S.45).
     /// </summary>
-    private async Task<string> SerializeToolResultAsync(
+    private async Task<SerializedToolResult> SerializeToolResultAsync(
         AgentToolCall toolCall,
         ToolResult result,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? existingHandle = null)
     {
         var fullJson = AgentTextSanitizer.SanitizeJson(ToolResultBudget.SerializeFull(result));
         var maxCharacters = ToolResultBudget.MaxCharactersFor(toolCall.Name);
+        var alwaysStore = _toolRegistry.TryGet(toolCall.Name, out var defined)
+                          && defined is not null
+                          && defined.Definition.AlwaysStoreResult;
         string? handle = null;
 
-        if (fullJson.Length > maxCharacters
+        if ((fullJson.Length > maxCharacters || alwaysStore)
             && _toolResultBlobStore is not null
-            && !string.IsNullOrWhiteSpace(toolCall.Id))
+            && (!string.IsNullOrWhiteSpace(toolCall.Id) || !string.IsNullOrWhiteSpace(existingHandle)))
         {
             try
             {
-                await _toolResultBlobStore
-                    .SaveAsync(_sessionContext.ConversationId, toolCall.Id, fullJson, ct)
-                    .ConfigureAwait(false);
-                handle = toolCall.Id;
+                if (string.IsNullOrWhiteSpace(existingHandle))
+                {
+                    await _toolResultBlobStore
+                        .SaveAsync(_sessionContext.ConversationId, toolCall.Id!, fullJson, ct)
+                        .ConfigureAwait(false);
+                }
+
+                handle = string.IsNullOrWhiteSpace(existingHandle) ? toolCall.Id : existingHandle;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -169,10 +179,20 @@ public sealed partial class AgentOrchestrator
 
         // Sanitize first, trim second: the sanitizer reserializes with the default
         // encoder and can inflate Cyrillic payloads past the budget.
-        return fullJson.Length <= maxCharacters
+        var json = fullJson.Length <= maxCharacters
             ? fullJson
             : ToolResultBudget.Trim(fullJson, maxCharacters, handle);
+
+        // An always-stored result that fits the budget carries no trimming
+        // envelope, so the handle is injected into its data directly - a
+        // $result reference must work for every call of the tool (S.47, #532).
+        if (alwaysStore && handle is not null && fullJson.Length <= maxCharacters)
+            json = ToolResultBudget.InjectResultHandle(json, handle);
+
+        return new SerializedToolResult(json, handle);
     }
+
+    private sealed record SerializedToolResult(string Json, string? Handle);
 
     /// <summary>
     /// OpenAI-compatible providers reject a history where an assistant

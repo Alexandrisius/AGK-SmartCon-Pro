@@ -91,7 +91,7 @@ public sealed class AgentToolPacksTests
             ["schedules"] = new[]
             {
                 "list_schedules", "get_schedule_data", "get_schedule_definition",
-                "delete_schedules", "create_schedule", "add_schedule_field",
+                "get_schedule_elements", "delete_schedules", "create_schedule", "add_schedule_field",
                 "remove_schedule_field", "set_schedule_field_order",
                 "set_schedule_field_visibility", "set_schedule_totals",
                 "set_schedule_filter", "set_schedule_sort", "place_schedule_on_sheet",
@@ -150,7 +150,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(137, placements.Length);
+        Assert.Equal(138, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

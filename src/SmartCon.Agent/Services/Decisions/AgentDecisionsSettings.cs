@@ -35,6 +35,15 @@ public sealed class AgentDecisionsSettings
 
     public int TimeoutMilliseconds { get; init; } = 5000;
 
+    /// <summary>
+    /// How many decision prompts (family + type questions) one tool call may
+    /// put on the channel before the run is chunked (S.49, #534). A setting,
+    /// not an API value: free models drop long chains. env
+    /// SMARTCON_DECIDER_MAX_QUESTIONS, clamp 10..2000, default 40.
+    /// </summary>
+    public int MaxQuestionsPerToolCall { get; private set; } =
+        SmartCon.Core.Services.Agent.AgentClassificationBudget.DefaultMaxQuestionsPerToolCall;
+
     /// <summary>Use the decision model as the primary tool router (JEV/pplx Choice).</summary>
     public bool UseRouter { get; init; }
 
@@ -197,6 +206,12 @@ public sealed class AgentDecisionsSettings
         if (int.TryParse(timeoutText, out var parsed) && parsed >= 500 && parsed <= 30000)
             timeout = parsed;
 
+        var maxQuestions =
+            SmartCon.Core.Services.Agent.AgentClassificationBudget.DefaultMaxQuestionsPerToolCall;
+        if (int.TryParse(Get(values, "SMARTCON_DECIDER_MAX_QUESTIONS"), out var parsedQuestions))
+            maxQuestions = SmartCon.Core.Services.Agent.AgentClassificationBudget
+                .Normalize(parsedQuestions);
+
         return new AgentDecisionsSettings
         {
             Enabled = string.Equals(
@@ -206,6 +221,7 @@ public sealed class AgentDecisionsSettings
             Endpoint = endpoint,
             ApiKey = StoredKeyFrom(values, provider),
             TimeoutMilliseconds = timeout,
+            MaxQuestionsPerToolCall = maxQuestions,
             UseRouter = string.Equals(
                 Get(values, "SMARTCON_DECIDER_ROUTER"), "1", StringComparison.Ordinal)
         };

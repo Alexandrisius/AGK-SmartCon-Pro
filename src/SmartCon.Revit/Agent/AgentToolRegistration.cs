@@ -58,6 +58,7 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, ListSchedulesTool>();
         services.AddSingleton<IAgentTool, GetScheduleDataTool>();
         services.AddSingleton<IAgentTool, GetScheduleDefinitionTool>();
+        services.AddSingleton<IAgentTool, GetScheduleElementsTool>();
         services.AddSingleton<IAgentTool, ListFamiliesTool>();
         services.AddSingleton<IAgentTool, ListFamilyTypesTool>();
         services.AddSingleton<IAgentTool, GetFamilyParametersTool>();
@@ -167,11 +168,12 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, GetDocumentStatusTool>();
         services.AddSingleton<IAgentTool, GetElementBoundsTool>();
         services.AddSingleton<IAgentTool, SetSharedParameterFileTool>();
-        // The factory resolves the decision client lazily: AddAgentCore has
-        // registered it by the time the Revit tool graph is composed.
+        // The factory resolves the ranker lazily: AddAgentCore has registered
+        // it (with the per-model question budget, S.49 #534) by the time the
+        // Revit tool graph is composed.
         services.AddSingleton<IAgentTool>(sp => new ClassifyTypesTool(
             sp.GetRequiredService<IRevitContext>(),
-            new AgentSemanticRanker(sp.GetRequiredService<IAgentDecisionClient>())));
+            sp.GetRequiredService<AgentSemanticRanker>()));
 
         // Not an IAgentTool, but Revit-side agent wiring: registered with the
         // tools so the whole Revit half of the agent graph lives here.
@@ -269,6 +271,7 @@ public static class AgentToolRegistration
         typeof(ListSchedulesTool),
         typeof(GetScheduleDataTool),
         typeof(GetScheduleDefinitionTool),
+        typeof(GetScheduleElementsTool),
         typeof(ListFamiliesTool),
         typeof(ListFamilyTypesTool),
         typeof(GetFamilyParametersTool),

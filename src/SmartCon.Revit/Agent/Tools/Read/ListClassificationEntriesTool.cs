@@ -44,7 +44,9 @@ public sealed class ListClassificationEntriesTool : AgentReadToolBase
             "классификатору» / Assembly Code picker) — the source of truth for a " +
             "classification code. No file path is needed. contains: a substring of the code, " +
             "the description or the breadcrumb path; parentCode: one branch; level: 1-5; " +
-            "leafOnly (default true): only the leaf codes, the ones assignable to elements. " +
+            "leafOnly (default true): only the leaf codes, the ones assignable to elements " +
+            "(an empty contains-search over leaves automatically retries all levels and is " +
+            "marked leafOnlyFallback with isLeaf per row). " +
             "Records are compact (code, breadcrumb); fields adds description, level, " +
             "parentCode, categoryId, isLeaf. classification_table_not_loaded means the " +
             "document has no classifier: tell the user instead of guessing a code.",
@@ -94,10 +96,26 @@ public sealed class ListClassificationEntriesTool : AgentReadToolBase
 
         // One row more than the page tells whether a next page exists.
         var page = table.Search(contains, parentCode, level, leafOnly, limit + 1, offset);
+
+        // A term can live in branch (non-leaf) descriptions while no leaf
+        // matches: an empty leaf-only search falls back to all levels so the
+        // agent sees the branch instead of "no match" (S.46, #531).
+        var leafFallback = false;
+        if (page.Count == 0 && !string.IsNullOrWhiteSpace(contains) && leafOnly)
+        {
+            page = table.Search(contains, parentCode, level, false, limit + 1, offset);
+            leafFallback = page.Count > 0;
+        }
+
         var truncated = page.Count > limit;
         var entries = new List<Dictionary<string, object?>>(System.Math.Min(page.Count, limit));
         foreach (var entry in page.Take(limit))
-            entries.Add(Record(entry, selection.Fields));
+        {
+            var record = Record(entry, selection.Fields);
+            if (leafFallback && !record.ContainsKey("isLeaf"))
+                record["isLeaf"] = entry.IsLeaf;
+            entries.Add(record);
+        }
 
         var payload = new Dictionary<string, object?>
         {
@@ -111,6 +129,13 @@ public sealed class ListClassificationEntriesTool : AgentReadToolBase
             ["truncated"] = truncated,
             ["entries"] = entries
         };
+        if (leafFallback)
+        {
+            payload["leafOnlyFallback"] = true;
+            payload["hint"] = "No leaf code matches '" + contains!.Trim() +
+                              "'; these rows match the term in branch (non-leaf) descriptions. " +
+                              "A branch row is not assignable - open it with parentCode to see its leaves.";
+        }
         AgentListPayload.AddFieldInfo(payload, selection.Fields, AvailableFields);
 
         var message = new System.Text.StringBuilder();

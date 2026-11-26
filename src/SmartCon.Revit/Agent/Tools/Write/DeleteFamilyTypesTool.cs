@@ -101,17 +101,25 @@ public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
 
         if (dryRun)
         {
+            var planned = 0;
             foreach (var target in targets)
             {
+                if (WorksharingScope.TryGetBlock(ElementIdCompat.Create(target.Id), out var block))
+                {
+                    Skip(outcome, new WriteItemReport { Id = target.Id, Name = target.Name }, block);
+                    continue;
+                }
+
                 outcome.Batch.Changed.Add(new WriteItemReport
                 {
                     Id = target.Id,
                     Name = target.Name,
                     Reason = "Dry run: the type would be deleted."
                 });
+                planned++;
             }
 
-            deleted = targets.Count;
+            deleted = planned;
             outcome.AffectedCount = deleted;
             if (failed > 0)
             {
@@ -135,6 +143,12 @@ public sealed class DeleteFamilyTypesTool : AgentWriteToolBase
             ct.ThrowIfCancellationRequested();
 
             var report = new WriteItemReport { Id = target.Id, Name = target.Name };
+            if (WorksharingScope.TryGetBlock(ElementIdCompat.Create(target.Id), out var block))
+            {
+                Skip(outcome, report, block);
+                continue;
+            }
+
             if (doc.GetElement(ElementIdCompat.Create(target.Id)) is not FamilySymbol symbol)
             {
                 report.ErrorCode = "type_not_found";

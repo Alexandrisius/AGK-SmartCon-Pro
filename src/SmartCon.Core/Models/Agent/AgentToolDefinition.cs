@@ -49,6 +49,13 @@ public sealed class AgentToolDefinition
 
     public bool Idempotent { get; init; }
 
+    /// <summary>
+    /// Store the full result in the blob store and expose resultHandle even when
+    /// it fits the context budget, so a $result reference works for every call of
+    /// the tool - not only trimmed ones (S.47, #532).
+    /// </summary>
+    public bool AlwaysStoreResult { get; init; }
+
     public int TimeoutMs { get; init; } = 30000;
 
     /// <summary>"active_view", "selection" or null when the tool has no context requirement.</summary>

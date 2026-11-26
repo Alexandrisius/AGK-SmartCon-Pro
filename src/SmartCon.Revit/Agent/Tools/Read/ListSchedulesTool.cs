@@ -35,10 +35,13 @@ public sealed class ListSchedulesTool : AgentReadToolBase
             "emptySchedules/emptyCount list every zero-row schedule of the match in one block " +
             "(computed across all pages), so none is lost in batch diagnostics. Each card carries " +
             "definitionsDigest; duplicateGroups groups schedules whose fields, filters and sorting " +
-            "are identical (candidates for cleanup).",
+            "are identical (candidates for cleanup). " +
+            "fieldGuid=<GUID of a shared parameter> switches the call into an impact report: " +
+            "which schedules (and how many fields) use the parameter, and the view filters that " +
+            "reference it - the risk check before replace_family_parameter (S.48, #533).",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""nameContains"":{""type"":""string""},""includeTemplates"":{""type"":""boolean"",""default"":false},""includeInternal"":{""type"":""boolean"",""default"":false},""includeRevision"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: scheduleId,id,name,uniqueId,category|categoryName,fieldCount,hiddenFieldCount,fields,rowCount,isKeySchedule,isMulticategory,isTemplate,sheetNumbers,placedOnSheet,definitionsDigest. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""categories"":{""type"":""array"",""items"":{""type"":""string""}},""nameContains"":{""type"":""string""},""fieldGuid"":{""type"":""string"",""description"":""Shared-parameter GUID: instead of the list, return its impact - schedules with fields on it plus the view filters that reference it""},""includeTemplates"":{""type"":""boolean"",""default"":false},""includeInternal"":{""type"":""boolean"",""default"":false},""includeRevision"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""description"":""Allowed: scheduleId,id,name,uniqueId,category|categoryName,fieldCount,hiddenFieldCount,fields,rowCount,isKeySchedule,isMulticategory,isTemplate,sheetNumbers,placedOnSheet,definitionsDigest. Returned keys match the requested names."",""items"":{""type"":""string""}},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -48,6 +51,21 @@ public sealed class ListSchedulesTool : AgentReadToolBase
     {
         var categories = AgentJson.GetStringArray(args, "categories");
         var nameContains = AgentJson.GetString(args, "nameContains");
+        var fieldGuidText = AgentJson.GetString(args, "fieldGuid");
+        Guid? fieldGuid = null;
+        if (!string.IsNullOrWhiteSpace(fieldGuidText))
+        {
+            if (!Guid.TryParse(fieldGuidText, out var parsedGuid))
+            {
+                return ToolResult.Fail(
+                    "invalid_arguments",
+                    "'" + fieldGuidText + "' is not a valid GUID. " +
+                    "[Action: pass the guid of a shared parameter definition - " +
+                    "list_shared_parameters lists them]");
+            }
+
+            fieldGuid = parsedGuid;
+        }
         var includeTemplates = AgentJson.GetBool(args, "includeTemplates", false);
         var includeInternal = AgentJson.GetBool(args, "includeInternal", false);
         var includeRevision = AgentJson.GetBool(args, "includeRevision", false);
@@ -77,6 +95,9 @@ public sealed class ListSchedulesTool : AgentReadToolBase
 
         var sheetNumbers = AgentScheduleReader.MapSheetNumbers(doc);
         var matched = new List<ScheduleCard>();
+        var impact = fieldGuid.HasValue
+            ? new List<(ScheduleCard Card, List<string> Headings)>()
+            : null;
         foreach (var schedule in AgentScheduleReader.Collect(doc))
         {
             ct.ThrowIfCancellationRequested();
@@ -92,7 +113,20 @@ public sealed class ListSchedulesTool : AgentReadToolBase
             if (categoryIdSet.Count > 0 && !MatchesCategory(schedule, categoryIdSet))
                 continue;
 
-            matched.Add(AgentScheduleReader.CreateCard(doc, schedule, sheetNumbers));
+            var card = AgentScheduleReader.CreateCard(doc, schedule, sheetNumbers);
+            matched.Add(card);
+            if (impact is not null
+                && GuidFieldHeadings(doc, schedule, fieldGuid!.Value) is { Count: > 0 } headings)
+            {
+                impact.Add((card, headings));
+            }
+        }
+
+        // The impact report replaces the list: which schedules and view filters
+        // would feel a replacement of this shared parameter (S.48, #533).
+        if (fieldGuid.HasValue)
+        {
+            return BuildGuidImpact(doc, fieldGuid.Value, matched.Count, impact!);
         }
 
         matched.Sort((left, right) =>
@@ -195,6 +229,167 @@ public sealed class ListSchedulesTool : AgentReadToolBase
                 ? " " + duplicateGroups.Count + " duplicate definition group(s)."
                 : string.Empty) +
             PageHint(hasMore));
+    }
+
+    /// <summary>
+    /// Headings of this schedule's fields that sit on the shared parameter with
+    /// the GUID (hidden fields included - they break with the parameter too).
+    /// </summary>
+    private static List<string> GuidFieldHeadings(Document doc, ViewSchedule schedule, Guid guid)
+    {
+        var headings = new List<string>();
+        try
+        {
+            var order = schedule.Definition.GetFieldOrder();
+            foreach (var fieldId in order)
+            {
+                var field = schedule.Definition.GetField(fieldId);
+                if (field is null)
+                    continue;
+
+                var fieldGuid = AgentScheduleReader.DescribeParameterGuid(doc, field);
+                if (fieldGuid is null
+                    || !string.Equals(fieldGuid, guid.ToString("D"), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var heading = field.ColumnHeading;
+                if (string.IsNullOrWhiteSpace(heading))
+                    heading = field.GetName();
+                headings.Add(heading ?? "(unnamed field)");
+            }
+        }
+        catch (Exception)
+        {
+            // A schedule that cannot open its definition contributes nothing.
+        }
+
+        return headings;
+    }
+
+    private const int MaxImpactSchedules = 50;
+
+    /// <summary>
+    /// The impact payload of a shared-parameter GUID: schedules with fields on
+    /// it plus the view filters whose rules reference it - everything a
+    /// replace_family_parameter would touch on the documentation side.
+    /// </summary>
+    private static ToolResult BuildGuidImpact(
+        Document doc,
+        Guid guid,
+        int schedulesScanned,
+        List<(ScheduleCard Card, List<string> Headings)> impact)
+    {
+        string? parameterName = null;
+        var filterRows = new List<object>();
+        var filtersScanned = 0;
+        try
+        {
+            foreach (var element in new FilteredElementCollector(doc)
+                         .OfClass(typeof(ParameterFilterElement)))
+            {
+                if (element is not ParameterFilterElement filter)
+                    continue;
+
+                filtersScanned++;
+                var references = false;
+                foreach (var parameterId in filter.GetElementFilterParameters())
+                {
+                    if (doc.GetElement(parameterId) is SharedParameterElement shared
+                        && shared.GuidValue == guid)
+                    {
+                        references = true;
+                        break;
+                    }
+                }
+
+                if (!references)
+                    continue;
+
+                var views = new List<string>();
+                foreach (var view in new FilteredElementCollector(doc)
+                             .OfClass(typeof(View))
+                             .Cast<View>()
+                             .Where(view => !view.IsTemplate))
+                {
+                    if (view.GetFilters().Contains(filter.Id) && views.Count < 10)
+                        views.Add(view.Name);
+                }
+
+                filterRows.Add(new
+                {
+                    filterId = filter.Id.GetValue(),
+                    name = filter.Name,
+                    viewCount = views.Count,
+                    views
+                });
+            }
+
+            parameterName = FindSharedParameterName(doc, guid);
+        }
+        catch (Exception)
+        {
+            // Filter scanning is a bonus: a failure there must not sink the
+            // schedule half of the report.
+        }
+
+        var rows = impact
+            .OrderBy(row => row.Card.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxImpactSchedules)
+            .Select(row => new
+            {
+                scheduleId = row.Card.ScheduleId,
+                name = row.Card.Name,
+                fieldCount = row.Headings.Count,
+                headings = row.Headings,
+                sheetNumbers = row.Card.SheetNumbers,
+                rowCount = row.Card.RowCount
+            })
+            .ToList();
+        var payload = new
+        {
+            fieldGuid = guid.ToString("D"),
+            parameterName,
+            schedulesScanned,
+            schedulesUsing = impact.Count,
+            fieldsUsing = impact.Sum(row => row.Headings.Count),
+            schedulesTruncated = impact.Count > rows.Count,
+            schedules = rows,
+            viewFilterCount = filterRows.Count,
+            viewFilters = filterRows.Count > 0 ? filterRows : null,
+            note = "Impact of the shared parameter: schedules list every field that sits on " +
+                   "the GUID (hidden included); viewFilters are the named filters whose rules " +
+                   "reference it (views = up to 10 that apply the filter). The categories/" +
+                   "nameContains filters still apply - call without them for the whole project. " +
+                   "family types that carry the parameter come from find_families_with_parameter."
+        };
+        return ToolResult.Ok(
+            AgentJson.Serialize(payload),
+            "Shared parameter " + guid.ToString("D") +
+            (parameterName is null ? string.Empty : " ('" + parameterName + "')") +
+            ": " + impact.Count + " of " + schedulesScanned + " schedule(s), " +
+            impact.Sum(row => row.Headings.Count) + " field(s)" +
+            (filterRows.Count > 0
+                ? ", " + filterRows.Count + " view filter(s)"
+                : ", no view filters") +
+            ".");
+    }
+
+    private static string? FindSharedParameterName(Document doc, Guid guid)
+    {
+        try
+        {
+            return new FilteredElementCollector(doc)
+                .OfClass(typeof(SharedParameterElement))
+                .Cast<SharedParameterElement>()
+                .FirstOrDefault(shared => shared.GuidValue == guid)
+                ?.Name;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>

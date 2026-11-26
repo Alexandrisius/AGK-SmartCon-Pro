@@ -192,6 +192,13 @@ public sealed class RemoveViewportsTool : AgentWriteToolBase
                 viewIdValue, viewport.SheetId.GetValue(), centerMmX, centerMmY);
             report.NewValue = viewName;
 
+            if (WorksharingScope.TryGetBlock(viewport.Id, out var block))
+            {
+                Skip(outcome, report, block);
+                rows.Add(new { viewportId, viewId = knownViewId, status = "skipped" });
+                continue;
+            }
+
             try
             {
                 doc.Delete(viewport.Id);

@@ -52,9 +52,23 @@ internal static class AgentResultPath
             {
                 if (!TryParseIndex(segment, array.Count, out var index))
                 {
-                    error = "Path segment '" + segment + "' is not a valid array index " +
-                            "(use 0-based [n], a negative index from the end, or a property name).";
-                    return null;
+                    // Column projection: a property name applied to an array maps
+                    // over the elements - data.rows.typeId yields the typeId of
+                    // every row - so a $result argument produces a ready array of
+                    // scalars instead of being limited to one cell (S.47, #532).
+                    // The clone matters: the cells still sit inside the parsed
+                    // document and cannot join another tree.
+                    var mapped = new JsonArray();
+                    foreach (var item in array)
+                    {
+                        if (item is JsonObject row && row.TryGetPropertyValue(segment, out var cell))
+                            mapped.Add(Clone(cell));
+                        else
+                            mapped.Add(null);
+                    }
+
+                    node = mapped;
+                    continue;
                 }
 
                 node = array[index];

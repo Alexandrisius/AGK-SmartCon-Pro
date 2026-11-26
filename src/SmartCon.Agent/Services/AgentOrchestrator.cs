@@ -28,6 +28,13 @@ public sealed partial class AgentOrchestrator
     private readonly IAgentContextCompactor? _contextCompactor;
     private readonly IAgentCompactionStore? _compactionStore;
 
+    /// <summary>
+    /// Paging-storm guard per conversation (S.45): unlike the per-turn loop
+    /// guard it survives user messages, because the observed storm spanned
+    /// three turns and every reply reset the counters.
+    /// </summary>
+    private readonly Dictionary<Guid, PaginationGuard> _paginationGuards = new();
+
     public AgentOrchestrator(
         IAgentLlmClient llm,
         IToolExecutor toolExecutor,
@@ -228,6 +235,8 @@ public sealed partial class AgentOrchestrator
             var toolCallCount = 0;
             var loopGuard = new LoopGuard();
             var storms = new ToolStormTracker();
+            var pagination = PaginationGuardFor(conversationId);
+            var resultCache = new Dictionary<string, CachedToolResult>(StringComparer.Ordinal);
             var loopAborted = false;
 
             // No round or time cap: the turn runs until the model stops, the user
@@ -400,6 +409,7 @@ public sealed partial class AgentOrchestrator
 
                     var startedAt = Stopwatch.GetTimestamp();
                     ToolResult result;
+                    string? reuseHandle = null;
                     if (loopAborted)
                     {
                         result = LoopAbortedResult(toolCall.Name);
@@ -432,9 +442,68 @@ public sealed partial class AgentOrchestrator
                         }
                         else
                         {
-                            result = await ExecuteObservedToolAsync(
-                                loopGuard, storms, toolCall, argumentsJson, exempt, round, ct)
-                                .ConfigureAwait(false);
+                            var paging = pagination.BeforeCall(toolCall.Name, argumentsJson);
+                            if (paging.Action == PaginationGuardAction.Block)
+                            {
+                                SmartConLogger.Info(
+                                    "Agent pagination guard blocked the tool call: tool=" +
+                                    toolCall.Name + ", sameObjectReads=" + paging.Calls);
+                                result = ToolResult.Fail(
+                                    "pagination_loop",
+                                    paging.Hint!,
+                                    data: JsonSerializer.SerializeToElement(new
+                                    {
+                                        sameObjectReads = paging.Calls
+                                    }));
+                            }
+                            else if (TryServeCachedResult(
+                                         resultCache, toolCall, argumentsJson,
+                                         out var cached))
+                            {
+                                cached.Served++;
+                                if (cached.Served >= 2)
+                                {
+                                    // Warnings did not break the observed loops
+                                    // (S.45): the third identical read is refused
+                                    // with an error, so the model must change
+                                    // what it does.
+                                    SmartConLogger.Info(
+                                        "Agent duplicate-call guard blocked the tool call: tool=" +
+                                        toolCall.Name + ", repeats=" + (cached.Served + 1));
+                                    result = ToolResult.Fail(
+                                        "duplicate_call",
+                                        "This exact call already ran twice in this turn and its " +
+                                        "result is unchanged — it is refused now. [Action: do not " +
+                                        "call it again; the result is already in the conversation " +
+                                        "above (read_tool_result pages the stored payload). Move on " +
+                                        "to the next step of the task — for a fill task that is " +
+                                        "the set_parameters dry run]");
+                                }
+                                else
+                                {
+                                    // The first identical repeat is served from the
+                                    // cache: no second Revit execution, no second
+                                    // copy of the payload (S.45).
+                                    reuseHandle = string.IsNullOrEmpty(cached.Handle)
+                                        ? null
+                                        : cached.Handle;
+                                    result = cached.Result.WithWarnings(new[]
+                                    {
+                                        "Identical repeated call in this turn: the result below is " +
+                                        "the same one you already received. Do not repeat it again — " +
+                                        "the next identical call will be refused; read the stored " +
+                                        "result with read_tool_result or move on to the next step."
+                                    });
+                                }
+                            }
+                            else
+                            {
+                                result = await ExecuteObservedToolAsync(
+                                        loopGuard, storms, toolCall, argumentsJson, exempt, round, ct)
+                                    .ConfigureAwait(false);
+                                if (paging.Action == PaginationGuardAction.Warn && result.Success)
+                                    result = result.WithWarnings(new[] { paging.Hint! });
+                            }
                         }
                     }
 
@@ -452,9 +521,11 @@ public sealed partial class AgentOrchestrator
                     // if the user pressed Stop meanwhile. Otherwise the history
                     // keeps an assistant tool_call with no result, the next turn
                     // synthesizes "not executed", and the model may repeat a write.
-                    var serializedResult =
-                        await SerializeToolResultAsync(toolCall, result, CancellationToken.None)
-                            .ConfigureAwait(false);
+                    var serialization = await SerializeToolResultAsync(
+                            toolCall, result, CancellationToken.None, reuseHandle)
+                        .ConfigureAwait(false);
+                    var serializedResult = serialization.Json;
+                    TrackResultCache(resultCache, toolCall, result, serialization.Handle);
                     var toolMessage = AgentMessage
                         .ToolResult(toolCall.Id, serializedResult)
                         .WithSessionIndex(persistedMessageCount + 1);

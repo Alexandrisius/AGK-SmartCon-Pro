@@ -44,6 +44,34 @@ public sealed class SetParametersTool : AgentWriteToolBase
         InputSchemaJson = @"{""type"":""object"",""properties"":{""items"":{""type"":""array"",""minItems"":1,""maxItems"":500,""items"":{""type"":""object"",""properties"":{""elementId"":{""type"":""integer""},""parameter"":{""type"":""string""},""guid"":{""type"":""string""},""value"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""instance"",""type""]},""unit"":{""type"":""string""}},""required"":[""elementId"",""value""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false},""allowUnverifiedClassification"":{""type"":""boolean"",""default"":false,""description"":""A classification code (Assembly Code) is refused unless it is present in the classification table loaded in the document; with no table loaded any code is refused. Pass true only when the user dictated the code explicitly.""}},""required"":[""items""],""additionalProperties"":false}"
     };
 
+    protected override IEnumerable<ElementId> CollectWriteTargets(
+        Document document,
+        JsonElement args)
+    {
+        var request = AgentJson.Deserialize<SetParametersRequest>(args);
+        var items = request?.Items;
+        if (items is null)
+            yield break;
+
+        foreach (var item in items)
+        {
+            var element = document.GetElement(ElementIdCompat.Create(item.ElementId));
+            if (element is null)
+                continue;
+
+            // scope=type writes the type element, which is not among the ids in the
+            // arguments: it needs the same ownership check as the instance does.
+            var resolution = AgentParameterWriteHelper.Resolve(
+                document, element, item.Parameter, item.Guid, item.Scope);
+            if (resolution.Ok
+                && resolution.IsTypeScope
+                && resolution.Parameter?.Element is { } typeElement)
+            {
+                yield return typeElement.Id;
+            }
+        }
+    }
+
     protected override void Apply(
         Document doc,
         JsonElement args,
@@ -108,6 +136,17 @@ public sealed class SetParametersTool : AgentWriteToolBase
             var scopeKey = resolution.IsTypeScope ? "type:" : "instance:";
             var parameterName = parameter.Definition?.Name ?? item.Parameter ?? item.Guid ?? "?";
             report.Name = scopeKey + parameterName;
+
+            // A workshared model refuses a write to an element owned by another user
+            // by rolling back the whole transaction. Skip that item and keep the rest.
+            var ownershipTarget = resolution.IsTypeScope && parameter.Element is not null
+                ? parameter.Element
+                : element;
+            if (WorksharingScope.TryGetBlock(ownershipTarget.Id, out var block))
+            {
+                Skip(outcome, report, block);
+                continue;
+            }
 
             AgentClassificationGuard.Verdict? classification = null;
             if (AgentClassificationGuard.IsAssemblyCode(parameter))

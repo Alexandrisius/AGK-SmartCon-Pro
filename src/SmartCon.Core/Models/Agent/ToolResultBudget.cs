@@ -50,7 +50,10 @@ public static class ToolResultBudget
 
     private static readonly string[] DigestInlineProperties =
     {
-        "summary", "selection", "setParametersNote"
+        "summary", "selection", "setParametersNote", "note",
+        // S.45: the composition of a paged set must survive the digest, or the
+        // model pages one row at a time to learn what the payload holds.
+        "byCategory", "uniqueTypes", "sampleTypeNames"
     };
 
     private static readonly string[] TrimmableArrays =
@@ -189,6 +192,27 @@ public static class ToolResultBudget
                 data["resultHandle"] = resultHandle;
             AppendTruncationNote(
                 root, largest.Name, largest.Array.Count, largest.OriginalCount, resultHandle);
+        }
+    }
+
+    /// <summary>
+    /// Adds resultHandle into the data object of an UNTRIMMED serialized result
+    /// (AlwaysStoreResult tools): the model sees the reference target in every
+    /// call of the tool, not only in trimming envelopes (S.47, #532).
+    /// </summary>
+    public static string InjectResultHandle(string json, string resultHandle)
+    {
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject root || root["data"] is not JsonObject data)
+                return json;
+
+            data["resultHandle"] = resultHandle;
+            return root.ToJsonString(SerializerOptions);
+        }
+        catch (JsonException)
+        {
+            return json;
         }
     }
 

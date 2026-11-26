@@ -376,6 +376,12 @@ public static class AgentToolCatalog
                 "данные ведомости", "строки спецификации", "содержимое ведомости",
                 "schedule data", "таблица ведомости", "значения ведомости"
             }),
+            ["get_schedule_elements"] = new("Read", false, new[]
+            {
+                "элементы ведомости", "элементы спецификации", "id строк спецификации",
+                "какие элементы в ведомости", "schedule elements", "element ids of schedule",
+                "типы в спецификации", "состав спецификации"
+            }),
             ["list_sheets"] = new("Read", false, new[]
             {
                 "листы", "лист", "комплект листов", "номера листов", "sheets", "sheet list",

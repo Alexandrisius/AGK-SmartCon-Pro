@@ -85,6 +85,14 @@ public sealed class AgentSemanticRanker
     public bool IsEnabled => _client.IsEnabled;
 
     /// <summary>
+    /// Per-model question budget of one tool call (S.49, #534): how many
+    /// prompts (family + type questions) a classify run may put on the decision
+    /// channel before it is chunked. Free models drop long chains; the value is
+    /// a setting because no API exposes it.
+    /// </summary>
+    public int MaxQuestionsPerToolCall { get; init; } = AgentClassificationBudget.DefaultMaxQuestionsPerToolCall;
+
+    /// <summary>
     /// Ranks one request against one candidate list: the list is split into
     /// Choice batches of at most <see cref="MaxChoiceOptions"/> options, the
     /// batches are asked in separate calls and merged by max probability.

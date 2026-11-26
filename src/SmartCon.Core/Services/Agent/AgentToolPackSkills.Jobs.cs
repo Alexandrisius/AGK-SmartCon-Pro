@@ -23,13 +23,13 @@ public static partial class AgentToolPackSkills
 
 ### Кухня Revit
 - Транзакция дорога: 10 коммитов ≈7.3 с против 1.4 с у группы, 10×100 элементов — 202 с против 44 с (замеры сообщества). Джоба коммитит **пачками** (`batchSize`, 50), не по элементу.
-- Worksharing: правка элемента, занятого другим пользователем, откатывает **всю** транзакцию (try/catch не спасает); ошибка валит пачку, а не один элемент.
+- Worksharing: движок берёт ownership пачки до транзакции; юнит, чей элемент занят другим пользователем или устарел, помечается `skipped` с причиной, остальные юниты пачки пишутся. Пропущенные повторить после relinquish/Reload Latest (`retry_failed_items` их не берёт — они не failed).
 - Отмена в Revit API кооперативная: прервать чужой вызов нельзя. `cancel_job` выставляет флаг, движок проверяет его между пачками и возвращает частичный отчёт.
 - `RegenerationFailedException` при коммите = повреждение документа — фатально, продолжать нельзя.
 - Revit однопоточен: джоба живёт в ExternalEvent-контексте; прогресс виден только через опрос статуса.
 
 ### Аргументы (start_job)
-- `spec.select` — селектор: `viewIds/elementIds/nameContains/nameStartsWith/nameEndsWith/viewTypes/types/levelIds/folders/templateId/hasTemplate/familyIds/familyNames (стабильнее id)/categoryNames/typeIds/conditions[]/logic/limit`.
+- `spec.select` — селектор, состав ЗАВИСИТ от action: `rename_views` — `viewIds/viewTypes/types/levelIds/folders/template*` и др.; `set_parameters` — `elementIds/categoryIds/categoryNames/categories/levelIds/typeIds/familyName/familyNames/typeName/nameContains/conditions[]/logic/systemName/includeSubComponents/limit`; семейные — `familyIds/familyNames (стабильнее id)/typeNames`. Точный список допустимых ключей для твоего action вернёт отказ `job_spec_invalid`.
 - `spec.rename` — `find/replace/prefix/suffix/setName` (`{n}`,`{name}`,`{index}`) и `numbering{start,step,padding,format}`; у видов `excludeSheets` по умолчанию true.
 - `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (≤100), `createTarget:true` — цель создать из ФОП (definition в файле не откатывается).
 - `spec.replacements` — `replace_family_parameter`: `{source:{name|guid}, target:{name|guid}}` (≤50); цель — существующий definition из ФОП, scope/значения/формулы сохраняются.
@@ -52,7 +52,8 @@ public static partial class AgentToolPackSkills
 1. Переименовать 800 видов: `start_job(action=""rename_views"", spec:{select:{viewTypes:[""FloorPlan""]}, rename:{find:""Копия"", replace:""""}})`, прочитать превью → apply с digest.
 2. Проставить параметр 3000 элементам: селектор `conditions` + `spec.parameter/value/unit` → превью → apply → `get_job_report(includeItems=false)`.
 3. Заменить общий параметр на параметр заказчика по всем семействам серии: `start_job(action=""replace_family_parameter"", spec:{select:{nameContains:""<часть старого имени>""}, replacements:[{source:{name:""<старый параметр>""}, target:{name:""<новый параметр>""}}]})` — превью (blastRadius по формулам) → apply. Имена — из задачи, не из примера.
-4. Часть элементов недоступна (worksharing): `onError=""continue""`, затем `retry_failed_items`.
+4. Часть элементов недоступна (worksharing): юниты уже в `skipped` с причиной; после relinquish/Reload Latest запусти ту же джобу в preview, чтобы пропущенные снова вошли в apply.
+5. Юнит упал по другой причине: `onError=""continue""` + `retry_failed_items`.
 
 ### Что нельзя
 - Запускать apply без прочитанного превью и без `previewDigest`.

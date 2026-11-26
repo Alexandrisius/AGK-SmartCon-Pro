@@ -262,6 +262,17 @@ public sealed class JobUnitApply
     /// <summary>The unit was already at its target at apply time: no transaction, no write.</summary>
     public bool Skipped { get; init; }
 
+    /// <summary>
+    /// Set when the unit was skipped for an external reason (the element is owned
+    /// by another user or out of date in a workshared model), not because it was
+    /// already at its target. The reason is reported and the unit can be retried
+    /// after the owner synchronizes.
+    /// </summary>
+    public string? UnavailableReason { get; init; }
+
+    /// <summary>Stable code of the skip reason (worksharing block code), for grouping.</summary>
+    public string? UnavailableCode { get; init; }
+
     public string? ExpectedJson { get; init; }
 
     public string? UndoJson { get; init; }

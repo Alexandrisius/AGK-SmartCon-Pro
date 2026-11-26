@@ -23,7 +23,8 @@ internal static class JobToolPayloads
         JobRecord job,
         bool includeSample = false,
         object? recentJobs = null,
-        IReadOnlyList<JobItem>? failedItems = null)
+        IReadOnlyList<JobItem>? failedItems = null,
+        IReadOnlyList<JobItem>? skippedItems = null)
     {
         var preview = Preview(job);
         var totals = Totals(job);
@@ -73,6 +74,9 @@ internal static class JobToolPayloads
             // CAUSE (the unit's errorCode), so get_job_report is not needed to
             // learn why units failed.
             failureCauses = FailureCauses(failedItems),
+            // Why units were skipped: "2 skipped" without a reason cost a
+            // get_job_report round just to learn it was duplicates (S.47, #532).
+            skippedByReason = SkippedReasons(skippedItems),
             failedUnits = includeSample ? FailedUnits(failedItems, MaxFailedUnits) : null,
             warnings = preview?.Warnings,
             recentJobs,
@@ -226,6 +230,81 @@ internal static class JobToolPayloads
             0,
             1000000,
             ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Skipped units of an applied job, or null when there are none (no store
+    /// round trip for a clean run). Preview-time "already match" skips are not
+    /// job items.
+    /// </summary>
+    internal static async Task<IReadOnlyList<JobItem>?> LoadSkippedItemsAsync(
+        IJobStore store,
+        JobRecord job,
+        CancellationToken ct)
+    {
+        if (job.StartedAt is null || Totals(job).Skipped <= 0)
+        {
+            return null;
+        }
+
+        return await store.LoadItemsAsync(
+            job.JobId,
+            new[] { JobItemState.Skipped },
+            0,
+            1000000,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Skips grouped by reason: the stable code when there is one, the clipped
+    /// detail for legacy text-only skips, already_matches when the unit needed
+    /// no change at all.
+    /// </summary>
+    internal static object? SkippedReasons(IReadOnlyList<JobItem>? items)
+    {
+        if (items is null || items.Count == 0)
+        {
+            return null;
+        }
+
+        return items
+            .GroupBy(item =>
+                    !string.IsNullOrWhiteSpace(item.ErrorCode)
+                        ? item.ErrorCode!.Trim()
+                        : !string.IsNullOrWhiteSpace(item.ErrorDetail)
+                            ? Clip(item.ErrorDetail) ?? "skipped"
+                            : "already_matches",
+                StringComparer.Ordinal)
+            .OrderByDescending(group => group.Count())
+            .Select(group => new
+            {
+                reason = group.Key,
+                count = group.Count(),
+                exampleUnit = group.First().Label
+            })
+            .ToArray();
+    }
+
+    /// <summary>One-line skip summary for the status message: "reason ×n, reason ×n".</summary>
+    internal static string SkippedReasonsLine(IReadOnlyList<JobItem>? items)
+    {
+        if (items is null || items.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Join(
+            ", ",
+            items
+                .GroupBy(item =>
+                        !string.IsNullOrWhiteSpace(item.ErrorCode)
+                            ? item.ErrorCode!.Trim()
+                            : !string.IsNullOrWhiteSpace(item.ErrorDetail)
+                                ? Clip(item.ErrorDetail) ?? "skipped"
+                                : "already_matches",
+                    StringComparer.Ordinal)
+                .OrderByDescending(group => group.Count())
+                .Select(group => group.Key + " ×" + group.Count()));
     }
 
     /// <summary>Failures grouped by the code of the cause, biggest group first.</summary>

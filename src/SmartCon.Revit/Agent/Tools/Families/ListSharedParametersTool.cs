@@ -42,8 +42,10 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             "definition with name, GUID, data type, parameter group, visible and " +
             "userModifiable flags. Use it to pick the exact definition before " +
             "add_family_parameter(isShared=true) or to check which ФОП is active. " +
-            "Filters: group, nameContains; paged with limit/offset.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""group"":{""type"":""string"",""description"":""Group name or its part (case-insensitive)""},""nameContains"":{""type"":""string""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+            "Filters: group, nameContains; paged with limit/offset. summary=true " +
+            "returns the inventory without pages: byPrefix[] and byGroup[] counters " +
+            "over the whole (filtered) file.",
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""group"":{""type"":""string"",""description"":""Group name or its part (case-insensitive)""},""nameContains"":{""type"":""string""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Inventory in one call: byPrefix[] (the part of the name before '_'), byGroup[] with definition counts - no pages to read""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     public override bool SupportsDocumentRouting => false;
@@ -139,6 +141,38 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
                 ? byGroup
                 : string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
         });
+
+        // The inventory in one call: prefix/group counters over the whole
+        // (filtered) file instead of paging through 130 definitions (S.48, #533).
+        if (AgentJson.GetBool(args, "summary", false))
+        {
+            var byPrefix = matches
+                .GroupBy(row => AgentSharedParameterResolver.PrefixOf(row.Name))
+                .Select(group => new { prefix = group.Key, count = group.Count() })
+                .OrderByDescending(entry => entry.count)
+                .ThenBy(entry => entry.prefix, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var byGroup = matches
+                .GroupBy(row => row.Group)
+                .Select(group => new { group = group.Key, count = group.Count() })
+                .OrderByDescending(entry => entry.count)
+                .ThenBy(entry => entry.group, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            return ToolResult.Ok(
+                AgentJson.Serialize(new Dictionary<string, object?>
+                {
+                    ["filePath"] = file.Filename,
+                    ["groupsCount"] = groupsCount,
+                    ["total"] = matches.Count,
+                    ["byPrefix"] = byPrefix,
+                    ["byGroup"] = byGroup,
+                    ["note"] = "summary=true: counters over the whole (filtered) file; the " +
+                               "prefix is the part of the definition name before '_'. Read the " +
+                               "definitions of one bucket with nameContains=<prefix>."
+                }),
+                "Shared parameter file '" + file.Filename + "': " + matches.Count +
+                " definition(s), " + byPrefix.Count + " prefix(es), " + byGroup.Count + " group(s).");
+        }
 
         var page = new List<Dictionary<string, object?>>();
         for (var index = offset; index < matches.Count && page.Count < limit; index++)

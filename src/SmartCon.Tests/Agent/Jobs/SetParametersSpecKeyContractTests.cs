@@ -18,7 +18,7 @@ public sealed class SetParametersSpecKeyContractTests
             Path = string.Empty,
             AllowedKeys = new[]
             {
-                "select", "parameter", "guid", "builtInParameter", "scope", "value", "unit",
+                "select", "values", "parameter", "guid", "builtInParameter", "scope", "value", "unit",
                 "allowUnverifiedClassification"
             }
         },
@@ -27,8 +27,8 @@ public sealed class SetParametersSpecKeyContractTests
             Path = "select",
             AllowedKeys = new[]
             {
-                "elementIds", "categoryIds", "categoryNames", "levelIds", "typeIds",
-                "familyName", "typeName", "nameContains", "conditions", "logic",
+                "elementIds", "categoryIds", "categoryNames", "categories", "levelIds", "typeIds",
+                "familyName", "familyNames", "typeName", "nameContains", "conditions", "logic",
                 "includeTypeParameters", "limit", "systemName", "systemDomain",
                 "includeSubComponents"
             }
@@ -36,6 +36,27 @@ public sealed class SetParametersSpecKeyContractTests
         new()
         {
             Path = "select.conditions[]",
+            AllowedKeys = new[] { "parameter", "op", "value", "unit" }
+        },
+        new()
+        {
+            Path = "values[]",
+            AllowedKeys = new[] { "select", "value" }
+        },
+        new()
+        {
+            Path = "values[].select",
+            AllowedKeys = new[]
+            {
+                "elementIds", "categoryIds", "categoryNames", "categories", "levelIds", "typeIds",
+                "familyName", "familyNames", "typeName", "nameContains", "conditions", "logic",
+                "includeTypeParameters", "limit", "systemName", "systemDomain",
+                "includeSubComponents"
+            }
+        },
+        new()
+        {
+            Path = "values[].select.conditions[]",
             AllowedKeys = new[] { "parameter", "op", "value", "unit" }
         }
     };
@@ -84,6 +105,50 @@ public sealed class SetParametersSpecKeyContractTests
 
         Assert.NotNull(error);
         Assert.Contains("select.allowUnverifiedClassification", error);
+    }
+
+    [Theory]
+    [InlineData("familyNames")]
+    [InlineData("categories")]
+    public void Plural_selector_aliases_are_known_keys_of_select(string key)
+    {
+        // The session fb3b66f6 failed on exactly these keys: the card promised
+        // them, the strict validator refused them (S.46, #531).
+        var error = JobSpecKeyValidator.Validate(
+            @"{""select"":{""" + key + @""":[""Кран шаровой""],""familyName"":""x""}," +
+            @"""parameter"":""ADSK_Позиция"",""value"":""1""}",
+            Rules);
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void Values_entries_carry_a_selector_and_a_value_only()
+    {
+        var ok = JobSpecKeyValidator.Validate(
+            @"{""values"":[{""select"":{""categoryIds"":[200]},""value"":""A""}," +
+            @"{""select"":{""typeIds"":[300,301]},""value"":""B""}]," +
+            @"""parameter"":""ADSK_Позиция""}",
+            Rules);
+        Assert.Null(ok);
+
+        var unknown = JobSpecKeyValidator.Validate(
+            @"{""values"":[{""select"":{""elementIds"":[101]},""value"":""A"",""unit"":""mm""}]," +
+            @"""parameter"":""ADSK_Позиция""}",
+            Rules);
+        Assert.NotNull(unknown);
+        Assert.Contains("values[].unit", unknown);
+    }
+
+    [Fact]
+    public void Values_select_accepts_the_same_keys_as_the_root_select()
+    {
+        var error = JobSpecKeyValidator.Validate(
+            @"{""values"":[{""select"":{""familyNames"":[""Кран""],""categoryNames"":[""Трубы""]}," +
+            @"""value"":""A""}],""parameter"":""ADSK_Позиция""}",
+            Rules);
+
+        Assert.Null(error);
     }
 
     [Fact]

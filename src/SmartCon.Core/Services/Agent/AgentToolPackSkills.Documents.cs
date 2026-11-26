@@ -35,11 +35,12 @@ public static partial class AgentToolPackSkills
 - «Уже открытая» модель не переоткрывается: тул находит её по пути среди открытых и регистрирует существующую (`wasAlreadyOpen=true`; активная — `isActive=true` + warning).
 - Рабочая общая модель (central) и её локальная копия не открываются в одной сессии одновременно (`open_conflict`).
 - Статус документа: `isModifiable` истина ТОЛЬКО пока в документе открыта транзакция; вне транзакции
-  false — это норма, а не запрет. Запись запрещает `isReadOnly`. Write-тулы агента не работают с
-  моделями в совместном доступе (`workshared_not_supported`) и отказывают в документе семейства
-  (`not_a_project_document`); при открытом редакторе семейства family-тулы отвечают `family_open_conflict`.
+  false — это норма, а не запрет. Запись запрещает `isReadOnly`. В workshared-модели write-тулы работают:
+  занятые другим пользователем элементы и устаревшие попадают в `skipped[]`, остальные пишутся;
+  в документе семейства — `not_a_project_document`; при открытом редакторе семейства family-тулы
+  отвечают `family_open_conflict`.
 - `get_document_status` ничего не меняет: он объясняет отказ, а не снимает его — причину убирает
-  пользователь в Revit (закрыть редактор семейства, открыть detached-копию, завершить операцию).
+  пользователь в Revit (закрыть редактор семейства, завершить операцию, попросить relinquish).
 
 ### Инварианты
 - Донор только читается — правка чужих моделей и UI-активация (`OpenAndActivateDocument`) запрещены (решение владельца).
@@ -57,8 +58,10 @@ public static partial class AgentToolPackSkills
 5. Путь не назван? `list_known_models(query=«что там делали»)` → уточни у пользователя, прежде чем открывать найденное.
 
 Проверка «почему нельзя писать»
-1. Write-тул ответил `document_not_modifiable`, `permission_denied`, `workshared_not_supported`,
+1. Write-тул ответил `document_not_modifiable`, `permission_denied`,
    `not_a_project_document` или `family_open_conflict` → `get_document_status()`.
+   Для занятых элементов — `skipped[]` с `element_owned_by_other_user`/`element_out_of_date`:
+   это не отказ, остальные элементы уже записаны; повтори пропущенные после relinquish/Reload Latest.
 2. Прочитай `blockers[]` (код, причина, `[Action]`) и покажите пользователю следующий шаг; не повторяйте
    запись, пока блокер не снят. Нужен статус фонового донора — передайте его `documentId`.
 

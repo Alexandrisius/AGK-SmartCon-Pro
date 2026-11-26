@@ -9,7 +9,8 @@ public sealed partial class ClassifyTypesTool
 {
     private static string SetParametersNote(int calls) =>
         "setParameters holds only status=proposed items and is ready for set_parameters (dryRun=true " +
-        "first). When this result is trimmed, do not read it - pass the items by reference: " +
+        "first). Do not read or retype it - pass the items by reference " +
+        "(resultHandle is always present): " +
         (calls <= 1
             ? "items={\"$result\":\"<resultHandle>\",\"path\":\"data/setParameters/items\"}."
             : "one set_parameters call per entry of setParameters.calls (" + calls +
@@ -24,7 +25,9 @@ public sealed partial class ClassifyTypesTool
         ClassifyMatchResult result,
         bool truncated,
         int familiesTotal,
-        IReadOnlyList<ClassifyFamilyGroup> notProcessed)
+        IReadOnlyList<ClassifyFamilyGroup> notProcessed,
+        int questionBudget,
+        int questionsEstimated)
     {
         var proposed = CountOf(result, ClassifyTypeStatus.Proposed);
         var lowConfidence = CountOf(result, ClassifyTypeStatus.LowConfidence);
@@ -69,7 +72,9 @@ public sealed partial class ClassifyTypesTool
                 familiesSelected = groups.Count,
                 familiesProcessed = result.FamiliesProcessed,
                 familiesSkipped = notProcessed.Count,
-                decisionCalls = result.DecisionCalls
+                decisionCalls = result.DecisionCalls,
+                questionBudget,
+                questionsEstimated
             },
             ["alreadySet"] = result.AlreadySetItems.Select(item => new
             {

@@ -23,6 +23,9 @@ public sealed partial class CreateViewFilterTool : AgentWriteToolBase
     {
     }
 
+    // A filter element is not a view: it is created in the active workset.
+    protected override bool RequiresActiveWorkset => true;
+
     public override AgentToolDefinition Definition { get; } = new()
     {
         Name = "create_view_filter",

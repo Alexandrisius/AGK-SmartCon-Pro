@@ -457,6 +457,17 @@ JSON-aware редакция чувствительных данных в лог�
 
 Предохранитель циклов агента (3 block / 5 abort) — единственное ограничение хода besides Stop.
 
+## PaginationGuard
+
+`Services/Agent/PaginationGuard.cs` + `ToolCallIdentity` — стоп-кран пагинационных
+штормов (S.45/#530): один тул по одному объекту (ключ = тул + канонизированные args без
+`limit/offset/page/pageSize/cursor/nextOffset`) — это одно чтение. 4-й вызов по тому же
+объекту → warning с маршрутом (`read_tool_result`/один большой `limit`), 6-й → отказ
+`pagination_loop` до похода в Revit. Живёт на всю беседу (не сбрасывается репликой
+пользователя между ходами, в отличие от `LoopGuard`/`ToolStormTracker`), записи гаснут
+через 10 минут тишины. `ToolCallIdentity.Canonical` — канонический ключ вызова
+(сортировка ключей; вариант без пагин-аргументов = идентичность объекта чтения).
+
 ## ToolStormTracker
 
 `Services/Agent/ToolStormTracker.cs` — мягкие подсказки против «штормов»
@@ -912,3 +923,17 @@ Pending+Applying+Undoing+Undone запрещает `Completed`; `Stale` счит
 идемпотентным; `retry_failed_items` описывает пере-проверку failed-юнитов.
 
 **Файл:** `Services/Agent/AgentToolCards.Jobs.cs` (partial `AgentToolCards`).
+
+## AgentClassificationBudget
+
+Бюджет промптов decision-канала на один вызов `classify_types` (S.49, #534):
+сессия fb3b66f6 положила 416 промптов одним вызовом — бесплатная модель
+оборвала соединение, узкие вызовы отвечали за секунды. Оценка на семейство =
+1 + число типов; чанки никогда не превышают бюджет, а семейство-одиночка
+сверх бюджета идёт само по себе (никогда не откладывается — защита от цикла
+агента). Значение — настройка на модель (`SMARTCON_DECIDER_MAX_QUESTIONS`,
+клэмп 10..2000, дефолт 40): API провайдеров не отдаёт качество-лимит списка,
+только токен-бюджеты. Прокидывается через `AgentSemanticRanker.
+MaxQuestionsPerToolCall` → `AgentClassificationMatcher.QuestionBudget`.
+
+**Файл:** `Services/Agent/AgentClassificationBudget.cs`.

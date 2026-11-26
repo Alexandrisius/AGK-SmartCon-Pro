@@ -30,8 +30,9 @@ public sealed class SetViewVisibilityTool : AgentWriteToolBase
             "(OST_Grids) or the category display name. viewId may be a view template: a " +
             "template is a View, so its category visibility is written directly (no detach " +
             "from a view needed); with select, templates are never matched. " +
-            "Worksets are not supported (the document is not " +
-            "workshared). hideAllExcept is the inverse mode: leave only the listed categories " +
+            "worksets:[{name|worksetId, hidden}] hides or shows user worksets in a " +
+            "workshared document (read them with get_document_status.worksharing). " +
+            "hideAllExcept is the inverse mode: leave only the listed categories " +
             "visible and hide every other category the API can toggle — use it for an isolated " +
             "system view instead of a blocklist that misses a category. Categories the API " +
             "cannot toggle (cameras, parent-controlled sub-categories) are reported in " +

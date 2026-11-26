@@ -39,10 +39,11 @@ public sealed class GetDocumentStatusTool : AgentReadToolBase
             "Editor), workshared or detached, the active workset and who owns it, and whether " +
             "it has ever been saved. Also lists the documents open in this Revit session " +
             "(projects and family documents). writable=true means the document is free: not " +
-            "read-only and no transaction open. Use it after a write tool failed with " +
-            "document_not_modifiable, permission_denied, workshared_not_supported, " +
-            "not_a_project_document or family_open_conflict, and before a long write series. " +
-            "Read-only: opens no transaction and changes nothing.",
+            "read-only and no transaction open. In a workshared local copy writes are allowed: " +
+            "elements owned by other users or out of date are skipped per item. Use it after a " +
+            "write tool failed with document_not_modifiable, permission_denied, " +
+            "central_unavailable, not_a_project_document or family_open_conflict, and before a " +
+            "long write series. Read-only: opens no transaction and changes nothing.",
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJsonLast + @"},""additionalProperties"":false}"
     };
 
@@ -89,14 +90,6 @@ public sealed class GetDocumentStatusTool : AgentReadToolBase
                 "open in the document: the agent's write tools cannot start their own " +
                 "transaction until it closes.",
                 "Wait for the running operation or job to finish, then retry.");
-        }
-
-        if (flags.IsWorkshared == true)
-        {
-            Add("workshared_document", "any",
-                "The document is workshared: the agent's write tools and jobs do not support " +
-                "workshared documents (workshared_not_supported).",
-                "Let the agent work on a detached copy (File > Save As > Detach from Central).");
         }
 
         if (flags.IsFamilyDocument == true)
@@ -146,7 +139,6 @@ public sealed class GetDocumentStatusTool : AgentReadToolBase
                     ? "transaction_open"
                     : "writable";
         var agentWriteTools = writable == true
-                              && flags.IsWorkshared != true
                               && flags.IsFamilyDocument != true
             ? "supported"
             : "blocked";
@@ -188,6 +180,14 @@ public sealed class GetDocumentStatusTool : AgentReadToolBase
                 familyDocumentsTruncated = open.OtherFamilies > open.Rows.Count ? open.OtherFamilies : (int?)null
             },
             worksharing = flags.IsWorkshared == true ? ReadWorksharing(doc) : null,
+            worksharingNote = flags.IsWorkshared != true
+                ? null
+                : flags.IsDetached == true
+                    ? "Detached workshared copy: there is no central to borrow from, edits are " +
+                      "local and allowed."
+                    : "Workshared local copy: free elements are written; an element owned by " +
+                      "another user, an out-of-date element and a non-editable active workset " +
+                      "are skipped per item and can be retried after relinquish/Reload Latest.",
             hint = "isModifiable is true only while a transaction is open in the document; " +
                    "false outside a transaction is the normal state and does not mean the " +
                    "document is locked. Family documents listed in the session may be open in " +
@@ -341,9 +341,10 @@ public sealed class GetDocumentStatusTool : AgentReadToolBase
                 notEditableWorksets = notEditable,
                 notEditableTotal,
                 notEditableTruncated = notEditableTotal > notEditable.Count,
-                note = "IsEditable is true for a workset owned by the current user. The agent's " +
-                       "write tools do not support workshared documents at all; the worksets " +
-                       "are reported for the user, who edits the model in Revit."
+                note = "IsEditable is true for a workset owned by the current user. Writes are " +
+                       "allowed: an element owned by another user, an out-of-date element or a " +
+                       "non-editable active workset is skipped per item (element_owned_by_other_user, " +
+                       "element_out_of_date, workset_owned_by_other_user)."
             };
         }
         catch (Exception ex)

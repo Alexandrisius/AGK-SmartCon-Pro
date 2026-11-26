@@ -114,6 +114,28 @@ public sealed partial class AgentOrchestratorTests
     }
 
     [Fact]
+    public async Task RunTurn_ColumnProjection_ReferenceBecomesArrayOfScalars()
+    {
+        // data/.../elementId maps over the stored rows: the consumer receives a
+        // ready array of scalars - 3000 typeIds without 3000 row objects
+        // (S.47, #532).
+        // "items" (not a custom key): the consumer schema is
+        // additionalProperties:false, so a foreign key would be refused before
+        // the tool runs.
+        var reference =
+            "{\"$result\":\"call_big\",\"path\":\"data/setParameters/items/elementId\"}";
+        var (received, llm) = await RunConsumerAsync("{\"items\":[" + reference + "]}");
+
+        Assert.Contains("\"success\":true", ToolResultOf(llm, 2), StringComparison.Ordinal);
+        var ids = Assert.IsType<JsonElement>(received).GetProperty("items");
+        Assert.Equal(JsonValueKind.Array, ids.ValueKind);
+        Assert.Equal(3000, ids.GetArrayLength());
+        Assert.Equal(JsonValueKind.Number, ids[0].ValueKind);
+        Assert.Equal(1, ids[0].GetInt32());
+        Assert.Equal(3000, ids[2999].GetInt32());
+    }
+
+    [Fact]
     public async Task RunTurn_ToolResult_KeepsNonAsciiTextForTheModel()
     {
         // The sanitized JSON is what the model reads: with the default encoder

@@ -104,7 +104,7 @@ public static partial class AgentToolPackSkills
 - `list_scope_boxes` — боксы: `scopeBoxId`, `name`, `minMm/maxMm`; `assign_scope_box` — `viewIds|viewSelect` + один из `scopeBoxId|scopeBoxName|clear:true`.
 
 ### Кухня Revit
-- Любой write-тул отказывает на **workshared-документе** (`workshared_not_supported`); читать можно.
+- В workshared-модели (локальная копия) писать можно: элемент, занятый другим пользователем, и устаревший (`element_out_of_date`) попадают в `skipped[]`, остальные пишутся. Detached-копия пишется как обычная модель. Активный workset нужен только для создания не-видовых элементов.
 - Диапазон — **только у планов** (`ViewPlan`); разрезы/3D → `unsupported_view_type`. Четыре
   плоскости: `top`, `cutPlane`, `bottom`, `viewDepth` = уровень + смещение; меняются только
   переданные. Порядок валидируется (план: Top > Cut > Bottom; потолок зеркально,

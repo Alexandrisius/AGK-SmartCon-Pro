@@ -20,7 +20,9 @@ public static partial class AgentToolCards
                 "умолчанию компактные записи familyId, name, category, typeCount; fields " +
                 "выбирает другие поля (uniqueId, categoryId, placedInstanceCount, isEditable, " +
                 "isInPlace, isParametric), compact=false возвращает все десять; category " +
-                "принимает строку или массив; summary=true добавляет сводку — сколько " +
+                "принимает строку или массив — OST_*-имя, русское имя или id категории; " +
+                "неизвестная категория возвращает unknown_category с ближайшими именами; " +
+                "summary=true добавляет сводку — сколько " +
                 "семейств и типов всего и в каждой категории, а также placed/unplaced: " +
                 "с собственными экземплярами в модели и без них; familiesWithoutTypes — " +
                 "семейства без типоразмеров, которые не видны symbol-based сканам " +
@@ -78,6 +80,9 @@ public static partial class AgentToolCards
                 "записи typeId, name, familyId, familyName; fields добавляет isPlaced, " +
                 "parameters, parameterCount; parameterNames возвращает значения выбранных " +
                 "параметров по типам (valueScope=instance — по размещённым экземплярам); " +
+                "placedOnly=true оставляет только типы с размещёнными экземплярами — " +
+                "для больших семейств это единственный способ получить значения всех нужных " +
+                "типов без обрезки бюджета; " +
                 "compact=false — полная запись.",
             WhenToUse =
                 "Когда известен familyId/имя семейства и нужны его типы, в том числе ещё не " +

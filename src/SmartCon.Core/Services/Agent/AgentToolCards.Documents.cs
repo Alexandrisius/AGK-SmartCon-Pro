@@ -146,9 +146,11 @@ public static partial class AgentToolCards
                     "документ, и отдельно — список открытых в сессии документов.",
                 WhenToUse =
                     "После отказа write-тула с document_not_modifiable, permission_denied, " +
-                    "workshared_not_supported, not_a_project_document или family_open_conflict; " +
+                    "central_unavailable, not_a_project_document или family_open_conflict; " +
                     "перед длинной серией записей; когда пользователь спрашивает, можно ли " +
-                    "менять модель и почему правка не проходит.",
+                    "менять модель и почему правка не проходит; когда элементы пропущены " +
+                    "с element_owned_by_other_user / element_out_of_date и нужно понять " +
+                    "владельца workset и следующий шаг.",
                 WhenNotToUse =
                     "Когда нужно открыть или закрыть модель (open_model_background / " +
                     "close_model); когда нужен обзор содержимого модели (get_project_overview); " +

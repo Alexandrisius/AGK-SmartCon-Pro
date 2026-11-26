@@ -32,4 +32,27 @@ public sealed class AgentResultPathTests
 
         Assert.Equal("Ведомость объёмов работ", text);
     }
+
+    [Fact]
+    public void Resolve_PropertySegmentOverArray_MapsToColumnOfScalars()
+    {
+        // data.rows.typeId: a property name applied to an array of rows yields
+        // the column - the shape a $result argument needs for select.typeIds
+        // (S.47, #532). A row without the property keeps its place as null.
+        const string json =
+            "{\"data\":{\"rows\":[" +
+            "{\"elementId\":11,\"typeId\":101}," +
+            "{\"elementId\":12,\"typeId\":102}," +
+            "{\"elementId\":13}]}," +
+            "\"message\":\"ok\"}";
+
+        var resolved = AgentResultPath.Resolve(json, "data.rows.typeId", out var error);
+
+        Assert.Null(error);
+        var column = Assert.IsType<JsonArray>(resolved);
+        Assert.Equal(3, column.Count);
+        Assert.Equal(101, (int)column[0]!);
+        Assert.Equal(102, (int)column[1]!);
+        Assert.Null(column[2]);
+    }
 }

@@ -92,8 +92,8 @@ internal static partial class AgentFilterRuleBuilder
             {
                 ErrorCode = "workset_not_supported",
                 Reason =
-                    "Filtering by workset is unavailable: SmartCon write tools do not support " +
-                    "workshared documents."
+                    "Filtering by workset is not implemented: use a parameter rule or " +
+                    "set_view_visibility worksets to hide a workset."
             };
         }
 

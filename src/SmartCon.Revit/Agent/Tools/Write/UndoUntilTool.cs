@@ -4,6 +4,7 @@ using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Core.Threading;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -244,6 +245,30 @@ public sealed class UndoUntilTool : IAgentTool
 
         var blocked = false;
 
+        // A dry run must not borrow: probe the ownership of every chain target and
+        // let undo_last skip blocked items, so the preview matches the apply.
+        var worksharing = AgentWorksharingScope.Create(document);
+        if (worksharing.NeedsCentral)
+        {
+            var targets = new HashSet<ElementId>();
+            foreach (var header in chain)
+            {
+                var details = AsyncBridge.RunSync(
+                    () => _changeSets.GetAsync(header.Id, CancellationToken.None));
+                if (details is null)
+                    continue;
+
+                foreach (var item in details.Items)
+                {
+                    var element = UndoLastTool.ResolveElement(document, item);
+                    if (element is not null)
+                        targets.Add(element.Id);
+                }
+            }
+
+            worksharing.Probe(targets, ct);
+        }
+
         if (dryRun)
         {
             // One rolling-back transaction for the WHOLE chain: each older set
@@ -277,7 +302,7 @@ public sealed class UndoUntilTool : IAgentTool
                             dryRun = true
                         });
 
-                        _undoLast.ApplyForTests(doc, args, outcome, dryRun: true, ct);
+                        _undoLast.ApplyForTests(doc, args, outcome, dryRun: true, ct, worksharing);
                         var entry = SummarizeOutcome(header, outcome);
                         report.Processed.Add(entry);
                         report.Affected += outcome.AffectedCount;

@@ -82,11 +82,13 @@ public sealed partial class AgentOrchestratorTests
         var result = await orchestrator.RunTurnAsync(
             Guid.NewGuid(), "перечитай", Array.Empty<AgentAttachment>(), null, CancellationToken.None);
 
+        // S.45: the identical repeat is served from the turn cache, the next
+        // one is refused - a warning alone never broke the observed loops.
         var payloads = ToolPayloads(llm, 3);
         Assert.Equal(3, payloads.Count);
-        Assert.DoesNotContain(SameResultText, payloads[1], StringComparison.Ordinal);
-        Assert.Contains(SameResultText, payloads[2], StringComparison.Ordinal);
-        Assert.Contains(SameResultAction, payloads[2], StringComparison.Ordinal);
+        Assert.DoesNotContain(SameResultText, payloads[0], StringComparison.Ordinal);
+        Assert.Contains("Identical repeated call", payloads[1], StringComparison.Ordinal);
+        Assert.Contains("duplicate_call", payloads[2], StringComparison.Ordinal);
         Assert.Equal("done", result.FinalText);
     }
 
@@ -121,20 +123,16 @@ public sealed partial class AgentOrchestratorTests
         var result = await orchestrator.RunTurnAsync(
             Guid.NewGuid(), "сводка", Array.Empty<AgentAttachment>(), null, CancellationToken.None);
 
-        // No new limit: all six calls ran and the model got its seventh request.
+        // S.45: one execution, the first repeat served from the cache with a
+        // warning, every further repeat refused with duplicate_call.
         Assert.Equal(6, result.ToolCallCount);
         var payloads = ToolPayloads(llm, 6);
         Assert.Equal(6, payloads.Count);
-        Assert.DoesNotContain(payloads.Take(2), payload => payload.Contains(SameResultText, StringComparison.Ordinal));
+        Assert.DoesNotContain(SameResultText, payloads[0], StringComparison.Ordinal);
+        Assert.Contains("Identical repeated call", payloads[1], StringComparison.Ordinal);
         for (var index = 2; index < payloads.Count; index++)
-        {
-            // Result of call index+1: the hint names every earlier round.
-            var rounds = string.Join(", ", Enumerable.Range(1, index));
-            Assert.Contains("already returned this result in round(s) " + rounds, payloads[index], StringComparison.Ordinal);
-            Assert.Contains(SameResultAction, payloads[index], StringComparison.Ordinal);
-        }
+            Assert.Contains("duplicate_call", payloads[index], StringComparison.Ordinal);
 
-        Assert.Contains("the change did not reach the call", payloads[5], StringComparison.Ordinal);
         Assert.Equal("done", result.FinalText);
     }
 

@@ -23,8 +23,8 @@ public static partial class AgentToolPackSkills
   `find_families_with_parameter` (`includeInstanceParameters=true` — instance-параметры),
   `list_shared_parameters` (нужен активный ФОП; иначе `shared_parameter_file_missing` →
   `set_shared_parameter_file` пака params).
-- Инвентаризация: `summary=true` → фильтр `category` → компактные записи; `fields`/
-  `parameterNames` — нужное. Системных семейств в списке нет — их типы даёт `list_system_types`.
+- `category` (строка/массив, OST_*/имя/id; иначе `unknown_category`), `summary`,
+  `placedOnly`, `fields`/`parameterNames`. Системных семейств в списке нет — их типы даёт `list_system_types`.
 - Запись: `rename_family_parameter`, `add_family_parameter` (один параметр или `items[]` до 50 —
   одна транзакция и ОДНА перезагрузка), `set_family_parameter_values`, `set_family_formula`,
   `map_family_parameters`, `remove_family_parameter`, `replace_family_parameter`.
