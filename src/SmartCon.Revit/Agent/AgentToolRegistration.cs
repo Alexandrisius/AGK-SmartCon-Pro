@@ -62,6 +62,7 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, ListFamiliesTool>();
         services.AddSingleton<IAgentTool, ListFamilyTypesTool>();
         services.AddSingleton<IAgentTool, GetFamilyParametersTool>();
+        services.AddSingleton<IAgentTool, GetFamilyParameterValuesTool>();
         services.AddSingleton<IAgentTool, FindFamiliesWithParameterTool>();
         services.AddSingleton<IAgentTool, ListSharedParametersTool>();
         services.AddSingleton<IAgentTool, ListProjectParametersTool>();
@@ -138,6 +139,7 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, SetParametersTool>();
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
         services.AddSingleton<IAgentTool, AddProjectSharedParameterTool>();
+        services.AddSingleton<IAgentTool, RebindProjectParameterTool>();
         services.AddSingleton<IAgentTool, RenameFamilyParameterTool>();
         services.AddSingleton<IAgentTool, AddFamilyParameterTool>();
         services.AddSingleton<IAgentTool, SetFamilyParameterValuesTool>();
@@ -187,7 +189,9 @@ public static class AgentToolRegistration
         new RenameViewsJobAction(),
         new SetParametersJobAction(),
         new MapFamilyParametersJobAction(),
-        new ReplaceFamilyParameterJobAction()
+        new ReplaceFamilyParameterJobAction(),
+        new AddFamilyParametersJobAction(),
+        new SetFamilyParameterScopeJobAction()
     };
 
     /// <summary>
@@ -275,6 +279,7 @@ public static class AgentToolRegistration
         typeof(ListFamiliesTool),
         typeof(ListFamilyTypesTool),
         typeof(GetFamilyParametersTool),
+        typeof(GetFamilyParameterValuesTool),
         typeof(FindFamiliesWithParameterTool),
         typeof(ListSharedParametersTool),
         typeof(ListProjectParametersTool),
@@ -351,6 +356,7 @@ public static class AgentToolRegistration
         typeof(SetParametersTool),
         typeof(RemapParameterValuesTool),
         typeof(AddProjectSharedParameterTool),
+        typeof(RebindProjectParameterTool),
         typeof(RenameFamilyParameterTool),
         typeof(AddFamilyParameterTool),
         typeof(SetFamilyParameterValuesTool),

@@ -322,6 +322,12 @@ public static class AgentToolCatalog
                 "привязать общий параметр", "забиндить параметр на категорию",
                 "add project shared parameter", "bind shared parameter", "новый параметр проекта"
             }),
+            ["rebind_project_parameter"] = new("Write", false, new[]
+            {
+                "сменить тип привязки", "изменить binding параметра", "rebind параметра",
+                "параметр экземпляра вместо типа", "типовая привязка", "instance binding",
+                "type binding", "перепривязать параметр"
+            }),
             ["set_shared_parameter_file"] = new("Write", false, new[]
             {
                 "файл общих параметров", "подключить ФОП", "создать ФОП", "настроить ФОП",
@@ -462,6 +468,11 @@ public static class AgentToolCatalog
             {
                 "параметры семейства", "family parameters", "общие параметры", "shared parameters",
                 "GUID параметра", "формула параметра", "значения по типам"
+            }),
+            ["get_family_parameter_values"] = new("Read", false, new[]
+            {
+                "значения параметра по типам", "формула параметра", "read-back параметра",
+                "verify formula", "parameter values per type", "сверить значения"
             }),
             ["find_families_with_parameter"] = new("Read", false, new[]
             {

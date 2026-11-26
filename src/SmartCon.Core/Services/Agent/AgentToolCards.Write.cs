@@ -165,6 +165,44 @@ public static partial class AgentToolCards
             },
             new AgentToolCard
             {
+                ToolName = "rebind_project_parameter",
+                Pack = "params",
+                Purpose =
+                    "Меняет тип привязки СУЩЕСТВУЮЩЕГО проектного параметра: экземпляр ↔ тип " +
+                    "(ReInsert по тем же категориям). Адресация по имени или GUID. Dry-run " +
+                    "показывает радиус: текущий/целевой binding, категории, число элементов.",
+                WhenToUse =
+                    "Когда параметр заказчика привязан «не тем» типом (типовой, а нужен " +
+                    "экземплярный) и значения всё равно будут перезаписаны миграцией. ВАЖНО: " +
+                    "rebind СБРАСЫВАЕТ значения в обе стороны — тул предупреждает в dry-run и " +
+                    "в apply; после него сразу перезапишите значения.",
+                WhenNotToUse =
+                    "Когда нужно поменять область действия параметра СЕМЕЙСТВА — это джоба " +
+                    "set_family_parameter_scope (MakeType/MakeInstance, значения и формулы " +
+                    "сохраняются); когда нужно просто записать значение — set_parameters.",
+                Examples = new[]
+                {
+                    "Смени привязку параметра Марка на экземплярную",
+                    "Переведи параметр заказчика на типовую привязку",
+                    "Покажи dry-run ребинда параметра по GUID"
+                },
+                Synonyms = new[]
+                {
+                    "сменить тип привязки", "изменить binding параметра", "rebind параметра",
+                    "параметр экземпляра вместо типа", "типовая привязка", "instance binding",
+                    "type binding", "перепривязать параметр", "binding type", "ребинд"
+                },
+                NegativeExamples = new[]
+                {
+                    "Покажи параметры проекта",
+                    "Смени область действия параметра семейства"
+                },
+                Idempotent = false,
+                TimeoutMs = 60000,
+                Bulk = false
+            },
+            new AgentToolCard
+            {
                 ToolName = "set_shared_parameter_file",
                 Pack = "params",
                 Purpose =

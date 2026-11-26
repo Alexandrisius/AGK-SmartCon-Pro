@@ -42,11 +42,15 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
             "definition must already exist in the active shared parameter file " +
             "(list_shared_parameters shows what is there); pass createDefinition=true to add a " +
             "missing definition to that file. Checks duplicate names, preserves the GUID and " +
-            "reports every parameter separately. Dry run by default.",
+            "reports every parameter separately. Dry run by default. " +
+            "formula (flat or per item) assigns an AUTHORED formula right after the " +
+            "creation — the migration unit is then add + formula + read-back. A rejected " +
+            "formula fails its item with invalid_formula and the parameter is removed again " +
+            "(a single-item call rolls back whole; in a batch the other items stand).",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""name"":{""type"":""string"",""description"":""Single-parameter form; omit when items is passed""},""storageType"":{""type"":""string"",""description"":""length | ductSize | pipeSize | distance | area | volume | angle | number | integer | text | yesno | material""},""group"":{""type"":""string"",""description"":""Revit group id, e.g. PG_GENERAL, PG_IDENTITY_DATA, PG_TEXT, PG_CONSTRAINTS, PG_DATA; localized Russian names are accepted""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""createDefinition"":{""type"":""boolean"",""default"":false,""description"":""Create a missing shared definition in the active shared parameter file; false reports definition_not_found""},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""},""items"":{""type"":""array"",""minItems"":1,""maxItems"":50,""description"":""Batch form: every parameter of this family in ONE open/transaction/reload; per-item changed/skipped/failed report"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""storageType"":{""type"":""string""},""group"":{""type"":""string""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""createDefinition"":{""type"":""boolean"",""default"":false},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""}},""required"":[""name"",""storageType""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""familyId"":{""type"":""integer""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""name"":{""type"":""string"",""description"":""Single-parameter form; omit when items is passed""},""storageType"":{""type"":""string"",""description"":""length | ductSize | pipeSize | distance | area | volume | angle | number | integer | text | yesno | material""},""group"":{""type"":""string"",""description"":""Revit group id, e.g. PG_GENERAL, PG_IDENTITY_DATA, PG_TEXT, PG_CONSTRAINTS, PG_DATA; localized Russian names are accepted""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""createDefinition"":{""type"":""boolean"",""default"":false,""description"":""Create a missing shared definition in the active shared parameter file; false reports definition_not_found""},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""},""formula"":{""type"":""string"",""description"":""Authored formula assigned right after creation (add + formula + verify in one unit); unit literals neutralize a dimension (X / 1 kg)""},""items"":{""type"":""array"",""minItems"":1,""maxItems"":50,""description"":""Batch form: every parameter of this family in ONE open/transaction/reload; per-item changed/skipped/failed report"",""items"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""storageType"":{""type"":""string""},""group"":{""type"":""string""},""isInstance"":{""type"":""boolean"",""default"":false},""isShared"":{""type"":""boolean"",""default"":false},""createDefinition"":{""type"":""boolean"",""default"":false},""guid"":{""type"":""string""},""initialValue"":{""type"":""string""},""unit"":{""type"":""string""},""formula"":{""type"":""string""}},""required"":[""name"",""storageType""],""additionalProperties"":false}},""dryRun"":{""type"":""boolean"",""default"":true}},""additionalProperties"":false}"
     };
 
     private protected override void ApplyInFamilyDocument(
@@ -374,6 +378,51 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
             }
         }
 
+        var appliedFormula = (string?)null;
+        if (!string.IsNullOrWhiteSpace(request.Formula))
+        {
+            appliedFormula = request.Formula!.Trim();
+            if (dryRun)
+            {
+                outcome.Warnings.Add(
+                    "Dry run: the formula '" + appliedFormula + "' would be assigned to '" +
+                    name + "' on apply; Revit validates a formula only on a real assignment.");
+            }
+            else
+            {
+                var formulaError = TryApplyFormula(session, manager, created, appliedFormula);
+                if (formulaError is not null)
+                {
+                    // Validator N1: in a mixed batch the family transaction would
+                    // still COMMIT (other items succeeded), leaving this parameter
+                    // half-added without its formula. Remove it again so the
+                    // failed item leaves nothing behind; the rest of the batch
+                    // stands (a single-item call still rolls back whole — the
+                    // base sees AffectedCount == 0).
+                    try
+                    {
+                        manager.RemoveParameter(created);
+                    }
+                    catch (Exception)
+                    {
+                        // If Revit refuses the removal the parameter stays; the
+                        // failed[] text below says how to clean up.
+                    }
+
+                    Failed(
+                        outcome,
+                        label,
+                        name,
+                        "invalid_formula",
+                        "The formula '" + appliedFormula + "' was rejected for '" + name +
+                        "': " + formulaError + " The parameter was removed again; the other " +
+                        "items of the batch stand (a single-item call rolls back whole). " +
+                        "[Action: fix the formula and assign it with set_family_formula]");
+                    return false;
+                }
+            }
+        }
+
         var sharedText = request.IsShared
             ? "shared " + (created.IsShared ? created.GUID.ToString("D") : "?")
             : "family";
@@ -383,7 +432,8 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
             Name = created.Definition.Name,
             OldValue = null,
             NewValue = scopeText + " " + AgentFamilySpecs.StorageTypeName(created.StorageType) +
-                       " (" + sharedText + ")",
+                       " (" + sharedText + ")" +
+                       (appliedFormula is null || dryRun ? string.Empty : " + formula '" + appliedFormula + "'"),
             Detail = Join(label, request.Group is null ? null : "group " + AgentFamilySpecs.GroupName(created.Definition))
         });
         session.AddUndoOperation(new FamilyUndoOperation
@@ -400,7 +450,8 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
             guid = created.IsShared ? created.GUID.ToString("D") : null,
             storageType = AgentFamilySpecs.StorageTypeName(created.StorageType),
             spec = AgentFamilySpecs.SpecName(created.Definition),
-            group = AgentFamilySpecs.GroupName(created.Definition)
+            group = AgentFamilySpecs.GroupName(created.Definition),
+            formula = dryRun ? request.Formula?.Trim() : created.Formula
         };
 
         var types = AgentFamilyReader.GetTypes(manager);
@@ -417,6 +468,37 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Assigns the authored formula; returns the rejection reason or null on
+    /// success. Lookup tables are checked first so the error names the table,
+    /// not a generic Revit refusal.
+    /// </summary>
+    private static string? TryApplyFormula(
+        AgentFamilySession session,
+        RevitFamilyManager manager,
+        FamilyParameter parameter,
+        string formula)
+    {
+        if (!AgentFamilyReader.TryFindMissingLookupTables(
+                session.FamilyDoc,
+                formula,
+                out var missingTables))
+        {
+            return "the formula references lookup table(s) that are not present in the family: " +
+                   string.Join(", ", missingTables) + ".";
+        }
+
+        try
+        {
+            manager.SetFormula(parameter, formula);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
     }
 
     private static string StorageTypeNameOf(AgentFamilyValueKind kind) => kind switch

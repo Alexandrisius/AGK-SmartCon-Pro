@@ -66,6 +66,20 @@ internal static class JobToolPayloads
             undoFailed = totals.UndoFailed,
             appliedBefore = totals.AppliedBefore,
             cancelled = job.CancelRequested,
+            // "Cancelled" without a cancel request confused the live agent: a
+            // superseded preview is not a user cancellation.
+            superseded = job.State == JobState.Cancelled
+                         && job.ErrorCode == JobErrorCodes.PreviewSuperseded,
+            supersededReason = job.ErrorCode == JobErrorCodes.PreviewSuperseded
+                ? job.ErrorDetail
+                : null,
+            // ETA: the live agent could not tell "working" from "hung" on 200+
+            // units. Rate/estimate appear once at least one unit settled; a
+            // "0 units in N minutes" answer is itself a diagnosis.
+            elapsedMs = job.StartedAt.HasValue
+                ? (int)((job.FinishedAt ?? job.UpdatedAt) - job.StartedAt.Value).TotalMilliseconds
+                : (int?)(null),
+            unitsPerMinute = PaceOf(job, totals),
             interruptedUnits = job.CancelRequested ? totals.Pending + totals.Previewed : 0,
             previewDigest = preview?.Digest,
             previewExpiresAtUtc = preview?.ExpiresAtUtc,
@@ -84,6 +98,19 @@ internal static class JobToolPayloads
         };
     }
 
+    internal static double? PaceOf(JobRecord job, JobTotals totals)
+    {
+        if (job.StartedAt is null)
+            return null;
+
+        var elapsed = (job.FinishedAt ?? job.UpdatedAt) - job.StartedAt.Value;
+        var settled = totals.Done + totals.Failed + totals.Mismatch;
+        if (elapsed.TotalMinutes < 0.2 || settled <= 0)
+            return null;
+
+        return Math.Round(settled / elapsed.TotalMinutes, 2);
+    }
+
     internal static object[] History(IReadOnlyList<JobRecord> jobs) =>
         jobs.Select(job => new
         {
@@ -91,6 +118,8 @@ internal static class JobToolPayloads
             action = job.Spec.Action,
             state = job.State.ToString(),
             cancelled = job.CancelRequested,
+            superseded = job.State == JobState.Cancelled
+                         && job.ErrorCode == JobErrorCodes.PreviewSuperseded,
             createdAt = job.CreatedAt,
             finishedAt = job.FinishedAt
         }).ToArray();

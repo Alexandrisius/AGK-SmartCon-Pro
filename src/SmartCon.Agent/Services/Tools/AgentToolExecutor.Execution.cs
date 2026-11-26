@@ -146,8 +146,14 @@ public sealed partial class AgentToolExecutor
         JsonElement args,
         CancellationToken ct)
     {
-        var timeoutMs = tool.Definition.TimeoutMs > 0
-            ? tool.Definition.TimeoutMs
+        // The catalog card carries the real per-tool timeout; the raw
+        // tool.Definition.TimeoutMs is 0 for most tools, so reading it directly
+        // silently fell back to the 30 s default even for cards that declare
+        // 60-180 s (the ФОП session lost two get_family_parameters calls to
+        // exactly this gap).
+        var effectiveDefinition = AgentToolCatalog.Enrich(tool.Definition);
+        var timeoutMs = effectiveDefinition.TimeoutMs > 0
+            ? effectiveDefinition.TimeoutMs
             : DefaultToolTimeoutMs;
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);

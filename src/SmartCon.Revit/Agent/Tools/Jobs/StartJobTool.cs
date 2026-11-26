@@ -29,7 +29,7 @@ public sealed class StartJobTool : IAgentTool
 {
   "type": "object",
   "properties": {
-    "action": { "type": "string", "enum": ["rename_views", "set_parameters", "map_family_parameters", "replace_family_parameter"], "description": "rename_views and set_parameters handle up to 5000 units; map_family_parameters and replace_family_parameter are hard-capped at 200 family units per job." },
+    "action": { "type": "string", "enum": ["rename_views", "set_parameters", "map_family_parameters", "replace_family_parameter", "add_family_parameter", "set_family_parameter_scope"], "description": "rename_views and set_parameters handle up to 5000 units; the family actions (map_family_parameters, replace_family_parameter, add_family_parameter, set_family_parameter_scope) are hard-capped at 200 family units per job." },
     "spec": {
       "type": "object",
       "properties": {
@@ -157,12 +157,44 @@ public sealed class StartJobTool : IAgentTool
             }
           }
         },
-        "parameter": { "type": "string" },
+        "parameter": { "type": "string", "description": "set_parameters only (a plain parameter-name string). set_family_parameter_scope uses parameterRef instead — an object cannot live under this shared key" },
+        "parameterRef": {
+          "type": "object",
+          "description": "set_family_parameter_scope only: the parameter to switch, by name and/or shared GUID",
+          "properties": {
+            "name": { "type": "string" },
+            "guid": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
         "guid": { "type": "string" },
         "builtInParameter": { "type": "string" },
         "scope": { "type": "string", "enum": ["instance", "type"] },
+        "isInstance": { "type": "boolean", "description": "set_family_parameter_scope only: the target scope of the parameter (true = instance, false = type). MakeType/MakeInstance keeps per-type values and formulas; a parameter referenced by another formula cannot switch — the item fails with a replace_family_parameter hint" },
         "value": { "type": "string" },
         "unit": { "type": "string" },
+        "parameters": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "description": "add_family_parameter only: parameters to add to every selected family (one family = one unit with its own open/transaction/load-back). A shared definition must already exist in the active shared parameter file (create it once with the single tool); existing names are reported as skips, not errors. formula assigns an authored formula right after creation.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "storageType": { "type": "string", "description": "length | ductSize | pipeSize | distance | area | volume | angle | number | integer | text | yesno | material" },
+              "group": { "type": "string" },
+              "isInstance": { "type": "boolean", "default": false },
+              "isShared": { "type": "boolean", "default": false },
+              "guid": { "type": "string" },
+              "initialValue": { "type": "string" },
+              "unit": { "type": "string" },
+              "formula": { "type": "string", "description": "Authored formula; unit literals neutralize a dimension (X / 1 kg)" }
+            },
+            "required": ["name", "storageType"],
+            "additionalProperties": false
+          }
+        },
         "values": {
           "type": "array",
           "maxItems": 50,
@@ -209,7 +241,11 @@ public sealed class StartJobTool : IAgentTool
             "dryRun=true (default) previews only and returns previewDigest; " +
             "then call again with dryRun=false and that previewDigest to apply. " +
             "resumeJobId alone resumes an interrupted/failed job. Actions: rename_views, " +
-            "set_parameters, map_family_parameters, replace_family_parameter. The typed spec " +
+            "set_parameters, map_family_parameters, replace_family_parameter, " +
+            "add_family_parameter (bulk parameter adds with an optional authored formula — " +
+            "the ФОП migration path) and set_family_parameter_scope (type↔instance switch " +
+            "of an existing family parameter via MakeType/MakeInstance; values and formulas " +
+            "survive). The typed spec " +
             "schema lists every selector, rename, mapping and replacement key; unknown spec " +
             "keys are rejected with the allowed-key list. " +
             "One call replaces hundreds of per-element calls.",
@@ -399,7 +435,8 @@ public sealed class StartJobTool : IAgentTool
                 " s. Call get_job_status (waitSeconds=10) to follow progress.",
             JobState.Running =>
                 "Job still running: " + totals.Done + " done, " + totals.Failed + " failed, " +
-                totals.Mismatch + " mismatch. Call get_job_status (waitSeconds=10) until the state " +
+                totals.Mismatch + " mismatch" + PaceText(job, totals) +
+                ". Call get_job_status (waitSeconds=10) until the state " +
                 "is terminal and mustVerify=false; do not report it as finished before that.",
             JobState.Completed or JobState.CompletedWithFailures or JobState.CompletedUnverified =>
                 "Job finished: " + job.State + " — " + totals.Done + " done, " + totals.Skipped +
@@ -430,6 +467,23 @@ public sealed class StartJobTool : IAgentTool
             message,
             affectedCount: preview?.Count ?? 0,
             warnings: warnings);
+    }
+
+    /// <summary>
+    /// Pace/ETA suffix for the running message: distinguishes "working" from
+    /// "hung" on long jobs (live agent run: 200+ units, no signal).
+    /// </summary>
+    private static string PaceText(JobRecord job, JobTotals totals)
+    {
+        var pace = JobToolPayloads.PaceOf(job, totals);
+        if (pace is null)
+            return string.Empty;
+
+        var pending = totals.Pending + totals.Previewed;
+        return pending <= 0
+            ? " (pace " + pace.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " unit(s)/min)"
+            : " (pace " + pace.Value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) +
+               " unit(s)/min, ~" + Math.Ceiling(pending / pace.Value) + " min left)";
     }
 
     /// <summary>Upper bound for waiting until the started job settles inside start_job.</summary>

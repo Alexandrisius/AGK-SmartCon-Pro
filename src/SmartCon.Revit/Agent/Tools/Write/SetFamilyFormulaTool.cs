@@ -147,9 +147,11 @@ public sealed class SetFamilyFormulaTool : AgentFamilyWriteToolBase
                 invalidSyntax
                     ? "Check the formula syntax, parameter names and instance/type rules. " +
                       "Constants: a bare number is read in the PARAMETER's own units (a length " +
-                      "parameter treats 100 as 100 internal feet = 30.5 m), and unit suffixes on " +
-                      "constants (\"100 mm\") are rejected by the API - for a fixed value use " +
-                      "set_family_parameter_values instead of a formula."
+                      "parameter treats 100 as 100 internal feet = 30.5 m). Unit literals ARE " +
+                      "allowed inside expressions and are the standard way to neutralize " +
+                      "dimension: 'X / 1 kg', 'Area / 1 m2' produce unitless values (Autodesk " +
+                      "documents mm, cm, m, kg, N, kN, MPa...). A unit constant as the WHOLE " +
+                      "formula of a different kind (\"= 100 mm\" on a text parameter) is rejected."
                     : "Check that the parameter can be formula-driven and that the formula " +
                       "does not create a circular chain.");
             return;

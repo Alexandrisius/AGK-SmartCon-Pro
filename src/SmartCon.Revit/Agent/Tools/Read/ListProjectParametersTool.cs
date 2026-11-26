@@ -63,6 +63,7 @@ public sealed class ListProjectParametersTool : AgentReadToolBase
 
         var rows = AgentProjectParameterReader.Collect(doc);
         ct.ThrowIfCancellationRequested();
+        var totalInProject = rows.Count;
 
         if (!string.IsNullOrWhiteSpace(nameContains))
         {
@@ -79,6 +80,8 @@ public sealed class ListProjectParametersTool : AgentReadToolBase
         }
 
         var total = rows.Count;
+        var filtered = !string.IsNullOrWhiteSpace(nameContains)
+                       || !string.IsNullOrWhiteSpace(categoryContains);
         var page = AgentPaging.Slice(rows, offset, limit);
         var projected = new List<Dictionary<string, object?>>();
         foreach (var row in page)
@@ -90,6 +93,8 @@ public sealed class ListProjectParametersTool : AgentReadToolBase
         var payload = new Dictionary<string, object?>
         {
             ["total"] = total,
+            ["totalInProject"] = totalInProject,
+            ["filtered"] = filtered,
             ["parameters"] = projected,
             ["returned"] = projected.Count,
             ["offset"] = offset,
@@ -100,11 +105,28 @@ public sealed class ListProjectParametersTool : AgentReadToolBase
                        "definition (list_shared_parameters shows the file side)."
         };
 
-        return ToolResult.Ok(
-            AgentJson.Serialize(payload),
-            projected.Count == 0
-                ? "The project has no project parameters matching the request."
-                : "Read " + projected.Count + " of " + total + " project parameter binding(s).");
+        if (projected.Count == 0)
+        {
+            return ToolResult.Ok(
+                AgentJson.Serialize(payload),
+                filtered
+                    ? "The project has no project parameters matching the request " +
+                      "(scanned " + totalInProject + " binding(s) in total)."
+                    : "The project has no project parameters (valid, not an error).");
+        }
+
+        // The ФОП session read "136 of 136" as "everything"; the matched count,
+        // the whole-project denominator and the page cut are three different
+        // numbers and all three belong in the message.
+        var messageText = "Read " + projected.Count + " of " + total + " matching binding(s)" +
+                          (filtered
+                              ? " (filter applied; " + totalInProject + " parameter definition(s) bound in the project)"
+                              : string.Empty) +
+                          (nextOffset < total
+                              ? ", page " + (offset + 1) + "-" + nextOffset + " — more with offset " + nextOffset
+                              : string.Empty) +
+                          ".";
+        return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
     }
 
     private static Dictionary<string, object?> Project(

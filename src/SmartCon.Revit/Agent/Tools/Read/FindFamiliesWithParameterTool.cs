@@ -37,10 +37,12 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
 
     private const int MaxPrefixBuckets = 20;
 
+    private const int MaxParameterNameRows = 100;
+
     private static readonly string[] FamilyRowFields =
     {
         "familyId", "familyName", "familyUniqueId", "category", "matchedParameterCount",
-        "sample", "sampleTruncated", "matchedTypeCount", "matchedTypesReturned",
+        "sample", "sampleTruncated", "scopes", "matchedTypeCount", "matchedTypesReturned",
         "matchedTypesTruncated", "matchedTypeNames", "matchedTypes", "placedInstanceCount",
         "instancesScanned", "instanceParametersUnknown", "matchedInstanceParameterCount",
         "matchedInstanceParametersReturned", "matchedInstanceParametersTruncated",
@@ -88,11 +90,22 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
             "in full. matchedParameterCount counts distinct matched parameter NAMES in the " +
             "family; matchedTypeCount counts type-level matches (one per matching parameter " +
             "name in a type, so a type with two matching names counts twice) — they answer " +
-            "different questions and are not interchangeable.",
+            "different questions and are not interchangeable. " +
+            "Every match row (and the per-family scopes[] field) carries parameterScope: " +
+            "\"family\" (lives inside the family document), \"project\" (a project-level binding — " +
+            "it is NOT a family parameter and get_family_parameters will not find it; plan " +
+            "migrations on scope=family+ — family or family+project, everything that lives in family " +
+            "documents) or \"family+project\" (the same shared definition is " +
+            "embedded in families AND bound in the project — public vendor GUIDs behave this way). " +
+            "requireShared=true keeps only shared (GUID-bearing) parameters — protection against " +
+            "same-name non-shared visibility checkboxes that an automatic " +
+            "name-based replace would corrupt. summary adds byParameterName[] " +
+            "(name, guid, isShared, families, scopes) — the per-name migration inventory in one " +
+            "call instead of paging sample[] of 3.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson +
-            @"""parameterName"":{""type"":""string"",""description"":""Parameter name or prefix to search for""},""parameterNamePrefix"":{""type"":""string"",""description"":""Alias for a prefix search: same as parameterName + match=prefix""},""match"":{""type"":""string"",""enum"":[""exact"",""contains"",""prefix""],""default"":""exact""},""valueContains"":{""type"":""string""},""category"":{""type"":""string""},""includeInstanceParameters"":{""type"":""boolean"",""default"":false},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds byCategory[] (matched families), familiesWithoutAnyShared, byPrefix[], unplacedCount""},""groupByPrefix"":{""type"":""boolean"",""default"":false,""description"":""Alias for summary: add byCategory[], byPrefix[] and familiesWithoutAnyShared""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""maxMatchedTypes"":{""type"":""integer"",""default"":10,""minimum"":1,""maximum"":50},""compact"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Row keys to return: familyId, familyName, familyUniqueId, category, matchedParameterCount, sample, sampleTruncated, matchedTypeCount, matchedTypesReturned, matchedTypesTruncated, matchedTypeNames, matchedTypes, placedInstanceCount, instancesScanned, instanceParametersUnknown, matchedInstanceParameterCount, matchedInstanceParametersReturned, matchedInstanceParametersTruncated, matchedInstanceParameterNames, matchedInstanceParameters. matchedParameterCount = distinct matched parameter names; matchedTypeCount = type-level matches (type + parameter name). Unknown names return invalid_arguments.""},""offset"":{""type"":""integer"",""default"":0}},""required"":[],""additionalProperties"":false}"
+            @"""parameterName"":{""type"":""string"",""description"":""Parameter name or prefix to search for""},""parameterNamePrefix"":{""type"":""string"",""description"":""Alias for a prefix search: same as parameterName + match=prefix""},""match"":{""type"":""string"",""enum"":[""exact"",""contains"",""prefix""],""default"":""exact""},""valueContains"":{""type"":""string""},""category"":{""type"":""string""},""includeInstanceParameters"":{""type"":""boolean"",""default"":false},""requireShared"":{""type"":""boolean"",""default"":false,""description"":""Only shared parameters (with a GUID): filters out same-name family/built-in parameters such as non-shared visibility checkboxes""},""parameterScope"":{""type"":""string"",""enum"":[""any"",""family"",""family+"",""project"",""family+project""],""default"":""any"",""description"":""Filter by where the matched parameter lives: family (in the family document only), family+ (family OR family+project — RECOMMENDED for migration planning: every parameter that lives in family documents, including shared definitions also bound in the project), project (a project-level binding only), family+project (embedded AND bound)""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds byParameterName[] (name, guid, isShared, families, scopes), byCategory[] (matched families), familiesWithoutAnyShared, byPrefix[], unplacedCount""},""groupByPrefix"":{""type"":""boolean"",""default"":false,""description"":""Alias for summary: add byCategory[], byPrefix[] and familiesWithoutAnyShared""},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""maxMatchedTypes"":{""type"":""integer"",""default"":10,""minimum"":1,""maximum"":50},""compact"":{""type"":""boolean"",""default"":false},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Row keys to return: familyId, familyName, familyUniqueId, category, matchedParameterCount, sample, sampleTruncated, scopes, matchedTypeCount, matchedTypesReturned, matchedTypesTruncated, matchedTypeNames, matchedTypes, placedInstanceCount, instancesScanned, instanceParametersUnknown, matchedInstanceParameterCount, matchedInstanceParametersReturned, matchedInstanceParametersTruncated, matchedInstanceParameterNames, matchedInstanceParameters. matchedParameterCount = distinct matched parameter names; matchedTypeCount = type-level matches (type + parameter name). Unknown names return invalid_arguments.""},""offset"":{""type"":""integer"",""default"":0}},""required"":[],""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -104,6 +117,12 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
         var valueContains = AgentJson.GetString(args, "valueContains");
         var categoryFilter = AgentJson.GetString(args, "category");
         var includeInstanceParameters = AgentJson.GetBool(args, "includeInstanceParameters", false);
+        var requireShared = AgentJson.GetBool(args, "requireShared", false);
+        var scopeFilterError = ResolveScopeFilter(
+            AgentJson.GetString(args, "parameterScope"),
+            out var parameterScopeFilter);
+        if (scopeFilterError is not null)
+            return ToolResult.Fail("invalid_arguments", scopeFilterError);
         var summary = AgentJson.GetBool(args, "summary", false)
                       || AgentJson.GetBool(args, "groupByPrefix", false);
         var offset = AgentPaging.NormalizeOffset(AgentJson.GetInt(args, "offset", 0));
@@ -151,6 +170,8 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
             includeInstanceParameters,
             summary,
             maxMatchedTypes,
+            requireShared,
+            parameterScopeFilter,
             ct);
 
         var matched = outcome.Families.Values
@@ -215,8 +236,16 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
               (summary && payload.GetValueOrDefault("byPrefix") is List<Dictionary<string, object?>> prefixes
                   ? "; " + prefixes.Count + " shared-parameter prefix bucket(s), " +
                     payload.GetValueOrDefault("familiesWithoutAnyShared") +
-                    " family(ies) without any shared parameters."
-                  : string.Empty) + ".";
+                    " family(ies) without any shared parameters" +
+                    (payload.GetValueOrDefault("byParameterName") is List<Dictionary<string, object?>> names
+                        ? ", " + names.Count + " matched parameter name(s) in byParameterName"
+                        : string.Empty)
+                  : string.Empty) +
+              (!string.Equals(parameterScopeFilter, "any", StringComparison.OrdinalIgnoreCase)
+                  ? "; parameterScope filter '" + parameterScopeFilter + "' applied"
+                  : string.Empty) +
+              (requireShared ? "; requireShared=true (GUID-bearing parameters only)" : string.Empty) +
+              ".";
 
         return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
 
@@ -230,6 +259,8 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
                 ["parameterNamePrefix"] = mode == MatchMode.Prefix ? parameterName : null,
                 ["match"] = modeText,
                 ["includeInstanceParameters"] = includeInstanceParameters,
+                ["requireShared"] = requireShared,
+                ["parameterScope"] = parameterScopeFilter,
                 ["summary"] = summary,
                 ["compact"] = compact,
                 ["families"] = currentPage,
@@ -249,7 +280,10 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
                     "Type parameters are read from family symbols. With includeInstanceParameters=true " +
                     "instance-scope parameters are read from placed instances; a family with no " +
                     "placed instances can only be checked by opening its document with " +
-                    "get_family_parameters."
+                    "get_family_parameters. parameterScope tells WHERE a matched parameter lives: " +
+                    "'project' = a project-level binding (absent from the family document — do not " +
+                    "plan a family migration for it), 'family' = inside the family document, " +
+                    "'family+project' = the same shared definition both embedded and bound."
             };
 
             if (!fieldSelection.IsDefault)
@@ -258,6 +292,10 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
             {
                 foreach (var pair in summaryFields)
                     result[pair.Key] = pair.Value;
+                result["byPrefixNote"] =
+                    "byPrefix counts EVERY scanned family (the project-wide prefix landscape) " +
+                    "and ignores parameterScope/requireShared; total and byParameterName " +
+                    "describe the FILTERED matches.";
                 result["byCategory"] = byCategory;
                 result["byCategoryNote"] =
                     "byCategory counts the matched families (total), not the page.";
@@ -285,6 +323,9 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
                 .Take(MaxSampleParameterNames)
                 .ToList(),
             ["sampleTruncated"] = item.MatchedParameterNames.Count > MaxSampleParameterNames,
+            ["scopes"] = item.ParameterScopes
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList(),
             ["matchedTypeCount"] = item.MatchedTypesTotal,
             ["matchedTypesReturned"] = item.TypeMatches.Count,
             ["matchedTypesTruncated"] = item.MatchedTypesTotal > item.TypeMatches.Count,
@@ -372,14 +413,58 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
                 : (int?)null,
             ["byPrefix"] = byPrefix,
             ["byPrefixTruncated"] = ordered.Count > byPrefix.Count,
+            ["byParameterName"] = BuildByParameterName(outcome),
+            ["byParameterNameTruncated"] = outcome.ByParameterName.Count > MaxParameterNameRows,
             ["summaryScope"] = instancesScanned ? "type+instance" : "type",
             ["summaryNote"] =
                 "familiesWithoutAnyShared and byPrefix count shared parameters only. " +
+                "byParameterName aggregates the MATCHED names only (the query's matches), " +
+                "not every parameter of every family. " +
                 (instancesScanned
                     ? "Scope is type+instance."
                     : "Scope is type only: pass includeInstanceParameters=true for instance-scope " +
                       "shared parameters and unplaced counts.")
         };
+    }
+
+    private static List<Dictionary<string, object?>> BuildByParameterName(ScanOutcome outcome) =>
+        outcome.ByParameterName.Values
+            .OrderByDescending(aggregate => aggregate.Families.Count)
+            .ThenBy(aggregate => aggregate.Name, StringComparer.OrdinalIgnoreCase)
+            .Take(MaxParameterNameRows)
+            .Select(aggregate => new Dictionary<string, object?>
+            {
+                ["name"] = aggregate.Name,
+                ["guid"] = aggregate.SingleGuid,
+                ["isShared"] = aggregate.SingleGuid is not null,
+                ["families"] = aggregate.Families.Count,
+                ["scopes"] = aggregate.Scopes
+                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+            })
+            .ToList();
+
+    /// <summary>
+    /// Validates parameterScope: a typo ("projects") used to slip through as a
+    /// silent empty result instead of invalid_arguments (validator note #3).
+    /// </summary>
+    private static string? ResolveScopeFilter(string? filter, out string normalized)
+    {
+        normalized = "any";
+        if (string.IsNullOrWhiteSpace(filter))
+            return null;
+
+        var trimmed = filter!.Trim().ToLowerInvariant();
+        normalized = trimmed switch
+        {
+            "family+project" or "project+family" => "family+project",
+            _ => trimmed
+        };
+
+        return normalized is "any" or "family" or "family+" or "project" or "family+project"
+            ? null
+            : "parameterScope '" + filter + "' is not supported. [Action: pass any, family, family+, " +
+              "project or family+project]";
     }
 
     private static string PrefixOf(string name) =>

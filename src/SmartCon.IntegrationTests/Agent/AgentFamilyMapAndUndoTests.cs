@@ -439,6 +439,61 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
     private UndoLastTool CreateUndoTool() =>
         new(new StubRevitContext(Doc), _transactions!, _changeSets!);
 
+    [Test]
+    public async Task Add_WithFormula_AssignsAndComputesInOneUnit()
+    {
+        // #536: the migration unit is add + formula + read-back; a rejected
+        // formula fails the item while the parameter stays added.
+        var add = Run(
+            CreateAddTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"Длина_Авто\"," +
+            "\"storageType\":\"length\",\"formula\":\"" + FamilySeed.WidthParam + " * 2\"," +
+            "\"dryRun\":false}");
+        await Assert.That(add.Success).IsTrue();
+
+        var values = new GetFamilyParameterValuesTool(new StubRevitContext(Doc)).ExecuteForTests(
+            Doc,
+            Parse("{\"familyId\":" + Seed.FamilyId + ",\"parameter\":\"Длина_Авто\"}"),
+            CancellationToken.None);
+        await Assert.That(values.Success).IsTrue();
+        var valuesData = Data(values);
+        await Assert.That(valuesData.GetProperty("formula").GetString()).Contains("* 2");
+        await Assert.That(valuesData.GetProperty("values").GetArrayLength()).IsEqualTo(2);
+
+        var bad = Run(
+            CreateAddTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"Плохая_Формула\"," +
+            "\"storageType\":\"length\",\"formula\":\"НетТакогоПараметра * 2\"," +
+            "\"dryRun\":false}");
+        await Assert.That(bad.Success).IsFalse();
+        await Assert.That(bad.ErrorCode).IsEqualTo("invalid_formula");
+
+        // The rejected formula rolls the whole call back: nothing is added.
+        await Assert.That(FindParameterOrNull(await ReadParameters(), "Плохая_Формула")).IsNull();
+    }
+
+    [Test]
+    public async Task Add_MixedBatch_BadFormulaRemovesOnlyItsOwnParameter()
+    {
+        // Validator N1 (#536): one good item + one bad-formula item. The good
+        // parameter must stay, the bad one must be removed again — the family
+        // transaction commits because one item succeeded.
+        var result = Run(
+            CreateAddTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"items\":[" +
+            "{\"name\":\"Хороший\",\"storageType\":\"number\"}," +
+            "{\"name\":\"Плохой\",\"storageType\":\"length\"," +
+            "\"formula\":\"НетТакогоПараметра * 2\"}]," +
+            "\"dryRun\":false}");
+
+        await Assert.That(result.Success).IsFalse();
+        await Assert.That(result.ErrorCode).IsEqualTo("partial_failure");
+
+        var parameters = await ReadParameters();
+        await Assert.That(FindParameterOrNull(parameters, "Хороший")).IsNotNull();
+        await Assert.That(FindParameterOrNull(parameters, "Плохой")).IsNull();
+    }
+
     private string AddJson() =>
         "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"Заказчик\"," +
         "\"storageType\":\"text\",\"group\":\"PG_IDENTITY_DATA\",\"dryRun\":false}";

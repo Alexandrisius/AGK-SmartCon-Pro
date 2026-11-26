@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
+using SmartCon.Core.Logging;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Revit.Agent.Tools.Families;
@@ -57,7 +58,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "Opens the family document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":20,""description"":""Batch: read several families in one call; each entry gets the same payload as the single-family form""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""default"":true},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":20,""description"":""Batch: read several families in one call; each entry gets the same payload as the single-family form. In a batch includeValues defaults to FALSE (metadata only — values are the timeout hot spot); pass includeValues=true explicitly to read per-type values""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""description"":""Per-type values: true for a single family (default), false for a batch (default) — one parameter's values: get_family_parameter_values""},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -76,7 +77,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         if (family is null)
             return ToolResult.Fail(errorCode ?? "family_not_found", message ?? "Family not found.");
 
-        var (payload, familyMessage, failure) = ReadFamily(doc, args, family, ct);
+        var (payload, familyMessage, failure) = ReadFamily(
+            doc, args, family, AgentJson.GetBool(args, "includeValues", true), ct);
         if (payload is null)
             return ToolResult.Fail(
                 failure ?? "family_open_failed", familyMessage);
@@ -103,10 +105,16 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
     {
         var families = new List<object?>(familyIds.Count);
         var okCount = 0;
+        // Batch reads default to metadata-only: values per type dominate the
+        // runtime (a 4-family batch with values blew the 30 s tool timeout twice
+        // in the ФОП session; 20 families without values took 6.4 s). An explicit
+        // includeValues=true still reads them.
+        var batchIncludeValues = AgentJson.GetBool(args, "includeValues", false);
         foreach (var id in familyIds)
         {
             ct.ThrowIfCancellationRequested();
 
+            var startedAt = DateTime.UtcNow;
             var family = AgentFamilyReader.ResolveFamily(
                 doc, id, null, null, out var errorCode, out var message);
             if (family is null)
@@ -121,7 +129,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 continue;
             }
 
-            var (payload, familyMessage, failure) = ReadFamily(doc, args, family, ct);
+            var (payload, familyMessage, failure) = ReadFamily(doc, args, family, batchIncludeValues, ct);
             if (payload is null)
             {
                 families.Add(new Dictionary<string, object?>
@@ -129,12 +137,14 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                     ["familyId"] = id,
                     ["ok"] = false,
                     ["error"] = failure ?? "family_open_failed",
-                    ["message"] = familyMessage
+                    ["message"] = familyMessage,
+                    ["elapsedMs"] = (int)(DateTime.UtcNow - startedAt).TotalMilliseconds
                 });
                 continue;
             }
 
             payload["ok"] = true;
+            payload["elapsedMs"] = (int)(DateTime.UtcNow - startedAt).TotalMilliseconds;
             families.Add(payload);
             okCount++;
         }
@@ -145,11 +155,17 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             ["families"] = families,
             ["familyCount"] = familyIds.Count,
             ["okCount"] = okCount,
-            ["failedCount"] = failedCount
+            ["failedCount"] = failedCount,
+            ["includeValues"] = batchIncludeValues
         };
 
         var baseMessage = "Read " + okCount + " of " + familyIds.Count + " family(ies)" +
-                          (failedCount > 0 ? ", " + failedCount + " not found" : string.Empty);
+                          (failedCount > 0 ? ", " + failedCount + " not found" : string.Empty) +
+                          (batchIncludeValues
+                              ? string.Empty
+                              : " (values off by default in a batch — pass includeValues=true " +
+                                "to read per-type values, or use get_family_parameter_values " +
+                                "for one parameter)");
 
         // Live case 2 round 4: a 20-family batch exceeded the context budget and
         // the generic trimmer halved the families array - the model re-read the
@@ -278,6 +294,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         Document doc,
         JsonElement args,
         Autodesk.Revit.DB.Family family,
+        bool includeValues,
         CancellationToken ct)
     {
         var scopeText = AgentJson.GetString(args, "scope");
@@ -292,7 +309,6 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         }
 
         var nameContains = AgentJson.GetString(args, "nameContains");
-        var includeValues = AgentJson.GetBool(args, "includeValues", true);
         var maxValues = AgentPaging.NormalizeLimit(
             AgentJson.GetInt(args, "maxValuesPerParameter", DefaultMaxValues),
             DefaultMaxValues,
@@ -303,12 +319,23 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             DefaultLimit,
             MaxLimit);
 
-        if (!AgentFamilyReader.TryOpenFamilyDocument(
+        // ФОП session: one family took 21.4 s with no visible reason; the timers
+        // below make the open/report split visible in smartcon.log (Debug level).
+        Document? familyDoc = null;
+        string? openErrorCode = null;
+        string? openMessage = null;
+        bool opened;
+        using (SmartConLogger.Measure("FamilyDocOpen"))
+        {
+            opened = AgentFamilyReader.TryOpenFamilyDocument(
                 doc,
                 family,
-                out var familyDoc,
-                out var openErrorCode,
-                out var openMessage))
+                out familyDoc,
+                out openErrorCode,
+                out openMessage);
+        }
+
+        if (!opened)
         {
             return (null,
                 openMessage ?? "The family document could not be opened.",
@@ -341,15 +368,18 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
 
             var page = AgentPaging.Slice(filtered, offset, limit);
             var reports = new List<FamilyParameterReport>(page.Count);
-            foreach (var parameter in page)
+            using (var reportTimer = SmartConLogger.Measure("FamilyParameterReports"))
             {
-                ct.ThrowIfCancellationRequested();
-                reports.Add(AgentFamilyReader.BuildParameterReport(
-                    parameter,
-                    types,
-                    includeValues,
-                    maxValues,
-                    familyDoc));
+                foreach (var parameter in page)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    reports.Add(AgentFamilyReader.BuildParameterReport(
+                        parameter,
+                        types,
+                        includeValues,
+                        maxValues,
+                        familyDoc));
+                }
             }
 
             var nextOffset = offset + reports.Count;
@@ -400,6 +430,23 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         // FamilyManager batch pattern (#96 / REVIT-237190): close + COM release +
         // render-thread nudge.
         AgentFamilyDocCloser.Close(familyDoc);
+    }
+
+    private static bool Has(JsonElement args, string name)
+    {
+        if (args.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (args.TryGetProperty(name, out _))
+            return true;
+
+        foreach (var property in args.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private static long? TryGetLong(JsonElement args, string property)

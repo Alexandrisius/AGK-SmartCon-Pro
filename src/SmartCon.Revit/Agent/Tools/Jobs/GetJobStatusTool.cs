@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
@@ -138,9 +139,20 @@ public sealed class GetJobStatusTool : IAgentTool
         var totals = JobToolPayloads.Totals(job);
         var summary = totals.Done + " done, " + totals.Skipped + " skipped, " +
                       totals.Failed + " failed, " + totals.Mismatch + " mismatch";
+
+        // ETA in the message: a long job must be distinguishable from a hung one
+        // without waiting for a timeout (live agent run: 200+ units, no signal).
+        var pace = JobToolPayloads.PaceOf(job, totals);
+        var pending = totals.Pending + totals.Previewed;
+        var etaText = pace is null || pending <= 0
+            ? string.Empty
+            : " Pace: " + pace.Value.ToString("0.##", CultureInfo.InvariantCulture) +
+              " unit(s)/min, ~" + Math.Ceiling(pending / pace.Value) + " min left for " +
+              pending + " unit(s).";
+
         return ToolResult.Ok(
             JobToolPayloads.Serialize(payload),
-            job.State + " — " + summary + "." + JobToolPayloads.CausesLine(failedItems) +
+            job.State + " — " + summary + "." + etaText + JobToolPayloads.CausesLine(failedItems) +
             " " + JobToolPayloads.NextHint(job));
     }
 }

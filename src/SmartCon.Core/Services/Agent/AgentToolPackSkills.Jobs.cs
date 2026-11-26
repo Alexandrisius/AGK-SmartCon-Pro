@@ -10,7 +10,7 @@ public static partial class AgentToolPackSkills
 Одна джоба заменяет сотни поштучных вызовов: выбрать набор → превью → применить → отчёт.
 
 ### Карта тулов
-- `start_job` — старт/превью/резюм. `action:` `rename_views|set_parameters|map_family_parameters|replace_family_parameter`.
+- `start_job` — старт/превью/резюм. `action:` `rename_views|set_parameters|map_family_parameters|replace_family_parameter|add_family_parameter|set_family_parameter_scope`.
 - `get_job_status` — статус и прогресс: `waitSeconds` ≤25, `includeSample=false` для экономии контекста.
 - `get_job_report` — отчёт: `includeItems=false` (итоги + ошибки), `format:""csv""` пишет файл, `readBack`.
 - `rollback_job` — откат по сохранённым undo-данным; `dryRun` по умолчанию true.
@@ -20,6 +20,13 @@ public static partial class AgentToolPackSkills
 **Не путать:** `map_family_parameters` и `replace_family_parameter` — и поштучные тулы (одно
 семейство), и action'ы джобы (до 200 family units). Массовая миграция или замена общего
 параметра (старый общий параметр → параметр заказчика) по многим семействам = один `start_job`, не тул в цикле.
+`add_family_parameter` — тоже тул и action: массовое ДОБАВЛЕНИЕ параметров (дубликаты ФОП,
+`parameters[].formula` — авторская формула сразу после создания) = джоба, не сотни одиночных вызовов.
+`set_family_parameter_scope` — только action: смена тип↔экземпляр параметра семейства
+(MakeType/MakeInstance, значения и формулы сохраняются); параметр задаётся ключом
+`parameterRef:{name|guid}` (объект — НЕ parameter, тот строковый и занят set_parameters);
+отказ при формульной зависимости — подсказка уйдёт на replace_family_parameter.
+Проектный уровень — тул `rebind_project_parameter` (значения сбрасываются, тул предупреждает).
 
 ### Кухня Revit
 - Транзакция дорога: 10 коммитов ≈7.3 с против 1.4 с у группы, 10×100 элементов — 202 с против 44 с (замеры сообщества). Джоба коммитит **пачками** (`batchSize`, 50), не по элементу.

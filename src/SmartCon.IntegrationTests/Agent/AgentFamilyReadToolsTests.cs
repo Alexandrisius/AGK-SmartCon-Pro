@@ -530,4 +530,154 @@ private static JsonElement Parse(string json) =>
 
         throw new InvalidOperationException("Parameter '" + name + "' is missing in the result.");
     }
+
+    [Test]
+    public async Task FindFamiliesWithParameter_ReportsFamilyScopeAndSharedFlag()
+    {
+        // #535: the same query must tell WHERE the matched parameter lives. The
+        // seeded parameters are family-document parameters: scope=family, not a
+        // project binding, and requireShared=true filters them out.
+        var tool = new FindFamiliesWithParameterTool(new StubRevitContext(Doc));
+
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"" + FamilySeed.CodeParam + "\",\"match\":\"exact\"}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var family = FindFamily(Data(result), Seed.FamilyId);
+        await Assert.That(family.GetProperty("scopes").GetArrayLength()).IsEqualTo(1);
+        await Assert.That(family.GetProperty("scopes")[0].GetString()).IsEqualTo("family");
+
+        var matched = family.GetProperty("matchedTypes");
+        await Assert.That(matched.GetArrayLength()).IsGreaterThan(0);
+        await Assert.That(matched[0].GetProperty("parameterScope").GetString()).IsEqualTo("family");
+        await Assert.That(matched[0].GetProperty("isShared").GetBoolean()).IsFalse();
+    }
+
+    [Test]
+    public async Task FindFamiliesWithParameter_FamilyPlus_IncludesEmbeddedMatches()
+    {
+        // Live agent run (#535 follow-up): a strict family filter silently drops
+        // family+project parameters (24 of 50 ADSK_ names). family+ must keep
+        // everything that lives in family documents.
+        var tool = new FindFamiliesWithParameterTool(new StubRevitContext(Doc));
+
+        var strict = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"" + FamilySeed.CodeParam + "\",\"match\":\"exact\"," +
+                  "\"parameterScope\":\"family\"}"),
+            CancellationToken.None);
+        var plus = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"" + FamilySeed.CodeParam + "\",\"match\":\"exact\"," +
+                  "\"parameterScope\":\"family+\"}"),
+            CancellationToken.None);
+        var bad = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"" + FamilySeed.CodeParam + "\",\"parameterScope\":\"families\"}"),
+            CancellationToken.None);
+
+        await Assert.That(strict.Success).IsTrue();
+        await Assert.That(plus.Success).IsTrue();
+        await Assert.That(Data(strict).GetProperty("total").GetInt32())
+            .IsEqualTo(Data(plus).GetProperty("total").GetInt32());
+        await Assert.That(ContainsFamily(Data(plus), Seed.FamilyId)).IsTrue();
+        await Assert.That(bad.Success).IsFalse();
+        await Assert.That(bad.ErrorCode).IsEqualTo("invalid_arguments");
+    }
+
+    [Test]
+    public async Task FindFamiliesWithParameter_RequireShared_FiltersOutFamilyParameters()
+    {
+        var tool = new FindFamiliesWithParameterTool(new StubRevitContext(Doc));
+
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"" + FamilySeed.CodeParam +
+                  "\",\"match\":\"exact\",\"requireShared\":true}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(Data(result).GetProperty("total").GetInt32()).IsEqualTo(0);
+        await Assert.That(Data(result).GetProperty("requireShared").GetBoolean()).IsTrue();
+    }
+
+    [Test]
+    public async Task FindFamiliesWithParameter_Summary_ByParameterNameAggregatesMatches()
+    {
+        var tool = new FindFamiliesWithParameterTool(new StubRevitContext(Doc));
+
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"parameterName\":\"" + FamilySeed.CodeParam +
+                  "\",\"match\":\"exact\",\"summary\":true}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var byName = Data(result).GetProperty("byParameterName");
+        await Assert.That(byName.GetArrayLength()).IsGreaterThan(0);
+        await Assert.That(byName[0].GetProperty("name").GetString()).IsEqualTo(FamilySeed.CodeParam);
+        await Assert.That(byName[0].GetProperty("families").GetInt32()).IsGreaterThanOrEqualTo(1);
+        await Assert.That(byName[0].GetProperty("isShared").GetBoolean()).IsFalse();
+        await Assert.That(byName[0].GetProperty("scopes")[0].GetString()).IsEqualTo("family");
+    }
+
+    [Test]
+    public async Task GetFamilyParameters_Batch_ValuesAreOffByDefault()
+    {
+        // #535: two batch calls with values hit the 30 s timeout; the batch now
+        // defaults to metadata and an explicit includeValues=true opts back in.
+        var tool = new GetFamilyParametersTool(new StubRevitContext(Doc));
+
+        var batch = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"familyIds\":[" + Seed.FamilyId + "]}"),
+            CancellationToken.None);
+
+        await Assert.That(batch.Success).IsTrue();
+        await Assert.That(Data(batch).GetProperty("includeValues").GetBoolean()).IsFalse();
+        var seeded = Data(batch).GetProperty("families")[0];
+        await Assert.That(seeded.GetProperty("elapsedMs").ValueKind).IsEqualTo(JsonValueKind.Number);
+        var width = FindParameter(seeded, FamilySeed.WidthParam);
+        await Assert.That(width.TryGetProperty("valuesByType", out _)).IsFalse();
+
+        var withValues = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"familyIds\":[" + Seed.FamilyId + "],\"includeValues\":true}"),
+            CancellationToken.None);
+
+        await Assert.That(withValues.Success).IsTrue();
+        await Assert.That(Data(withValues).GetProperty("includeValues").GetBoolean()).IsTrue();
+        var widthWithValues = FindParameter(
+            Data(withValues).GetProperty("families")[0], FamilySeed.WidthParam);
+        await Assert.That(widthWithValues.GetProperty("valuesByType").GetArrayLength())
+            .IsEqualTo(2);
+    }
+
+    [Test]
+    public async Task GetFamilyParameterValues_ReturnsFormulaAndValuesPerType()
+    {
+        var tool = new GetFamilyParameterValuesTool(new StubRevitContext(Doc));
+
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"familyId\":" + Seed.FamilyId + ",\"parameter\":\"" +
+                  FamilySeed.AreaParam + "\"}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var data = Data(result);
+        await Assert.That(data.GetProperty("parameter").GetString()).IsEqualTo(FamilySeed.AreaParam);
+        await Assert.That(data.GetProperty("formula").GetString()!).Contains("*");
+        await Assert.That(data.GetProperty("isDeterminedByFormula").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("values").GetArrayLength()).IsEqualTo(2);
+
+        var missing = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"familyId\":" + Seed.FamilyId + ",\"parameter\":\"no-such-parameter\"}"),
+            CancellationToken.None);
+        await Assert.That(missing.Success).IsFalse();
+        await Assert.That(missing.ErrorCode).IsEqualTo("parameter_not_found");
+    }
 }

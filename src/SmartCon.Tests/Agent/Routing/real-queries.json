@@ -3231,6 +3231,38 @@
         "create_view_template"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r402",
+      "query": "Какие значения у параметра семейства по всем типам? Формулу тоже покажи",
+      "expectedTools": [
+        "get_family_parameter_values"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r403",
+      "query": "Проверь, что формула параметра применилась: значения по каждому типоразмеру",
+      "expectedTools": [
+        "get_family_parameter_values"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r404",
+      "query": "Смени привязку проектного параметра Марка на экземплярную",
+      "expectedTools": [
+        "rebind_project_parameter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r405",
+      "query": "Переведи общий параметр заказчика на типовую привязку, dry-run сначала",
+      "expectedTools": [
+        "rebind_project_parameter"
+      ],
+      "kind": "write"
     }
   ]
 }

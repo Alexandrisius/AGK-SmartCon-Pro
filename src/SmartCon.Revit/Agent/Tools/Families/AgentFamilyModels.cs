@@ -70,6 +70,16 @@ internal class AddFamilyParameterRequest
     public string? InitialValue { get; set; }
 
     public string? Unit { get; set; }
+
+    /// <summary>
+    /// Authored formula assigned right after the parameter is created
+    /// (FamilyManager.SetFormula): "add + formula + verify" as ONE unit. Unit
+    /// literals inside the expression are the standard way to neutralize a
+    /// dimension (X / 1 kg). A rejected formula fails the item with
+    /// invalid_formula and the parameter is removed again; in a batch the other
+    /// items stand, a single-item call rolls back whole.
+    /// </summary>
+    public string? Formula { get; set; }
 }
 
 /// <summary>

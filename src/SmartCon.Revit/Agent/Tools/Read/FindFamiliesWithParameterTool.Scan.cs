@@ -2,6 +2,7 @@ using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Services.Agent;
 using SmartCon.Revit.Agent.Tools.Families;
+using SmartCon.Revit.Agent.Tools.Project;
 
 namespace SmartCon.Revit.Agent.Tools.Read;
 
@@ -16,10 +17,16 @@ public sealed partial class FindFamiliesWithParameterTool
         bool includeInstanceParameters,
         bool summary,
         int maxMatchedTypes,
+        bool requireShared,
+        string? parameterScopeFilter,
         CancellationToken ct)
     {
         var outcome = new ScanOutcome();
-        var resolver = summary ? new AgentSharedParameterResolver(doc) : null;
+        // The resolver is cheap after the first hit (definitionId cache) and the
+        // binding index is one BindingMap pass: both are needed for isShared and
+        // the family|project scope on EVERY match, not only in summary mode.
+        var resolver = new AgentSharedParameterResolver(doc);
+        var bindingIndex = new ProjectBindingIndex(doc);
 
         foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(FamilySymbol)))
         {
@@ -44,10 +51,17 @@ public sealed partial class FindFamiliesWithParameterTool
                 if (string.IsNullOrEmpty(name))
                     continue;
 
-                if (resolver is not null)
-                    AddShared(scan, resolver, parameter, name!);
+                var guid = resolver.ResolveGuid(parameter);
+                AddShared(scan, guid, name!);
 
                 if (!MatchesName(name!, parameterName, mode))
+                    continue;
+
+                if (requireShared && guid is null)
+                    continue;
+
+                var parameterScope = bindingIndex.ScopeOf(name!, guid, family.FamilyCategory);
+                if (!MatchesParameterScope(parameterScope, parameterScopeFilter))
                     continue;
 
                 var value = SafeValueString(parameter);
@@ -62,6 +76,8 @@ public sealed partial class FindFamiliesWithParameterTool
 
                 scan.MatchedTypesTotal++;
                 scan.MatchedParameterNames.Add(name!);
+                scan.ParameterScopes.Add(parameterScope);
+                outcome.AggregateName(scan.FamilyId, name!, guid, parameterScope);
 
                 // The cap belongs to the family, not to one type: a door family with
                 // 40 matching types used to return 40 rows (external run 6, P2).
@@ -74,7 +90,10 @@ public sealed partial class FindFamiliesWithParameterTool
                     ["typeId"] = symbol.Id.GetValue(),
                     ["typeName"] = symbol.Name,
                     ["parameterName"] = name,
-                    ["value"] = value
+                    ["value"] = value,
+                    ["parameterScope"] = parameterScope,
+                    ["isShared"] = guid is not null,
+                    ["guid"] = guid
                 });
             }
         }
@@ -88,8 +107,10 @@ public sealed partial class FindFamiliesWithParameterTool
                 mode,
                 valueContains,
                 maxMatchedTypes,
-                summary,
                 resolver,
+                bindingIndex,
+                requireShared,
+                parameterScopeFilter,
                 outcome,
                 ct);
         }
@@ -104,8 +125,10 @@ public sealed partial class FindFamiliesWithParameterTool
         MatchMode mode,
         string? valueContains,
         int maxMatchedTypes,
-        bool summary,
-        AgentSharedParameterResolver? resolver,
+        AgentSharedParameterResolver resolver,
+        ProjectBindingIndex bindingIndex,
+        bool requireShared,
+        string? parameterScopeFilter,
         ScanOutcome outcome,
         CancellationToken ct)
     {
@@ -134,10 +157,17 @@ public sealed partial class FindFamiliesWithParameterTool
                 if (string.IsNullOrEmpty(name))
                     continue;
 
-                if (resolver is not null)
-                    AddShared(scan, resolver, parameter, name!);
+                var guid = resolver.ResolveGuid(parameter);
+                AddShared(scan, guid, name!);
 
                 if (!MatchesName(name!, parameterName, mode))
+                    continue;
+
+                if (requireShared && guid is null)
+                    continue;
+
+                var parameterScope = bindingIndex.ScopeOf(name!, guid, family.FamilyCategory);
+                if (!MatchesParameterScope(parameterScope, parameterScopeFilter))
                     continue;
 
                 var value = SafeValueString(parameter);
@@ -155,11 +185,15 @@ public sealed partial class FindFamiliesWithParameterTool
                     match = new InstanceParameterMatch
                     {
                         ParameterName = name!,
-                        FirstValue = value
+                        FirstValue = value,
+                        Guid = guid,
+                        ParameterScope = parameterScope
                     };
                     scan.InstanceParameters.Add(name!, match);
                     scan.MatchedInstanceParametersTotal++;
                     scan.MatchedParameterNames.Add(name!);
+                    scan.ParameterScopes.Add(parameterScope);
+                    outcome.AggregateName(scan.FamilyId, name!, guid, parameterScope);
 
                     if (scan.InstanceMatches.Count < maxMatchedTypes)
                         scan.InstanceMatches.Add(match.ToRow());
@@ -172,13 +206,32 @@ public sealed partial class FindFamiliesWithParameterTool
         }
     }
 
+    private static bool MatchesParameterScope(string parameterScope, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)
+            || string.Equals(filter, "any", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // "family+" is the migration-planning filter: family OR family+project —
+        // everything that actually lives in family documents (the live run showed
+        // half of the vendor-prefixed names are family+project; a strict "family"
+        // filter silently dropped them).
+        if (string.Equals(filter, "family+", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(parameterScope, "family", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(parameterScope, "family+project", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(parameterScope, filter, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static void AddShared(
         FamilyScan scan,
-        AgentSharedParameterResolver resolver,
-        Parameter parameter,
+        string? guid,
         string name)
     {
-        var guid = resolver.ResolveGuid(parameter);
         if (guid is null)
             return;
 
@@ -234,15 +287,132 @@ public sealed partial class FindFamiliesWithParameterTool
         }
     }
 
+    /// <summary>
+    /// One pass over doc.ParameterBindings: shared GUIDs (and non-shared names)
+    /// bound at the PROJECT level. A parameter that is only bound here does not
+    /// exist in the family document (the KRTRS_ lesson of the ФОП session:
+    /// 194 "families" were project bindings, family docs held zero).
+    /// </summary>
+    private sealed class ProjectBindingIndex
+    {
+        private readonly Dictionary<string, HashSet<string>> _categoriesByGuid =
+            new(StringComparer.Ordinal);
+
+        private readonly Dictionary<string, HashSet<string>> _categoriesByName =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public ProjectBindingIndex(Document doc)
+        {
+            try
+            {
+                foreach (var row in AgentProjectParameterReader.Collect(doc))
+                {
+                    if (row.Guid is not null)
+                        AddKey(_categoriesByGuid, row.Guid.Value.ToString("D"), row);
+                    AddKey(_categoriesByName, row.Name, row);
+                }
+            }
+            catch (Exception)
+            {
+                // A binding pass failure must not break the scan: scope falls back
+                // to "family" everywhere.
+            }
+        }
+
+        private static void AddKey(
+            Dictionary<string, HashSet<string>> map,
+            string key,
+            AgentProjectParameterReader.ProjectParameterRow row)
+        {
+            if (!map.TryGetValue(key, out var categories))
+            {
+                categories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                map.Add(key, categories);
+            }
+
+            foreach (var category in row.Categories)
+                categories.Add(category);
+        }
+
+        /// <summary>
+        /// "family" (lives in the family document), "project" (bound at project
+        /// level; absent from the family document) or "family+project" (the same
+        /// definition is embedded AND bound — public vendor GUIDs are exactly
+        /// this case).
+        /// </summary>
+        public string ScopeOf(string name, string? guid, Category? familyCategory)
+        {
+            HashSet<string>? guidCategories = null;
+            HashSet<string>? nameCategories = null;
+            var boundByGuid = guid is not null
+                              && _categoriesByGuid.TryGetValue(guid!, out guidCategories);
+            var boundByName = _categoriesByName.TryGetValue(name, out nameCategories);
+            if (!boundByGuid && !boundByName)
+                return "family";
+
+            var categories = boundByGuid ? guidCategories! : nameCategories!;
+            var categoryMatches = familyCategory is null
+                                  || categories.Count == 0
+                                  || categories.Contains(familyCategory.Name);
+            if (!categoryMatches)
+                return "family";
+
+            // The parameter could come from either mechanism on this category;
+            // only opening the family document (get_family_parameters) tells them
+            // apart for a shared GUID that is also embedded.
+            return boundByGuid && guid is not null ? "family+project" : "project";
+        }
+    }
+
     private sealed class ScanOutcome
     {
         public Dictionary<long, FamilyScan> Families { get; } = new();
 
         public HashSet<long> FamiliesSeen { get; } = new();
 
+        public Dictionary<string, ParameterNameAggregate> ByParameterName { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
         public int TypesScanned { get; set; }
 
         public int InstancesScanned { get; set; }
+
+        public void AggregateName(
+            long familyId,
+            string name,
+            string? guid,
+            string parameterScope)
+        {
+            if (!ByParameterName.TryGetValue(name, out var aggregate))
+            {
+                aggregate = new ParameterNameAggregate(name);
+                ByParameterName.Add(name, aggregate);
+            }
+
+            aggregate.Families.Add(familyId);
+            aggregate.Scopes.Add(parameterScope);
+            if (guid is not null)
+                aggregate.Guid ??= guid;
+            else
+                aggregate.SeenNonShared = true;
+        }
+    }
+
+    private sealed class ParameterNameAggregate
+    {
+        public ParameterNameAggregate(string name) => Name = name;
+
+        public string Name { get; }
+
+        public HashSet<long> Families { get; } = new();
+
+        public HashSet<string> Scopes { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public string? Guid { get; set; }
+
+        public bool SeenNonShared { get; set; }
+
+        public string? SingleGuid => SeenNonShared ? null : Guid;
     }
 
     private sealed class FamilyScan
@@ -265,6 +435,8 @@ public sealed partial class FindFamiliesWithParameterTool
         public HashSet<string> MatchedParameterNames { get; } =
             new(StringComparer.OrdinalIgnoreCase);
 
+        public HashSet<string> ParameterScopes { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public int MatchedTypesTotal { get; set; }
 
         public int MatchedInstanceParametersTotal { get; set; }
@@ -284,6 +456,10 @@ public sealed partial class FindFamiliesWithParameterTool
         public required string ParameterName { get; init; }
 
         public string? FirstValue { get; init; }
+
+        public string? Guid { get; init; }
+
+        public string ParameterScope { get; init; } = "family";
 
         public int InstanceCount { get; private set; }
 
@@ -319,7 +495,10 @@ public sealed partial class FindFamiliesWithParameterTool
                 ["value"] = FirstValue,
                 ["instanceCount"] = 0,
                 ["sampleInstanceIds"] = SampleInstanceIds,
-                ["sampleValues"] = SampleValues
+                ["sampleValues"] = SampleValues,
+                ["parameterScope"] = ParameterScope,
+                ["isShared"] = Guid is not null,
+                ["guid"] = Guid
             };
             return Row;
         }

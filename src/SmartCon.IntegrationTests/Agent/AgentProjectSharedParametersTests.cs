@@ -74,6 +74,88 @@ public sealed class AgentProjectSharedParametersTests : RevitApiTest
     }
 
     [Test]
+    public async Task List_MessageSeparatesMatchedProjectAndPage()
+    {
+        // #535: "Read 136 of 136" hid the three different numbers (matched,
+        // whole project, page cut). The payload/message must carry all of them.
+        SeedDefinition("SC_Proj_ListA", SpecTypeId.String.Text);
+        SeedDefinition("SC_Proj_ListB", SpecTypeId.String.Text);
+        var first = Add(
+            "{\"name\":\"SC_Proj_ListA\",\"spec\":\"text\"," +
+            "\"categories\":[\"OST_PipeCurves\"],\"binding\":\"type\",\"dryRun\":false}");
+        var second = Add(
+            "{\"name\":\"SC_Proj_ListB\",\"spec\":\"text\"," +
+            "\"categories\":[\"OST_PipeCurves\"],\"binding\":\"type\",\"dryRun\":false}");
+        await Assert.That(first.Success).IsTrue();
+        await Assert.That(second.Success).IsTrue();
+
+        var filtered = List("{\"parameterNameContains\":\"SC_Proj_ListA\"}");
+        await Assert.That(filtered.Success).IsTrue();
+        var data = Data(filtered);
+        await Assert.That(data.GetProperty("total").GetInt32()).IsEqualTo(1);
+        await Assert.That(data.GetProperty("filtered").GetBoolean()).IsTrue();
+        await Assert.That(data.GetProperty("totalInProject").GetInt32())
+            .IsGreaterThanOrEqualTo(2);
+        await Assert.That(filtered.Message!).Contains("matching binding(s)");
+        await Assert.That(filtered.Message!).Contains("parameter definition(s) bound in the project");
+
+        var paged = List("{\"parameterNameContains\":\"SC_Proj_List\",\"limit\":1}");
+        await Assert.That(paged.Success).IsTrue();
+        var pageData = Data(paged);
+        await Assert.That(pageData.GetProperty("total").GetInt32()).IsEqualTo(2);
+        await Assert.That(pageData.GetProperty("returned").GetInt32()).IsEqualTo(1);
+        await Assert.That(pageData.GetProperty("truncated").GetBoolean()).IsTrue();
+        await Assert.That(paged.Message!).Contains("more with offset");
+    }
+
+    [Test]
+    public async Task Rebind_SwitchesBindingType_WithValuesLostWarning()
+    {
+        SeedDefinition("SC_Proj_Rebind", SpecTypeId.String.Text);
+        var add = Add(
+            "{\"name\":\"SC_Proj_Rebind\",\"spec\":\"text\"," +
+            "\"categories\":[\"OST_PipeCurves\"],\"binding\":\"instance\",\"dryRun\":false}");
+        await Assert.That(add.Success).IsTrue();
+
+        var tool = new RebindProjectParameterTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+        var dryRun = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Rebind\",\"binding\":\"type\",\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(dryRun.Success).IsTrue();
+        // The dry run of the switch reports the blast radius and the value loss.
+        await Assert.That(Data(dryRun).GetProperty("valuesWillBeLost").GetBoolean()).IsTrue();
+        await Assert.That(Data(dryRun).GetProperty("targetBinding").GetString()).IsEqualTo("type");
+
+        // The same-binding request is an honest skip.
+        var skip = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Rebind\",\"binding\":\"instance\",\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(skip.Success).IsTrue();
+        await Assert.That(skip.Message!).Contains("already");
+
+        var applied = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Rebind\",\"binding\":\"type\",\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+        await Assert.That(applied.Message!).Contains("type");
+
+        var row = SingleRow(List("{\"parameterNameContains\":\"SC_Proj_Rebind\"}"));
+        await Assert.That(row.GetProperty("bindingType").GetString()).IsEqualTo("type");
+
+        var missing = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_NoSuch\",\"binding\":\"type\",\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(missing.Success).IsFalse();
+        await Assert.That(missing.ErrorCode).IsEqualTo("parameter_not_found");
+    }
+
+    [Test]
     public async Task Add_DryRun_ChangesNothing()
     {
         SeedDefinition("SC_Proj_DryRun", SpecTypeId.String.Text);
