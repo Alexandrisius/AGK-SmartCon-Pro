@@ -480,6 +480,12 @@ public static class AgentToolCatalog
                 "значения параметра по типам", "формула параметра", "read-back параметра",
                 "verify formula", "parameter values per type", "сверить значения"
             }),
+            ["get_family_labels"] = new("Read", false, new[]
+            {
+                "лейблы семейства", "надписи марки", "labels", "label", "лейбл",
+                "семейства марок", "tag family labels", "аннотационные семейства",
+                "марки", "проверить марки", "titleblock labels"
+            }),
             ["find_families_with_parameter"] = new("Read", false, new[]
             {
                 "найти семейства с параметром", "find families with parameter",

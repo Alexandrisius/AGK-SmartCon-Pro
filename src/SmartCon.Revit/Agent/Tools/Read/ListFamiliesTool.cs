@@ -71,13 +71,13 @@ public sealed class ListFamiliesTool : AgentReadToolBase
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
-        var categoryNames = ReadCategories(args);
+        var categoryNames = AgentCategoryResolver.ReadArgument(args);
         var unknownCategories = new List<string>();
         HashSet<long>? categoryIds = null;
         if (categoryNames.Count > 0)
         {
             var resolved = AgentCategoryResolver.Resolve(doc, categoryNames, unknownCategories);
-            if (unknownCategories.Count > 0)
+            if (resolved.Count == 0)
             {
                 return ToolResult.Fail(
                     "unknown_category",
@@ -86,6 +86,10 @@ public sealed class ListFamiliesTool : AgentReadToolBase
                     ". Use list_categories to see available names.");
             }
 
+            // A multi-category filter keeps the categories that resolve: one
+            // unknown name used to reject the WHOLE call (live run v15), which
+            // looked like "arrays do not work" although each name was fine as
+            // a single string.
             categoryIds = new HashSet<long>(resolved.Select(id => id.GetValue()));
         }
 
@@ -179,9 +183,22 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             selection.AvailableFields);
         if (withSummary)
             payload["summary"] = summary.Build();
+        if (unknownCategories.Count > 0)
+        {
+            payload["unknownCategories"] = unknownCategories;
+            payload["unknownCategoriesNote"] =
+                "These category names were skipped; the rest of the filter was applied.";
+        }
 
         var messageText = "Families: " + families.Count + " of " + summary.Total +
                           " (" + summary.CategoryCount + " categories).";
+        if (unknownCategories.Count > 0)
+        {
+            messageText += " Unknown categories ignored: " +
+                           string.Join(", ", unknownCategories) +
+                           " [Action: pass names from list_categories]";
+        }
+
         if (page.Truncated)
         {
             messageText += AgentListPayload.TruncatedHint(
@@ -192,31 +209,6 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             messageText += AgentListPayload.CompactFieldsHint(selection.Fields);
 
         return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
-    }
-
-    private static List<string> ReadCategories(JsonElement args)
-    {
-        var categories = new List<string>();
-        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty("category", out var value))
-            return categories;
-
-        if (value.ValueKind == JsonValueKind.String)
-            AddCategory(categories, value);
-        else if (value.ValueKind == JsonValueKind.Array)
-            foreach (var item in value.EnumerateArray())
-                AddCategory(categories, item);
-
-        return categories;
-    }
-
-    private static void AddCategory(List<string> categories, JsonElement value)
-    {
-        if (value.ValueKind != JsonValueKind.String)
-            return;
-
-        var text = value.GetString();
-        if (!string.IsNullOrWhiteSpace(text))
-            categories.Add(text!.Trim());
     }
 
     /// <summary>

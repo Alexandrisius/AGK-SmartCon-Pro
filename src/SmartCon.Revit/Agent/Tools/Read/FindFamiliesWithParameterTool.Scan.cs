@@ -8,6 +8,18 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 
 public sealed partial class FindFamiliesWithParameterTool
 {
+    /// <summary>
+    /// Verification caps: one family document open (EditFamily) per candidate,
+    /// so the default read stays bounded even on a several-hundred-family
+    /// audit (the v15 live run: every family of a bound category matched a
+    /// project binding, 200+ candidates).
+    /// </summary>
+    private const int DefaultVerificationLimit = 25;
+
+    private const int MaxVerificationLimit = 200;
+
+    private const int MaxScopeVerifyWarnings = 5;
+
     private static ScanOutcome ScanFamilies(
         Document doc,
         string parameterName,
@@ -18,7 +30,6 @@ public sealed partial class FindFamiliesWithParameterTool
         bool summary,
         int maxMatchedTypes,
         bool requireShared,
-        string? parameterScopeFilter,
         CancellationToken ct)
     {
         var outcome = new ScanOutcome();
@@ -60,9 +71,11 @@ public sealed partial class FindFamiliesWithParameterTool
                 if (requireShared && guid is null)
                     continue;
 
+                // The scope filter is applied AFTER verification (see
+                // ApplyScopeFilter): an assumed "family+project" used to pass
+                // the family+ filter and later turn out to be a project-only
+                // binding, silently poisoning migration plans.
                 var parameterScope = bindingIndex.ScopeOf(name!, guid, family.FamilyCategory);
-                if (!MatchesParameterScope(parameterScope, parameterScopeFilter))
-                    continue;
 
                 var value = SafeValueString(parameter);
                 if (!string.IsNullOrWhiteSpace(valueContains)
@@ -74,12 +87,10 @@ public sealed partial class FindFamiliesWithParameterTool
                 if (!seenParameterNames.Add(name!))
                     continue;
 
-                scan.MatchedTypesTotal++;
-                scan.MatchedParameterNames.Add(name!);
-                scan.ParameterScopes.Add(parameterScope);
-                outcome.AggregateName(scan.FamilyId, name!, guid, parameterScope);
+                scan.MergeScope(name!, parameterScope, guid, typeMatch: true);
+                outcome.AggregateName(scan.FamilyId, name!, guid);
 
-                // The cap belongs to the family, not to one type: a door family with
+                // The cap belongs to the family, not to one type: a family with
                 // 40 matching types used to return 40 rows (external run 6, P2).
                 if (scan.TypeMatches.Count >= maxMatchedTypes)
                     continue;
@@ -110,7 +121,6 @@ public sealed partial class FindFamiliesWithParameterTool
                 resolver,
                 bindingIndex,
                 requireShared,
-                parameterScopeFilter,
                 outcome,
                 ct);
         }
@@ -128,7 +138,6 @@ public sealed partial class FindFamiliesWithParameterTool
         AgentSharedParameterResolver resolver,
         ProjectBindingIndex bindingIndex,
         bool requireShared,
-        string? parameterScopeFilter,
         ScanOutcome outcome,
         CancellationToken ct)
     {
@@ -167,8 +176,6 @@ public sealed partial class FindFamiliesWithParameterTool
                     continue;
 
                 var parameterScope = bindingIndex.ScopeOf(name!, guid, family.FamilyCategory);
-                if (!MatchesParameterScope(parameterScope, parameterScopeFilter))
-                    continue;
 
                 var value = SafeValueString(parameter);
                 if (!string.IsNullOrWhiteSpace(valueContains)
@@ -190,10 +197,8 @@ public sealed partial class FindFamiliesWithParameterTool
                         ParameterScope = parameterScope
                     };
                     scan.InstanceParameters.Add(name!, match);
-                    scan.MatchedInstanceParametersTotal++;
-                    scan.MatchedParameterNames.Add(name!);
-                    scan.ParameterScopes.Add(parameterScope);
-                    outcome.AggregateName(scan.FamilyId, name!, guid, parameterScope);
+                    scan.MergeScope(name!, parameterScope, guid, typeMatch: false);
+                    outcome.AggregateName(scan.FamilyId, name!, guid);
 
                     if (scan.InstanceMatches.Count < maxMatchedTypes)
                         scan.InstanceMatches.Add(match.ToRow());
@@ -205,6 +210,207 @@ public sealed partial class FindFamiliesWithParameterTool
             }
         }
     }
+
+    /// <summary>
+    /// Opens the family document of every matched family whose assumed scope
+    /// says "project-bound" and reclassifies each matched name against the
+    /// real <see cref="FamilyManager"/> parameter list: present = family (or
+    /// family+project when the definition is also bound in the project),
+    /// absent = project (the binding alone produced the match — the KRTRS
+    /// lesson of the v15 run: 9 project bindings made every bound-category
+    /// family look "already ported"). Bounded by the verification limit; the
+    /// remaining candidates are marked "unverified" and their scopes stay
+    /// assumptions.
+    /// </summary>
+    private static void VerifyFamilyScopes(
+        Document doc,
+        ScanOutcome outcome,
+        int verificationLimit,
+        int verificationOffset,
+        List<string> warnings,
+        CancellationToken ct)
+    {
+        var candidates = outcome.Families.Values
+            .Where(item => item.HasMatches && item.ScopeByName.Values.Any(IsAssumedProjectBound))
+            .OrderBy(item => item.FamilyName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var verified = 0;
+        var failed = 0;
+        var skipped = 0;
+        var truncated = false;
+        foreach (var scan in candidates)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (skipped < verificationOffset)
+            {
+                skipped++;
+                scan.ScopeVerification = "unverified";
+                continue;
+            }
+
+            if (verified >= verificationLimit)
+            {
+                truncated = true;
+                scan.ScopeVerification = "unverified";
+                continue;
+            }
+
+            if (doc.GetElement(ElementIdCompat.Create(scan.FamilyId))
+                is not Autodesk.Revit.DB.Family family)
+            {
+                scan.ScopeVerification = "failed";
+                scan.ScopeVerifyError = "family_not_found";
+                failed++;
+                continue;
+            }
+
+            if (!AgentFamilyReader.TryOpenFamilyDocument(
+                    doc, family, out var familyDoc, out var errorCode, out var message))
+            {
+                scan.ScopeVerification = "failed";
+                scan.ScopeVerifyError = errorCode;
+                failed++;
+                if (warnings.Count < MaxScopeVerifyWarnings)
+                {
+                    warnings.Add("Scope verification failed for family '" + scan.FamilyName +
+                                 "': " + message);
+                }
+
+                continue;
+            }
+
+            try
+            {
+                var namesInFamily = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+                var namesByGuid = new Dictionary<string, string>(StringComparer.Ordinal);
+                foreach (FamilyParameter parameter in familyDoc!.FamilyManager.Parameters)
+                {
+                    var parameterName = parameter.Definition?.Name;
+                    if (string.IsNullOrEmpty(parameterName))
+                        continue;
+
+                    namesInFamily[parameterName!] = parameter.IsInstance;
+                    // get_GUID() throws for non-shared family parameters: only
+                    // a shared one carries the GUID to index by.
+                    try
+                    {
+                        var familyGuid = parameter.GUID;
+                        if (familyGuid != Guid.Empty)
+                            namesByGuid[familyGuid.ToString("D")] = parameterName!;
+                    }
+                    catch (Autodesk.Revit.Exceptions.InvalidOperationException)
+                    {
+                        // Not a shared parameter: the name index above covers it.
+                    }
+                }
+
+                foreach (var name in scan.ScopeByName.Keys.ToList())
+                {
+                    var guid = scan.GuidByName.TryGetValue(name, out var known) ? known : null;
+                    string? presentName = null;
+                    var presentIsInstance = false;
+                    if (guid is not null && namesByGuid.TryGetValue(guid, out var byGuid))
+                    {
+                        presentName = byGuid;
+                        presentIsInstance = namesInFamily[byGuid];
+                    }
+                    else if (namesInFamily.TryGetValue(name, out var byName))
+                    {
+                        presentName = name;
+                        presentIsInstance = byName;
+                    }
+
+                    var wasBound = IsAssumedProjectBound(scan.ScopeByName[name]);
+                    var finalScope = presentName is null
+                        ? "project"
+                        : wasBound ? "family+project" : "family";
+                    scan.ApplyVerifiedScope(
+                        name, finalScope, presentName is not null,
+                        presentName is null ? null : presentIsInstance);
+                }
+
+                scan.ScopeVerification = "verified";
+                verified++;
+            }
+            finally
+            {
+                try
+                {
+                    familyDoc!.Close(false);
+                }
+                catch (Exception)
+                {
+                    // The read-only copy is discarded either way.
+                }
+            }
+        }
+
+        outcome.ScopeVerificationStats = new ScopeVerificationStats
+        {
+            Candidates = candidates.Count,
+            Verified = verified,
+            Failed = failed,
+            SkippedByOffset = skipped,
+            Unverified = candidates.Count - verified - failed - skipped,
+            Truncated = truncated,
+            Limit = verificationLimit,
+            Offset = verificationOffset
+        };
+    }
+
+    /// <summary>
+    /// The parameterScope filter runs on the FINAL scopes (after verification):
+    /// a name that verified as "project" is dropped from family+ results
+    /// instead of surviving on its pre-verification assumption.
+    /// </summary>
+    private static void ApplyScopeFilter(ScanOutcome outcome, string? filter)
+    {
+        if (string.IsNullOrWhiteSpace(filter)
+            || string.Equals(filter, "any", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        foreach (var scan in outcome.Families.Values)
+        {
+            var dropped = scan.ScopeByName
+                .Where(pair => !MatchesParameterScope(pair.Value, filter))
+                .Select(pair => pair.Key)
+                .ToList();
+            if (dropped.Count == 0)
+                continue;
+
+            foreach (var name in dropped)
+            {
+                scan.ScopeByName.Remove(name);
+                scan.GuidByName.Remove(name);
+                scan.InstanceParameters.Remove(name);
+                // The per-name type counter feeds MatchedTypesTotal: leaving a
+                // dropped name here made matchedTypeCount contradict the rows
+                // and the per-family matchedParameterCount (validator P1, v15).
+                scan.TypeMatchesByName.Remove(name);
+            }
+
+            scan.TypeMatches.RemoveAll(row =>
+                dropped.Contains((string)row["parameterName"]!, StringComparer.OrdinalIgnoreCase));
+            scan.InstanceMatches.RemoveAll(row =>
+                dropped.Contains((string)row["parameterName"]!, StringComparer.OrdinalIgnoreCase));
+        }
+
+        foreach (var aggregate in outcome.ByParameterName.Values.ToList())
+        {
+            aggregate.Families.RemoveWhere(id =>
+                !outcome.Families.TryGetValue(id, out var scan)
+                || !scan.ScopeByName.ContainsKey(aggregate.Name));
+            if (aggregate.Families.Count == 0)
+                outcome.ByParameterName.Remove(aggregate.Name);
+        }
+    }
+
+    private static bool IsAssumedProjectBound(string scope) =>
+        string.Equals(scope, "project", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(scope, "family+project", StringComparison.OrdinalIgnoreCase);
 
     private static bool MatchesParameterScope(string parameterScope, string? filter)
     {
@@ -293,225 +499,4 @@ public sealed partial class FindFamiliesWithParameterTool
     /// exist in the family document (the KRTRS_ lesson of the ФОП session:
     /// 194 "families" were project bindings, family docs held zero).
     /// </summary>
-    private sealed class ProjectBindingIndex
-    {
-        private readonly Dictionary<string, HashSet<string>> _categoriesByGuid =
-            new(StringComparer.Ordinal);
-
-        private readonly Dictionary<string, HashSet<string>> _categoriesByName =
-            new(StringComparer.OrdinalIgnoreCase);
-
-        public ProjectBindingIndex(Document doc)
-        {
-            try
-            {
-                foreach (var row in AgentProjectParameterReader.Collect(doc))
-                {
-                    if (row.Guid is not null)
-                        AddKey(_categoriesByGuid, row.Guid.Value.ToString("D"), row);
-                    AddKey(_categoriesByName, row.Name, row);
-                }
-            }
-            catch (Exception)
-            {
-                // A binding pass failure must not break the scan: scope falls back
-                // to "family" everywhere.
-            }
-        }
-
-        private static void AddKey(
-            Dictionary<string, HashSet<string>> map,
-            string key,
-            AgentProjectParameterReader.ProjectParameterRow row)
-        {
-            if (!map.TryGetValue(key, out var categories))
-            {
-                categories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                map.Add(key, categories);
-            }
-
-            foreach (var category in row.Categories)
-                categories.Add(category);
-        }
-
-        /// <summary>
-        /// "family" (lives in the family document), "project" (bound at project
-        /// level; absent from the family document) or "family+project" (the same
-        /// definition is embedded AND bound — public vendor GUIDs are exactly
-        /// this case).
-        /// </summary>
-        public string ScopeOf(string name, string? guid, Category? familyCategory)
-        {
-            HashSet<string>? guidCategories = null;
-            HashSet<string>? nameCategories = null;
-            var boundByGuid = guid is not null
-                              && _categoriesByGuid.TryGetValue(guid!, out guidCategories);
-            var boundByName = _categoriesByName.TryGetValue(name, out nameCategories);
-            if (!boundByGuid && !boundByName)
-                return "family";
-
-            var categories = boundByGuid ? guidCategories! : nameCategories!;
-            var categoryMatches = familyCategory is null
-                                  || categories.Count == 0
-                                  || categories.Contains(familyCategory.Name);
-            if (!categoryMatches)
-                return "family";
-
-            // The parameter could come from either mechanism on this category;
-            // only opening the family document (get_family_parameters) tells them
-            // apart for a shared GUID that is also embedded.
-            return boundByGuid && guid is not null ? "family+project" : "project";
-        }
-    }
-
-    private sealed class ScanOutcome
-    {
-        public Dictionary<long, FamilyScan> Families { get; } = new();
-
-        public HashSet<long> FamiliesSeen { get; } = new();
-
-        public Dictionary<string, ParameterNameAggregate> ByParameterName { get; } =
-            new(StringComparer.OrdinalIgnoreCase);
-
-        public int TypesScanned { get; set; }
-
-        public int InstancesScanned { get; set; }
-
-        public void AggregateName(
-            long familyId,
-            string name,
-            string? guid,
-            string parameterScope)
-        {
-            if (!ByParameterName.TryGetValue(name, out var aggregate))
-            {
-                aggregate = new ParameterNameAggregate(name);
-                ByParameterName.Add(name, aggregate);
-            }
-
-            aggregate.Families.Add(familyId);
-            aggregate.Scopes.Add(parameterScope);
-            if (guid is not null)
-                aggregate.Guid ??= guid;
-            else
-                aggregate.SeenNonShared = true;
-        }
-    }
-
-    private sealed class ParameterNameAggregate
-    {
-        public ParameterNameAggregate(string name) => Name = name;
-
-        public string Name { get; }
-
-        public HashSet<long> Families { get; } = new();
-
-        public HashSet<string> Scopes { get; } = new(StringComparer.OrdinalIgnoreCase);
-
-        public string? Guid { get; set; }
-
-        public bool SeenNonShared { get; set; }
-
-        public string? SingleGuid => SeenNonShared ? null : Guid;
-    }
-
-    private sealed class FamilyScan
-    {
-        public long FamilyId { get; init; }
-
-        public required string FamilyUniqueId { get; init; }
-
-        public required string FamilyName { get; init; }
-
-        public string? Category { get; init; }
-
-        public int PlacedInstanceCount { get; set; }
-
-        public HashSet<string> SharedGuids { get; } = new(StringComparer.Ordinal);
-
-        public HashSet<string> SharedParameterNames { get; } =
-            new(StringComparer.OrdinalIgnoreCase);
-
-        public HashSet<string> MatchedParameterNames { get; } =
-            new(StringComparer.OrdinalIgnoreCase);
-
-        public HashSet<string> ParameterScopes { get; } = new(StringComparer.OrdinalIgnoreCase);
-
-        public int MatchedTypesTotal { get; set; }
-
-        public int MatchedInstanceParametersTotal { get; set; }
-
-        public List<Dictionary<string, object?>> TypeMatches { get; } = new();
-
-        public List<Dictionary<string, object?>> InstanceMatches { get; } = new();
-
-        public Dictionary<string, InstanceParameterMatch> InstanceParameters { get; } =
-            new(StringComparer.OrdinalIgnoreCase);
-
-        public bool Matched => MatchedTypesTotal > 0 || MatchedInstanceParametersTotal > 0;
-    }
-
-    private sealed class InstanceParameterMatch
-    {
-        public required string ParameterName { get; init; }
-
-        public string? FirstValue { get; init; }
-
-        public string? Guid { get; init; }
-
-        public string ParameterScope { get; init; } = "family";
-
-        public int InstanceCount { get; private set; }
-
-        public List<long> SampleInstanceIds { get; } = new();
-
-        public List<string> SampleValues { get; } = new();
-
-        public Dictionary<string, object?>? Row { get; private set; }
-
-        public void AddInstance(long instanceId, string? value)
-        {
-            InstanceCount++;
-            if (SampleInstanceIds.Count < MaxSampleInstances
-                && !SampleInstanceIds.Contains(instanceId))
-            {
-                SampleInstanceIds.Add(instanceId);
-            }
-
-            if (SampleValues.Count < MaxSampleInstances
-                && !string.IsNullOrWhiteSpace(value)
-                && !SampleValues.Contains(value!))
-            {
-                SampleValues.Add(value!);
-            }
-        }
-
-        public Dictionary<string, object?> ToRow()
-        {
-            Row = new Dictionary<string, object?>
-            {
-                ["scope"] = "instance",
-                ["parameterName"] = ParameterName,
-                ["value"] = FirstValue,
-                ["instanceCount"] = 0,
-                ["sampleInstanceIds"] = SampleInstanceIds,
-                ["sampleValues"] = SampleValues,
-                ["parameterScope"] = ParameterScope,
-                ["isShared"] = Guid is not null,
-                ["guid"] = Guid
-            };
-            return Row;
-        }
-
-        public void SyncRow()
-        {
-            if (Row is null)
-                return;
-
-            Row["instanceCount"] = InstanceCount;
-            Row["value"] = FirstValue ?? (SampleValues.Count > 0 ? SampleValues[0] : null);
-            Row["sampleInstanceIds"] = SampleInstanceIds;
-            Row["sampleValues"] = SampleValues;
-        }
-    }
 }

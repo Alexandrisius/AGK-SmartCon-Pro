@@ -15,11 +15,18 @@ public static partial class AgentToolPackSkills
   перезагрузку и новый типовой каталог, формулы продолжают считать.
 - Проектные привязки (`add_project_shared_parameter`) — только по явному запросу: замораживают
   значения, выключают формулы; уровень всегда выбирает пользователь.
+- **Модель vs аннотация**: «по всем семействам» = загружаемые МОДЕЛЬНЫЕ семейства модельных
+  категорий (оборудование, фитинги…), которые формируют модель и попадают в спецификации.
+  Марки/аннотации/титульники — оформление без данных: только по явной просьбе, в отчёте
+  отдельным блоком, не в счётчике миграции.
 
 ### Карта тулов
 - Чтение: `list_families`, `list_family_types`, `get_family_parameters`,
   `get_family_parameter_values` (один параметр: формула + значения),
   `find_families_with_parameter` (`includeInstanceParameters=true` — instance-параметры),
+  `get_family_labels` (лейблы марок: sample text; связь лейбл→параметр до Revit 2027 НЕчитается
+  API (CF-3799), перепривязка вручную в Family Editor; «марки живы» — TagText меток через
+  get_element_details),
   `list_shared_parameters` (нужен активный ФОП; иначе `shared_parameter_file_missing` →
   `set_shared_parameter_file` пака params).
 - `category` (строка/массив, OST_*/имя/id), `summary`, `placedOnly`, `fields`/`parameterNames`.
@@ -104,6 +111,12 @@ public static partial class AgentToolPackSkills
   проектных привязок — пак params. Instance-проверка — `list_family_types(valueScope:instance)`:
   существующие типовые уходят в `typeScopedParameters`, `missingParameters` — только
   реально отсутствующие.
+- **Scope в `find_families_with_parameter`**: `family+project` без проверки — ПРЕДПОЛОЖЕНИЕ
+  по GUID-биндингу проекта (биндинг показывает параметр на всей категории, даже если семейство
+  его не содержит — непортированные выглядели «уже портированными»). `verifyFamilyScope:true`
+  (умолчание) открывает документы семейств и понижает до `project` (≤25 за вызов, дальше
+  `verificationOffset`); строки несут `scopeVerification`. Миграцию планируйте по
+  `parameterScope:""family+""` с верификацией.
 
 ### Рецепты
 1. «Добавь общий параметр из ФОП»: `list_shared_parameters(nameContains:)` → если нет,
@@ -127,6 +140,9 @@ public static partial class AgentToolPackSkills
 9. «Массовая правка по десяткам/сотням семейств» — `start_job(action:""map_family_parameters"")`
    (до 200 family units); поштучный тул — для 1–5 семейств.
 10. «Переведи семейство на ФОП заказчика» (семейный путь по умолчанию):
+   отбор ЦЕЛИ — `list_families(summary:true)`/`find_families_with_parameter(includeInstanceParameters:
+   true, parameterScope:""family+"")` — берём загружаемые модельные семейства с размещёнными
+   экземплярами (марки/титульники — отдельно, только по просьбе) →
    `list_shared_parameters(nameContains:""<часть имени ФОП>"")` → `add_family_parameter(items:[{name,
    storageType, isShared:true, createDefinition:true, group:""PG_DATA""}, …])` ОДНИМ вызовом →
    `start_job(action:""map_family_parameters"")` с `createTarget:true` (mode formula для

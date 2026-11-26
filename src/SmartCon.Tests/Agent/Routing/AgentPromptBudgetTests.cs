@@ -16,14 +16,18 @@ namespace SmartCon.Tests.Agent.Routing;
 /// </summary>
 public sealed class AgentPromptBudgetTests
 {
-    private const int PromptTokenGate = 8000;
+    // Raised 8000 -> 9000 with the owner's blessing (v15): the Revit model
+    // ontology section (model elements carry the data; tags/sheets/views are
+    // documentation) had to join the static prompt to stop bulk family tasks
+    // from sweeping annotation families into the migration.
+    private const int PromptTokenGate = 9000;
 
     private readonly ITestOutputHelper _output;
 
     public AgentPromptBudgetTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
-    public void PromptWithPacks_StaysUnderEightThousandTokens()
+    public void PromptWithPacks_StaysWithinTheTokenGate()
     {
         var packs = new StringBuilder();
         foreach (var pack in AgentToolPacks.All)

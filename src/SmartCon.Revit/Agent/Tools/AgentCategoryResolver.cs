@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Autodesk.Revit.DB;
 using SmartCon.Core.Compatibility;
 
@@ -14,14 +15,95 @@ internal static class AgentCategoryResolver
 {
     private const string EnumPrefix = "OST_";
 
+    /// <summary>
+    /// Reads a category argument that may be a string, an array of strings or
+    /// a JSON-encoded array string — a live-run LLM quirk: the model emitted
+    /// "[\"Оборудование\",\"Арматура трубопроводов\"]" as ONE string and the
+    /// resolver reported the whole blob as a single unknown category, though
+    /// every name inside it was valid.
+    /// </summary>
+    internal static List<string> ReadArgument(JsonElement args, string propertyName = "category")
+    {
+        var categories = new List<string>();
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty(propertyName, out var value))
+        {
+            return categories;
+        }
+
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                AddName(categories, value.GetString());
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in value.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String)
+                        AddName(categories, item.GetString());
+                }
+
+                break;
+        }
+
+        return categories;
+    }
+
+    /// <summary>
+    /// A name that looks like a serialized JSON array of strings is flattened
+    /// into its items; anything else (or anything that fails to parse) stays a
+    /// literal category name. A category never starts with '['.
+    /// </summary>
+    private static void AddName(List<string> names, string? text)
+    {
+        var trimmed = text?.Trim();
+        if (string.IsNullOrEmpty(trimmed))
+            return;
+
+        if (trimmed![0] == '[')
+        {
+            try
+            {
+                using var parsed = JsonDocument.Parse(trimmed);
+                if (parsed.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in parsed.RootElement.EnumerateArray())
+                    {
+                        var inner = item.ValueKind == JsonValueKind.String
+                            ? item.GetString()?.Trim()
+                            : null;
+                        if (!string.IsNullOrEmpty(inner))
+                            names.Add(inner!);
+                    }
+
+                    return;
+                }
+            }
+            catch (JsonException)
+            {
+                // Not valid JSON after all: fall through and treat it literally.
+            }
+        }
+
+        names.Add(trimmed);
+    }
+
     internal static IReadOnlyList<ElementId> Resolve(
         Document doc,
         IReadOnlyList<string> names,
         ICollection<string> unknown)
     {
         var ids = new List<ElementId>(names.Count);
-        List<Category>? displayNames = null;
+        var expanded = new List<string>(names.Count);
         foreach (var name in names)
+        {
+            // The stringified-array quirk is neutralized here as well, so every
+            // caller that already collects raw strings benefits.
+            AddName(expanded, name);
+        }
+
+        List<Category>? displayNames = null;
+        foreach (var name in expanded)
         {
             if (string.IsNullOrWhiteSpace(name))
                 continue;

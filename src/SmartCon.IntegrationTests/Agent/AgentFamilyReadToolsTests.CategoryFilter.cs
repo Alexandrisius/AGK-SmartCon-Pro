@@ -54,4 +54,51 @@ public sealed partial class AgentFamilyReadToolsTests
         await Assert.That(result.ErrorCode).IsEqualTo("unknown_category");
         await Assert.That(result.Message ?? string.Empty).Contains("OST_NoSuchCategory");
     }
+
+    [Test]
+    public async Task ListFamilies_StringifiedJsonArrayCategory_ResolvesEveryName()
+    {
+        // v15 live-run quirk: the model sent the category array as ONE JSON
+        // string ("[\"OST_…\",\"…\"]") and the resolver reported the whole blob
+        // as a single unknown category, though every name inside was valid.
+        var family = (RevitFamily)Doc.GetElement(ElementIdCompat.Create(Seed.FamilyId))!;
+        var category = family.FamilyCategory;
+        if (category is null)
+            Skip.Test("У загруженного семейства нет категории");
+
+        var ostName = ((BuiltInCategory)category!.Id.GetValue()).ToString();
+        var tool = new ListFamiliesTool(new StubRevitContext(Doc));
+        var stringified = "{\"category\":\"[\\\"" + ostName + "\\\",\\\"" + category.Name +
+                          "\\\"]\",\"compact\":false}";
+        var result = tool.ExecuteForTests(Doc, Parse(stringified), CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(ContainsFamily(Data(result), Seed.FamilyId)).IsTrue();
+    }
+
+    [Test]
+    public async Task ListFamilies_MixedKnownAndUnknownCategories_KeepsValidOnes()
+    {
+        // v15: one unknown name used to reject the whole multi-category call —
+        // it looked like "arrays do not work". The valid categories must filter
+        // and the unknown ones surface as a warning.
+        var family = (RevitFamily)Doc.GetElement(ElementIdCompat.Create(Seed.FamilyId))!;
+        var category = family.FamilyCategory;
+        if (category is null)
+            Skip.Test("У загруженного семейства нет категории");
+
+        var ostName = ((BuiltInCategory)category!.Id.GetValue()).ToString();
+        var tool = new ListFamiliesTool(new StubRevitContext(Doc));
+        var result = tool.ExecuteForTests(
+            Doc,
+            Parse("{\"category\":[\"" + ostName + "\",\"OST_NoSuchCategory\"],\"compact\":false}"),
+            CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        await Assert.That(ContainsFamily(Data(result), Seed.FamilyId)).IsTrue();
+        var unknown = Data(result).GetProperty("unknownCategories");
+        await Assert.That(unknown.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(unknown[0].GetString()).IsEqualTo("OST_NoSuchCategory");
+        await Assert.That(result.Message ?? string.Empty).Contains("ignored");
+    }
 }

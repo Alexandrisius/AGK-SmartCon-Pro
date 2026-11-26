@@ -3287,6 +3287,30 @@
         "remove_project_parameter"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r409",
+      "query": "В каких семействах марок есть лейблы и сколько их?",
+      "expectedTools": [
+        "get_family_labels"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r410",
+      "query": "Проверь лейблы титульного блока перед миграцией параметров",
+      "expectedTools": [
+        "get_family_labels"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r411",
+      "query": "Найди семейства категории Оборудование и Арматура трубопроводов с параметром заказчика",
+      "expectedTools": [
+        "find_families_with_parameter"
+      ],
+      "kind": "read"
     }
   ]
 }

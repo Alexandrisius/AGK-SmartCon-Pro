@@ -76,6 +76,17 @@ internal static class AgentElementEssence
         if (element is View view && !elementIsType)
             return ViewEssence(view);
 
+        // A placed tag's essence is what it renders (TagText) and what it
+        // points at — the read-back for "did the marks survive the parameter
+        // migration" (the label→parameter link itself is not readable via the
+        // API before Revit 2027, CF-3799; get_family_labels states that).
+        if (element is IndependentTag tag && !elementIsType)
+        {
+            var tagEssence = TagEssence(tag);
+            if (tagEssence.Count > 0)
+                return tagEssence;
+        }
+
         var profile = ProfileFor(element.Category);
         var result = new List<ParameterValueInfo>(Math.Min(profile.Length, MaxEntries));
         var seen = new HashSet<BuiltInParameter>();
@@ -164,6 +175,42 @@ internal static class AgentElementEssence
         return result;
     }
 
+    private static IReadOnlyList<ParameterValueInfo> TagEssence(IndependentTag tag)
+    {
+        var result = new List<ParameterValueInfo>(2);
+        try
+        {
+            // TagText throws when the tag has no tag behavior; HasTagText()
+            // does not exist in the 2023/2024 API (net48 builds).
+            AddViewValue(result, "Tag Text", tag.TagText, "String", "tag");
+        }
+        catch (Exception)
+        {
+            // The tag has no tag behavior in this context.
+        }
+
+        try
+        {
+            var tagged = tag.GetTaggedLocalElementIds();
+            if (tagged.Count > 0)
+            {
+                AddViewValue(
+                    result,
+                    "Tagged Element Ids",
+                    string.Join(", ", tagged.Select(id => id.GetValue().ToString(
+                        System.Globalization.CultureInfo.InvariantCulture))),
+                    "ElementId",
+                    "tag");
+            }
+        }
+        catch (Exception)
+        {
+            // Tagged references are optional context.
+        }
+
+        return result;
+    }
+
     private static string? SafeDetailLevel(View view)
     {
         try
@@ -192,7 +239,8 @@ internal static class AgentElementEssence
         List<ParameterValueInfo> target,
         string name,
         string? value,
-        string storageType)
+        string storageType,
+        string scope = "view")
     {
         if (string.IsNullOrWhiteSpace(value))
             return;
@@ -204,7 +252,7 @@ internal static class AgentElementEssence
             DisplayValue = value,
             StorageType = storageType,
             ParameterClass = "system",
-            Scope = "view"
+            Scope = scope
         });
     }
 

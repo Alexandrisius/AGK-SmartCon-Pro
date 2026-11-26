@@ -110,7 +110,7 @@ public sealed class AgentToolPacksTests
             ["families"] = new[]
             {
                 "list_families", "list_family_types", "get_family_parameters",
-                "get_family_parameter_values",
+                "get_family_parameter_values", "get_family_labels",
                 "find_families_with_parameter", "list_shared_parameters",
                 "rename_family_parameter", "add_family_parameter",
                 "set_family_parameter_values", "set_family_formula",
@@ -152,7 +152,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(141, placements.Length);
+        Assert.Equal(142, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

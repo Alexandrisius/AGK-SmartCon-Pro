@@ -159,7 +159,7 @@ public static class AgentToolPacks
             Tools = new[]
             {
                 "list_families", "list_family_types", "get_family_parameters",
-                "get_family_parameter_values",
+                "get_family_parameter_values", "get_family_labels",
                 "find_families_with_parameter", "list_shared_parameters",
                 "rename_family_parameter", "add_family_parameter",
                 "set_family_parameter_values", "set_family_formula",

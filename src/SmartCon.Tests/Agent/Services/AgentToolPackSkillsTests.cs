@@ -60,11 +60,13 @@ public sealed class AgentToolPackSkillsTests
         {
             var skill = AgentToolPackSkills.TryGet(pack.Name)!;
 
-            // Families carries the most risk (19 tools incl. system types #441, family
-            // documents) and is intentionally the longest manual; everything else stays
-            // well below this ceiling.
-            Assert.True(skill.Length is >= 900 and <= 9500,
-                pack.Name + " skill is " + skill.Length + " chars (limit 9500)");
+            // Families carries the most risk (20 tools incl. system types #441, family
+            // documents, tag labels) and is intentionally the longest manual; everything
+            // else stays well below this ceiling. Raised 9500 -> 11000 with the owner's
+            // blessing (v15: model-vs-annotation default, honest scope verification and
+            // label inventory had to fit the manual).
+            Assert.True(skill.Length is >= 900 and <= 11000,
+                pack.Name + " skill is " + skill.Length + " chars (limit 11000)");
         }
     }
 
