@@ -140,6 +140,7 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, RemapParameterValuesTool>();
         services.AddSingleton<IAgentTool, AddProjectSharedParameterTool>();
         services.AddSingleton<IAgentTool, RebindProjectParameterTool>();
+        services.AddSingleton<IAgentTool, RemoveProjectParameterTool>();
         services.AddSingleton<IAgentTool, RenameFamilyParameterTool>();
         services.AddSingleton<IAgentTool, AddFamilyParameterTool>();
         services.AddSingleton<IAgentTool, SetFamilyParameterValuesTool>();
@@ -357,6 +358,7 @@ public static class AgentToolRegistration
         typeof(RemapParameterValuesTool),
         typeof(AddProjectSharedParameterTool),
         typeof(RebindProjectParameterTool),
+        typeof(RemoveProjectParameterTool),
         typeof(RenameFamilyParameterTool),
         typeof(AddFamilyParameterTool),
         typeof(SetFamilyParameterValuesTool),

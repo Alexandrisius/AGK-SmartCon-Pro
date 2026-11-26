@@ -5,6 +5,7 @@ using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.IntegrationTests.Support;
+using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Read;
 using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
@@ -363,6 +364,119 @@ public sealed class AgentProjectSharedParametersTests : RevitApiTest
 
         await Assert.That(typeCall.Success).IsFalse();
         await Assert.That(typeCall.ErrorCode).IsEqualTo("binding_type_conflict");
+    }
+
+    [Test]
+    public async Task Remove_DryRun_ThenApply_ThenDefinitionGate()
+    {
+        SeedDefinition("SC_Proj_Remove", SpecTypeId.String.Text);
+        var add = Add(
+            "{\"name\":\"SC_Proj_Remove\",\"spec\":\"text\"," +
+            "\"categories\":[\"OST_PipeCurves\"],\"binding\":\"instance\",\"dryRun\":false}");
+        await Assert.That(add.Success).IsTrue();
+        var guid = Guid.Parse(SingleRow(List("{\"parameterNameContains\":\"SC_Proj_Remove\"}"))
+            .GetProperty("guid").GetString()!);
+
+        var tool = new RemoveProjectParameterTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+
+        // Dry run: audit only — the binding stays, the loss is stated.
+        var dryRun = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Remove\",\"dryRun\":true}"),
+            approved: true, CancellationToken.None);
+        await Assert.That(dryRun.Success).IsTrue();
+        await Assert.That(Data(dryRun).GetProperty("valuesWillBeLost").GetBoolean()).IsTrue();
+        await Assert.That(Data(dryRun).GetProperty("undoSupported").GetBoolean()).IsFalse();
+        await Assert.That(SingleRow(List("{\"parameterNameContains\":\"SC_Proj_Remove\"}"))
+            .GetProperty("bindingType").GetString()).IsEqualTo("instance");
+
+        // Apply on an empty unused binding: no force needed, read-back confirms.
+        var applied = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Remove\",\"dryRun\":false}"),
+            approved: true, CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+        await Assert.That(Data(applied).GetProperty("verifiedRemoved").GetBoolean()).IsTrue();
+        var gone = List("{\"parameterNameContains\":\"SC_Proj_Remove\"}");
+        await Assert.That(Data(gone).GetProperty("total").GetInt32()).IsEqualTo(0);
+        // The shared definition element survives a plain unbind.
+        await Assert.That(SharedParameterElement.Lookup(Doc, guid)).IsNotNull();
+
+        // deleteDefinition is gated behind force even on a clean binding.
+        SeedDefinition("SC_Proj_RemoveDef", SpecTypeId.String.Text);
+        var defAdd = Add(
+            "{\"name\":\"SC_Proj_RemoveDef\",\"spec\":\"text\"," +
+            "\"categories\":[\"OST_PipeCurves\"],\"binding\":\"type\",\"dryRun\":false}");
+        await Assert.That(defAdd.Success).IsTrue();
+
+        var gated = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_RemoveDef\",\"deleteDefinition\":true,\"dryRun\":false}"),
+            approved: true, CancellationToken.None);
+        await Assert.That(gated.Success).IsFalse();
+        await Assert.That(gated.ErrorCode).IsEqualTo("definition_delete_requires_force");
+
+        var defGuid = Guid.Parse(SingleRow(List("{\"parameterNameContains\":\"SC_Proj_RemoveDef\"}"))
+            .GetProperty("guid").GetString()!);
+        var forced = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_RemoveDef\",\"deleteDefinition\":true," +
+                  "\"force\":true,\"dryRun\":false}"),
+            approved: true, CancellationToken.None);
+        await Assert.That(forced.Success).IsTrue();
+        await Assert.That(SharedParameterElement.Lookup(Doc, defGuid)).IsNull();
+        var defGone = List("{\"parameterNameContains\":\"SC_Proj_RemoveDef\"}");
+        await Assert.That(Data(defGone).GetProperty("total").GetInt32()).IsEqualTo(0);
+
+        var missing = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_NoSuch\",\"dryRun\":true}"),
+            approved: true, CancellationToken.None);
+        await Assert.That(missing.Success).IsFalse();
+        await Assert.That(missing.ErrorCode).IsEqualTo("parameter_not_found");
+    }
+
+    [Test]
+    public async Task Add_SharedFamilyParameter_ReportsProjectBindingAndDivergence()
+    {
+        // S.53 D3: a project binding overrides the family's scope and group in
+        // the project context; the add result must carry projectBinding and a
+        // divergence warning (schedules follow the BINDING's scope).
+        SeedDefinition("SC_Proj_BindNote", SpecTypeId.String.Text);
+        var bind = Add(
+            "{\"name\":\"SC_Proj_BindNote\",\"spec\":\"text\"," +
+            "\"categories\":[\"OST_PipeCurves\"],\"binding\":\"instance\",\"dryRun\":false}");
+        await Assert.That(bind.Success).IsTrue();
+        var guid = SingleRow(List("{\"parameterNameContains\":\"SC_Proj_BindNote\"}"))
+            .GetProperty("guid").GetString()!;
+
+        var seed = FamilySeed.Create(Application, Doc, "SC_AgentBindNote", out var reason);
+        if (seed is null)
+        {
+            Skip.Test(reason ?? "Не удалось сидировать семейство");
+            return;
+        }
+
+        try
+        {
+            var add = new AddFamilyParameterTool(
+                    new StubRevitContext(Doc), _transactions!, _changeSets!)
+                .ExecuteForTests(
+                    Parse("{\"familyId\":" + seed.FamilyId + ",\"name\":\"SC_Proj_BindNote\"," +
+                          "\"storageType\":\"text\",\"isShared\":true,\"guid\":\"" + guid +
+                          "\",\"isInstance\":false,\"dryRun\":false}"),
+                    approved: true,
+                    CancellationToken.None);
+            await Assert.That(add.Success).IsTrue();
+
+            var parameter = Data(add).GetProperty("parameter");
+            var projectBinding = parameter.GetProperty("projectBinding");
+            await Assert.That(projectBinding.GetProperty("scope").GetString())
+                .IsEqualTo("instance");
+            await Assert.That(projectBinding.TryGetProperty("group", out _)).IsTrue();
+            await Assert.That(add.Warnings.Any(warning =>
+                warning.Contains("diverge") && warning.Contains("binding"))).IsTrue();
+        }
+        finally
+        {
+            seed.Dispose();
+        }
     }
 
     private void SeedDefinition(string name, ForgeTypeId spec)

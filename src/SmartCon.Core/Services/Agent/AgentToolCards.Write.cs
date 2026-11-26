@@ -203,6 +203,47 @@ public static partial class AgentToolCards
             },
             new AgentToolCard
             {
+                ToolName = "remove_project_parameter",
+                Pack = "params",
+                Purpose =
+                    "Удаляет СУЩЕСТВУЮЩУЮ проектную привязку параметра (BindingMap.Remove) по " +
+                    "имени или GUID; deleteDefinition=true заодно удаляет элемент определения " +
+                    "(SharedParameterElement/ParameterElement) из документа. Dry-run и apply " +
+                    "показывают один и тот же аудит: категории, элементы, непустые значения, " +
+                    "использование в спецификациях и фильтрах видов.",
+                WhenToUse =
+                    "Миграция ФОП: удалить пустые неиспользуемые привязки, оставшиеся от чужого " +
+                    "ФОП. Значения сбрасываются и undo_last привязку НЕ восстанавливает; " +
+                    "непустые значения или использование в спеках/фильтрах требуют force=true. " +
+                    "deleteDefinition ВСЕГДА требует force: удаление определения молча ломает " +
+                    "формулы семейств с этим GUID (не аудируется из проекта).",
+                WhenNotToUse =
+                    "Когда нужно перепривязать тип (экземпляр↔тип) — rebind_project_parameter; " +
+                    "когда нужно удалить параметр СЕМЕЙСТВА — remove_family_parameter; когда " +
+                    "нужно убрать поле из спецификации — remove_schedule_field.",
+                Examples = new[]
+                {
+                    "Удали пустую привязку параметра Заказчика",
+                    "Покажи dry-run удаления проектного параметра по GUID",
+                    "Удали привязку и определение параметра с force"
+                },
+                Synonyms = new[]
+                {
+                    "удалить проектный параметр", "убрать привязку параметра", "unbind параметра",
+                    "remove project parameter", "отвязать параметр", "удалить привязку ФОП",
+                    "удалить определение общего параметра из документа", "удалить биндинг"
+                },
+                NegativeExamples = new[]
+                {
+                    "Удали параметр из семейства",
+                    "Отвяжи фильтр от вида"
+                },
+                Idempotent = false,
+                TimeoutMs = 60000,
+                Bulk = false
+            },
+            new AgentToolCard
+            {
                 ToolName = "set_shared_parameter_file",
                 Pack = "params",
                 Purpose =

@@ -200,9 +200,16 @@ public static partial class AgentToolPackSkills
 
 ### Карта тулов
 - `set_parameters` — `items[{elementId, parameter|guid, value, scope: instance|type, unit}]` ≤500, `dryRun`, `atomic`.
-- `remap_parameter_values` — перенос: `mapping[{source{name,guid,scope}, target{name,guid,scope}}]` ≤20, `filter{categories,levelIds,typeIds,limit}` ≤500.
+- `remap_parameter_values` — перенос: `mapping[{source{name,guid,scope}, target{name,guid,scope}}]` ≤20,
+  `filter{categories,levelIds,typeIds,familyIds,familyNames,limit}` ≤500; `offset` листает дальше
+  limit (повторяйте до исчезновения `hasMore`). `familyNames` — стабильный ключ размещённых
+  экземпляров (familyId меняется при каждой перезагрузке семейства).
 - `list_project_parameters` — проектные биндинги: имя, isShared, GUID, bindingType, категории.
 - `add_project_shared_parameter` — привязка определения из ФОП к категориям.
+- `rebind_project_parameter` — сменить тип привязки (экземпляр↔тип); значения сбрасываются.
+- `remove_project_parameter` — удалить проектную привязку (`deleteDefinition:true` + `force` —
+  и определение из документа). Аудит: непустые значения, поля спецификаций, фильтры видов;
+  undo_last не восстанавливает.
 - `set_shared_parameter_file` — подключить существующий ФОП по абсолютному `path` или создать новый
   пустой файл (`createIfMissing:true`) и сделать его активным; `dryRun` по умолчанию.
 
@@ -233,6 +240,10 @@ public static partial class AgentToolPackSkills
   свой следующий шаг.
 - В `remap_parameter_values` ошибки резолва **source/target** попадают в `failed[]` (если не разрешилась хотя бы одна из сторон, элемент не переносится); ошибки конверсии — в `warnings[]`. Если у всех элементов не разрешилась пара, ответ `success=false` с `parameter_not_found`, а не «нет изменений».
 - Для переноса значений между параметрами разной размерности сверяйте единицы: `remap_parameter_values` копирует значения, а не конвертирует смысл.
+- `remove_project_parameter`: непустые значения (`values_not_empty`) и использование в спеках/фильтрах
+  (`binding_in_use`) требуют `force:true`; `deleteDefinition` — всегда `force` (молча ломает формулы
+  семейств с этим GUID). Привязку нельзя вернуть `undo_last` — только заново
+  `add_project_shared_parameter` (значения уже потеряны).
 - `set_shared_parameter_file`: `dryRun=true` ничего не меняет; `dryRun=false` — после подтверждения.
   Существующий файл не перезаписывается; новый создаётся только по `createIfMissing:true` и только
   по пути, который назвал пользователь. `undo_last` настройку не откатывает — прежний файл

@@ -353,6 +353,43 @@ internal readonly struct FamilyValueSnapshot
         ElementIdValue = ElementIdValue
     };
 
+    /// <summary>
+    /// Honest "no value" check for a mapping SOURCE. FamilyType.HasValue is
+    /// not it: a freshly added numeric parameter reports HasValue=true with
+    /// 0.0 (the pilot v14 lesson — a 0 overwrite cleared a filled target in
+    /// tests). Null AsDouble/AsInteger/AsString and the invalid ElementId are
+    /// "empty"; 0.0 is a real value and IS copied.
+    /// </summary>
+    public static bool SourceIsEmpty(FamilyType? type, FamilyParameter parameter)
+    {
+        if (type is null)
+            return true;
+
+        try
+        {
+            switch (parameter.StorageType)
+            {
+                case StorageType.String:
+                    return string.IsNullOrWhiteSpace(type.AsString(parameter));
+                case StorageType.Double:
+                    return type.AsDouble(parameter) is null;
+                case StorageType.Integer:
+                    return type.AsInteger(parameter) is null;
+                case StorageType.ElementId:
+                    var elementId = type.AsElementId(parameter);
+                    return elementId is null || elementId.GetValue() == -1;
+                default:
+                    return false;
+            }
+        }
+        catch (Exception)
+        {
+            // An unreadable value is not provably empty: let the copy path
+            // decide (it reports per type anyway).
+            return false;
+        }
+    }
+
     public string ToRaw() => StorageType switch
     {
         StorageType.Double => AgentFamilyUnits.ToInvariant(DoubleValue),

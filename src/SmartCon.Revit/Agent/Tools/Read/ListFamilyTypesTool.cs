@@ -52,7 +52,7 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
             "parameterNames would be trimmed by the context budget.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families in one call (#471)""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families by NAME in one call. Every name must resolve like familyName (case-insensitive exact name; an ambiguous name fails). Pass either familyIds or familyNames, not both""},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""maxItems"":200,""description"":""Direct type selection, in addition to the family selectors. Every id must resolve to an element type: family types AND system family types (WallType, PipeType, …) both work; system types come back in systemTypes[] with familyKind=system.""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""placedOnly"":{""type"":""boolean"",""default"":false,""description"":""Keep only types with at least one placed instance in the model. A full model scan; use it to keep a large family's parameter values inside one response.""},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: typeId, name, familyId, familyName, isPlaced, parameters, parameterCount. Default: typeId, name, familyId, familyName. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields (plus values when parameterNames is passed). false: the full record, including parameters, parameterCount and parametersTruncated.""},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":10,""description"":""Adds values {parameter: display string} to each type for the listed parameters. A parameter the type does not have is omitted from that type's values; a parameter it has without a value is null. missingParameters lists names no returned type has.""},""valueScope"":{""type"":""string"",""enum"":[""type"",""instance""],""default"":""type"",""description"":""type: the type's own parameters. instance: parameters read from placed instances; a type without placed instances gets no values, valuesVary=true when other placed instances differ.""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families in one call (#471)""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""minItems"":1,""maxItems"":50,""description"":""Batch: several families by NAME in one call. Every name must resolve like familyName (case-insensitive exact name; an ambiguous name fails). Pass either familyIds or familyNames, not both""},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""},""maxItems"":200,""description"":""Direct type selection, in addition to the family selectors. Every id must resolve to an element type: family types AND system family types (WallType, PipeType, …) both work; system types come back in systemTypes[] with familyKind=system.""},""includeParameters"":{""type"":""boolean"",""default"":true},""parameterLimit"":{""type"":""integer"",""default"":20,""maximum"":100},""includePlaced"":{""type"":""boolean"",""default"":true},""placedOnly"":{""type"":""boolean"",""default"":false,""description"":""Keep only types with at least one placed instance in the model. A full model scan; use it to keep a large family's parameter values inside one response.""},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: typeId, name, familyId, familyName, isPlaced, parameters, parameterCount. Default: typeId, name, familyId, familyName. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields (plus values when parameterNames is passed). false: the full record, including parameters, parameterCount and parametersTruncated.""},""parameterNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":10,""description"":""Adds values {parameter: display string} to each type for the listed parameters. A parameter the type does not have is omitted from that type's values; a parameter it has without a value is null. missingParameters lists names no returned type has.""},""valueScope"":{""type"":""string"",""enum"":[""type"",""instance""],""default"":""type"",""description"":""type: the type's own parameters. instance: parameters read from placed instances; a type without placed instances gets no values, valuesVary=true when other placed instances differ. Parameters that exist as TYPE-scoped are not 'missing' in instance scope: they are listed in typeScopedParameters (re-read with valueScope='type') and missingParameters keeps only truly absent names.""},""limit"":{""type"":""integer"",""default"":200,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -122,13 +122,17 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
         var reportFields = compact
             ? fields
             : FullRecordFields(includePlaced, includeParameters);
-        var needTypeParameters = parameterNames.Count > 0 && !instanceScope
+        // Instance scope still reads the symbol's parameter list: it is what
+        // separates "type-scoped parameter" (exists, unreadable as instance)
+        // from "really absent" in the report below (pilot v14).
+        var needTypeParameters = parameterNames.Count > 0
                                  || reportFields.Contains("parameters")
                                  || reportFields.Contains("parameterCount");
         var (placedTypeIds, instancesByType) = CollectPlacedInstances(
             doc, pageTypeIds, reportFields.Contains("isPlaced"), instanceScope, ct);
 
         var foundParameters = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var symbolParameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var parametersTruncated = false;
         var reports = new List<Dictionary<string, object?>>(page.Count);
         foreach (var symbol in page)
@@ -137,6 +141,12 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
             var typeParameters = needTypeParameters
                 ? ReadTypeParameters(symbol, parameterLimit, parameterNames)
                 : null;
+            if (typeParameters is not null)
+            {
+                foreach (var name in typeParameters.Requested.Keys)
+                    symbolParameterNames.Add(name);
+            }
+
             var report = compact
                 ? BuildCompactReport(symbol, typeParameters, fields, placedTypeIds, ref parametersTruncated)
                 : BuildFullReport(symbol, typeParameters, placedTypeIds, includeParameters);
@@ -193,16 +203,26 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
         }
 
         var missingParameters = new List<string>();
+        var typeScopedParameters = new List<string>();
         if (parameterNames.Count > 0
             && (reports.Count > 0 || (systemRows?.Count ?? 0) > 0))
         {
             payload["valueScope"] = instanceScope ? "instance" : "type";
             foreach (var name in parameterNames)
             {
-                if (!foundParameters.Contains(name))
+                if (foundParameters.Contains(name))
+                    continue;
+
+                // A parameter that lives on the symbol is not missing — it is
+                // type-scoped and simply not readable through placed instances.
+                if (instanceScope && symbolParameterNames.Contains(name))
+                    typeScopedParameters.Add(name);
+                else
                     missingParameters.Add(name);
             }
 
+            if (typeScopedParameters.Count > 0)
+                payload["typeScopedParameters"] = typeScopedParameters;
             if (missingParameters.Count > 0)
                 payload["missingParameters"] = missingParameters;
         }
@@ -232,6 +252,13 @@ public sealed partial class ListFamilyTypesTool : AgentReadToolBase
             messageText += AgentListPayload.CompactFieldsHint(
                 fields,
                 parameterNames.Count == 0 ? " Pass parameterNames=[...] to add parameter values." : string.Empty);
+        }
+
+        if (typeScopedParameters.Count > 0)
+        {
+            messageText += " Type-scoped parameter(s), not readable with valueScope 'instance'" +
+                           " (re-read with valueScope \"type\"): " +
+                           string.Join(", ", typeScopedParameters) + ".";
         }
 
         if (missingParameters.Count > 0)

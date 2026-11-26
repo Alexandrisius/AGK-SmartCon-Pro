@@ -179,7 +179,11 @@ public sealed partial class AgentFamilyReadToolsTests
         await Assert.That(result.Success).IsTrue();
         var data = Data(result);
         await Assert.That(data.GetProperty("valueScope").GetString()).IsEqualTo("instance");
-        await Assert.That(Names(data.GetProperty("missingParameters"))).IsEqualTo("Ширина");
+        // S.53: Ширина exists as a TYPE parameter — it is not "missing", it
+        // moves to typeScopedParameters (re-read with valueScope:type).
+        await Assert.That(Names(data.GetProperty("typeScopedParameters")))
+            .IsEqualTo(FamilySeed.WidthParam);
+        await Assert.That(data.TryGetProperty("missingParameters", out _)).IsFalse();
         var records = data.GetProperty("types").EnumerateArray().ToList();
         await Assert.That(records.Count).IsEqualTo(2);
 

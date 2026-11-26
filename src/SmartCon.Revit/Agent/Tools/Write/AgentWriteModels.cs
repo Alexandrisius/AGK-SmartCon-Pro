@@ -1,4 +1,6 @@
+using Autodesk.Revit.DB;
 using SmartCon.Core.Models.Agent;
+using SmartCon.Revit.Agent.Tools.Project;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -72,6 +74,63 @@ public sealed class WriteItemReport
     /// feedback 2026-11-24: cameras and stair sub-categories stayed visible).
     /// </summary>
     public List<NotHidableCategory>? NotHidable { get; set; }
+
+    /// <summary>
+    /// The row was skipped because the SOURCE parameter had no value
+    /// (map_family_parameters migration audits): distinguishes "nothing to
+    /// copy" from "the target already matches" (empty vendor remark fields
+    /// used to read as false duplicates of filled targets).
+    /// </summary>
+    public bool? SourceValueEmpty { get; set; }
+
+    /// <summary>
+    /// The PROJECT binding of a just-added shared parameter: in the project
+    /// context the binding overrides the family's scope and group (PG_DATA →
+    /// PG_TEXT of the pilot), and schedules read the binding's scope, not the
+    /// family's. Null when the project has no binding for the GUID/name.
+    /// </summary>
+    public ProjectBindingNote? ProjectBinding { get; set; }
+}
+
+/// <summary>Project-level binding note for a shared family parameter.</summary>
+public sealed class ProjectBindingNote
+{
+    public required string Scope { get; init; }
+
+    public string? Group { get; init; }
+
+    /// <summary>
+    /// Resolves the project binding for a shared parameter: GUID first (the
+    /// safe key), name as the fallback for the rare same-name non-shared
+    /// binding. Null when the project does not bind it.
+    /// </summary>
+    public static ProjectBindingNote? Resolve(Document projectDoc, Guid? guid, string name)
+    {
+        try
+        {
+            foreach (var row in AgentProjectParameterReader.Collect(projectDoc))
+            {
+                var byGuid = guid is not null && row.Guid == guid;
+                var byName = guid is null
+                             && string.Equals(row.Name, name, StringComparison.OrdinalIgnoreCase);
+                if (!byGuid && !byName)
+                    continue;
+
+                return new ProjectBindingNote
+                {
+                    Scope = row.BindingType,
+                    Group = row.ParameterGroup
+                };
+            }
+        }
+        catch (Exception)
+        {
+            // A binding pass failure must not fail the add: the note is
+            // informational.
+        }
+
+        return null;
+    }
 }
 
 public sealed class SectionReport
@@ -349,6 +408,10 @@ internal sealed class RemapFilter
     public List<long>? LevelIds { get; set; }
 
     public List<long>? TypeIds { get; set; }
+
+    public List<long>? FamilyIds { get; set; }
+
+    public List<string>? FamilyNames { get; set; }
 
     public int? Limit { get; set; }
 }

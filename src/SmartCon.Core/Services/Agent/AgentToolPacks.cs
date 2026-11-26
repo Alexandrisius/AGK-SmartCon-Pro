@@ -103,7 +103,7 @@ public static class AgentToolPacks
             {
                 "set_parameters", "remap_parameter_values", "list_project_parameters",
                 "add_project_shared_parameter", "rebind_project_parameter",
-                "set_shared_parameter_file"
+                "remove_project_parameter", "set_shared_parameter_file"
             }
         },
         new()

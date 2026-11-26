@@ -114,6 +114,21 @@ public sealed partial class MapFamilyParametersTool
                 var targetOld = FamilyValueSnapshot.ReadFamilyType(type, plan.Target);
                 var oldDisplay = AgentFamilyReader.DisplayValue(type, plan.Target);
 
+                // Pilot v14: an empty source is not "already has this value" —
+                // copying it would also overwrite a filled target with nothing.
+                // Skip with a marker so a migration audit can tell the two apart.
+                if (FamilyValueSnapshot.SourceIsEmpty(type, plan.Source))
+                {
+                    outcome.Batch.Skipped.Add(new WriteItemReport
+                    {
+                        Name = plan.Target.Definition.Name,
+                        Detail = type.Name,
+                        Reason = "The source parameter has no value in this type; nothing to copy.",
+                        SourceValueEmpty = true
+                    });
+                    continue;
+                }
+
                 if (AgentFamilyValues.RawEquals(targetOld, sourceValue))
                 {
                     outcome.Batch.Skipped.Add(new WriteItemReport

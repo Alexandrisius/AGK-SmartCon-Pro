@@ -85,7 +85,7 @@ public sealed class PromptBudgetSkillHandoffTests
         // the families pack must say where their types live, like the semantic
         // skill and the list_families card already do.
         Assert.Contains(
-            "Системных семейств в списке нет — их типы даёт `list_system_types`",
+            "Системных семейств нет — их типы даёт `list_system_types`",
             Skill("families"), StringComparison.Ordinal);
     }
 

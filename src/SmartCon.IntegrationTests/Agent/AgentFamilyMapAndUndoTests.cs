@@ -80,6 +80,45 @@ public sealed class AgentFamilyMapAndUndoTests : RevitApiTest
     }
 
     [Test]
+    public async Task MapValues_EmptySource_IsMarkedAndNeverClearsFilledTarget()
+    {
+        // v14 pilot: "The target already has this value" hid an EMPTY source.
+        // An empty source must be a marked skip (sourceValueEmpty) and must not
+        // overwrite a filled target with nothing. Text parameters carry the
+        // honest "no value" (AsString null) — the exact pilot case.
+        await AddParameter("Пустой_источник", "text");
+        var addTarget = Run(
+            CreateAddTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"name\":\"Заполненная_цель\"," +
+            "\"storageType\":\"text\",\"initialValue\":\"Значение\",\"dryRun\":false}");
+        await Assert.That(addTarget.Success).IsTrue();
+
+        var result = Run(
+            CreateMapTool(),
+            "{\"familyId\":" + Seed.FamilyId + ",\"mappings\":[{\"source\":" +
+            "{\"name\":\"Пустой_источник\"},\"target\":{\"name\":\"Заполненная_цель\"}}]," +
+            "\"dryRun\":false}");
+
+        await Assert.That(result.Success).IsTrue();
+        var data = Data(result);
+        await Assert.That(data.GetProperty("changed").GetArrayLength()).IsEqualTo(0);
+        var skipped = data.GetProperty("skipped");
+        await Assert.That(skipped.GetArrayLength()).IsEqualTo(2);
+        foreach (var row in skipped.EnumerateArray())
+        {
+            await Assert.That(row.GetProperty("sourceValueEmpty").GetBoolean()).IsTrue();
+            await Assert.That(row.GetProperty("reason").GetString()).Contains("no value");
+        }
+
+        // The initialValue lands on the family's CurrentType (Тип2 after the
+        // seed) — the empty source must not have cleared it there either.
+        var filled = Seed.GetProjectParameter(FamilySeed.Type2, "Заполненная_цель")
+                      ?? Seed.GetProjectParameter(FamilySeed.Type1, "Заполненная_цель");
+        await Assert.That(filled).IsNotNull();
+        await Assert.That(filled!.AsString()).IsEqualTo("Значение");
+    }
+
+    [Test]
     public async Task MapValues_ScopeMismatch_ReturnsScopeMismatch()
     {
         var result = Run(

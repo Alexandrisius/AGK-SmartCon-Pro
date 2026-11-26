@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Tools.Families;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
 
@@ -12,6 +13,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
     private const int DefaultLimit = 500;
     private const int MaxLimit = 500;
     private const int MaxMappings = 20;
+    private const int MaxOffset = 1_000_000;
 
     public RemapParameterValuesTool(
         IRevitContext revitContext,
@@ -28,13 +30,17 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             "Copies values from a source parameter into a target parameter (typical shared " +
             "parameter migration: old ФОП parameter → new one). mapping: [{source:{name|guid," +
             "scope}, target:{name|guid,scope}}], at most 20 pairs. filter: {categories, " +
-            "levelIds, typeIds, limit} selects the elements; categories are BuiltInCategory " +
-            "tokens (OST_Pipes) or category display names. Elements without the source value " +
-            "are skipped; storage-type mismatches are converted when possible. dryRun " +
-            "defaults to true.",
+            "levelIds, typeIds, familyIds, familyNames, limit} selects the elements; categories " +
+            "are BuiltInCategory tokens (OST_Pipes) or category display names; familyNames is " +
+            "the stable key for placed instances of loadable families (familyId changes on " +
+            "every reload). offset pages past the first limit elements (the pair is re-run " +
+            "until hasMore=false). Elements without the source value are skipped; storage-type " +
+            "mismatches are converted when possible. dryRun defaults to true. This is also the " +
+            "path for INSTANCE parameter values of placed elements — map_family_parameters " +
+            "copies type defaults only.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""mapping"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""source"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false},""target"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false}},""required"":[""target""],""additionalProperties"":false}},""filter"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""limit"":{""type"":""integer"",""default"":500}},""additionalProperties"":false},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""mapping""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""mapping"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""source"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false},""target"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false}},""required"":[""target""],""additionalProperties"":false}},""filter"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""familyIds"":{""type"":""array"",""items"":{""type"":""integer"",""maxItems"":50,""description"":""Placed instances of these loadable families; combine with familyNames""}},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":50,""description"":""Placed instances of these loadable families by NAME (the stable key — familyId changes on every reload); every name must resolve""},""limit"":{""type"":""integer"",""default"":500}},""additionalProperties"":false},""offset"":{""type"":""integer"",""default"":0,""description"":""Skip the first N matching elements (paging with limit; repeat until hasMore=false)""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""mapping""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -64,6 +70,9 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
 
         var filter = request!.Filter ?? new RemapFilter();
         var limit = Math.Max(1, Math.Min(filter.Limit ?? DefaultLimit, MaxLimit));
+        // Clamped: a caller-provided huge offset must not preallocate the
+        // element list into gigabytes (validator note: LLM can send 10^9).
+        var offset = Math.Max(0, Math.Min(AgentJson.GetInt(args, "offset", 0), MaxOffset));
         var atomic = AgentJson.GetBool(args, "atomic", false);
 
         if (!TryResolveCategories(doc, filter.Categories, out var categories, out var categoryError,
@@ -74,14 +83,26 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             outcome.Message = categoryReason;
             return;
         }
+        if (!TryResolveFamilyFilter(doc, filter, out var familyFilter, out var familyError,
+                out var familyReason))
+        {
+            outcome.Success = false;
+            outcome.ErrorCode = familyError;
+            outcome.Message = familyReason;
+            return;
+        }
         var levelFilter = new HashSet<long>(filter.LevelIds ?? new List<long>());
         var typeFilter = new HashSet<long>(filter.TypeIds ?? new List<long>());
 
-        var elements = new List<Element>();
+        // One extra match past offset+limit is collected to report hasMore
+        // without scanning the rest of the model (capacity stays bound to the
+        // page, not to the offset).
+        var elements = new List<Element>(limit + 2);
+        var matched = 0;
         foreach (var element in new FilteredElementCollector(doc).WhereElementIsNotElementType())
         {
             ct.ThrowIfCancellationRequested();
-            if (elements.Count >= limit)
+            if (matched >= offset + limit + 1)
                 break;
 
             if (categories is not null)
@@ -89,6 +110,16 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
                 var categoryId = element.Category?.Id.GetValue();
                 if (categoryId is null || !categories.Contains(categoryId.Value))
                     continue;
+            }
+
+            if (familyFilter is not null)
+            {
+                if (element is not FamilyInstance familyInstance
+                    || familyInstance.Symbol?.Family is null
+                    || !familyFilter.Contains(familyInstance.Symbol.Family.Id.GetValue()))
+                {
+                    continue;
+                }
             }
 
             if (levelFilter.Count > 0)
@@ -105,11 +136,27 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
                     continue;
             }
 
-            elements.Add(element);
+            if (matched >= offset)
+                elements.Add(element);
+            matched++;
         }
 
+        // The +1 probe element (if present) only proves there is more to page.
+        var hasMore = elements.Count > limit;
+        if (hasMore)
+            elements.RemoveAt(elements.Count - 1);
+
         outcome.Description = "Remapped parameter values on " + elements.Count +
-                              " element(s) (limit " + limit + ")";
+                              " element(s) (offset " + offset + ", limit " + limit + ")";
+        outcome.Data["offset"] = offset;
+        if (hasMore)
+        {
+            outcome.Data["hasMore"] = true;
+            outcome.Data["nextOffset"] = offset + elements.Count;
+            outcome.Warnings.Add(
+                "More matching elements remain past this page — repeat the call with offset " +
+                (offset + elements.Count) + " until hasMore is gone.");
+        }
 
         var failedElements = 0;
         var resolutionFailedElements = 0;
@@ -260,17 +307,21 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         }
 
         var before = AgentParameterWriteHelper.RawValue(target);
+        // No-op detection compares against the INTENDED value: reading the
+        // target right after Set (no Regenerate inside the loop) returns stale
+        // data for family parameters of placed instances, so a real copy used
+        // to collapse into "skipped, 0 changes" while the value DID land
+        // (v14 pilot — the instance-value migration path).
+        if (string.Equals(before, text, StringComparison.Ordinal))
+            return null;
+
         if (!AgentParameterWriteHelper.TrySet(target, text, "raw", out var errorCode, out var reason))
         {
             outcome.Warnings.Add("Element " + element.Id.GetValue() + ": " + errorCode + " — " + reason);
             return null;
         }
 
-        var after = AgentParameterWriteHelper.RawValue(target);
-        if (string.Equals(before, after, StringComparison.Ordinal))
-            return null;
-
-        return (before, after);
+        return (before, text);
     }
 
     private static bool TryResolveCategories(
@@ -338,6 +389,67 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves filter.familyIds/familyNames into a set of Family element ids.
+    /// Every name/id must resolve (the batch contract used elsewhere too):
+    /// a typo would silently remap nothing on a category-wide sweep.
+    /// </summary>
+    private static bool TryResolveFamilyFilter(
+        Document doc,
+        RemapFilter filter,
+        out HashSet<long>? ids,
+        out string? errorCode,
+        out string? reason)
+    {
+        ids = null;
+        errorCode = null;
+        reason = null;
+
+        var resolved = new HashSet<long>();
+        var unresolved = new List<string>();
+
+        foreach (var rawId in filter.FamilyIds ?? new List<long>())
+        {
+            if (doc.GetElement(ElementIdCompat.Create(rawId)) is Autodesk.Revit.DB.Family family)
+            {
+                resolved.Add(rawId);
+                continue;
+            }
+
+            unresolved.Add("id " + rawId);
+        }
+
+        foreach (var rawName in filter.FamilyNames ?? new List<string>())
+        {
+            var name = rawName.Trim();
+            if (name.Length == 0)
+                continue;
+
+            var family = AgentFamilyReader.ResolveFamily(
+                doc, null, name, null, out var nameError, out var nameMessage);
+            if (family is not null)
+            {
+                resolved.Add(family.Id.GetValue());
+                continue;
+            }
+
+            unresolved.Add("'" + name + "' (" + (nameMessage ?? nameError ?? "not found") + ")");
+        }
+
+        if (unresolved.Count > 0)
+        {
+            errorCode = "family_not_found";
+            reason = "filter.familyIds/familyNames must all resolve; unresolved: " +
+                     string.Join(", ", unresolved) +
+                     ". [Action: check the exact names with list_families]";
+            return false;
+        }
+
+        if (resolved.Count > 0)
+            ids = resolved;
+        return true;
     }
 
     private sealed class RemapRequest

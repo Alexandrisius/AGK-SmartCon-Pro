@@ -328,6 +328,12 @@ public static class AgentToolCatalog
                 "параметр экземпляра вместо типа", "типовая привязка", "instance binding",
                 "type binding", "перепривязать параметр"
             }),
+            ["remove_project_parameter"] = new("Write", false, new[]
+            {
+                "удалить проектный параметр", "убрать привязку параметра", "unbind параметра",
+                "remove project parameter", "отвязать параметр", "удалить привязку фоп",
+                "удалить определение общего параметра из документа"
+            }),
             ["set_shared_parameter_file"] = new("Write", false, new[]
             {
                 "файл общих параметров", "подключить ФОП", "создать ФОП", "настроить ФОП",

@@ -3263,6 +3263,30 @@
         "rebind_project_parameter"
       ],
       "kind": "write"
+    },
+    {
+      "id": "r406",
+      "query": "Удали пустую проектную привязку параметра Заказчика",
+      "expectedTools": [
+        "remove_project_parameter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r407",
+      "query": "Отвяжи неиспользуемый общий параметр от проекта",
+      "expectedTools": [
+        "remove_project_parameter"
+      ],
+      "kind": "write"
+    },
+    {
+      "id": "r408",
+      "query": "Удали определение общего параметра из документа вместе с привязкой",
+      "expectedTools": [
+        "remove_project_parameter"
+      ],
+      "kind": "write"
     }
   ]
 }

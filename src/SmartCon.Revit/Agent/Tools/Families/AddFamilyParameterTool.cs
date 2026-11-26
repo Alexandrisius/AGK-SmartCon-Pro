@@ -324,7 +324,8 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
                     storageType = StorageTypeNameOf(kind),
                     spec = AgentFamilySpecs.SpecNameOf(spec!),
                     group = AgentFamilySpecs.GroupNameOf(group!),
-                    wouldCreateDefinition = true
+                    wouldCreateDefinition = true,
+                    projectBinding = ProjectBindingNote.Resolve(session.ProjectDoc, guid, name)
                 };
                 outcome.Warnings.Add(
                     "Dry run: the shared parameter definition '" + name + "' does not exist yet; " +
@@ -427,6 +428,27 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
             ? "shared " + (created.IsShared ? created.GUID.ToString("D") : "?")
             : "family";
         var scopeText = created.IsInstance ? "instance" : "type";
+        // Pilot v14: a project binding overrides the family's scope and group in
+        // the project context, and schedules follow the BINDING's scope — surface
+        // it right in the add result instead of a confusing PG_TEXT read-back.
+        ProjectBindingNote? projectBinding = created.IsShared
+            ? ProjectBindingNote.Resolve(session.ProjectDoc, created.GUID, created.Definition.Name)
+            : null;
+        if (projectBinding is not null)
+        {
+            var diverges = !string.Equals(
+                projectBinding.Scope, scopeText, StringComparison.OrdinalIgnoreCase);
+            outcome.Warnings.Add(
+                "Project binding of '" + created.Definition.Name + "': " + projectBinding.Scope +
+                ", group " + (projectBinding.Group ?? "(unknown)") +
+                " — the project context follows the BINDING, not the family (" +
+                (diverges
+                    ? "scopes diverge: family " + scopeText + " vs binding " + projectBinding.Scope +
+                      "; schedules read the binding's scope"
+                    : "the requested group shows as " + projectBinding.Group +
+                      " in project read-back") + ").");
+        }
+
         outcome.Batch.Changed.Add(new WriteItemReport
         {
             Name = created.Definition.Name,
@@ -434,7 +456,8 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
             NewValue = scopeText + " " + AgentFamilySpecs.StorageTypeName(created.StorageType) +
                        " (" + sharedText + ")" +
                        (appliedFormula is null || dryRun ? string.Empty : " + formula '" + appliedFormula + "'"),
-            Detail = Join(label, request.Group is null ? null : "group " + AgentFamilySpecs.GroupName(created.Definition))
+            Detail = Join(label, request.Group is null ? null : "group " + AgentFamilySpecs.GroupName(created.Definition)),
+            ProjectBinding = projectBinding
         });
         session.AddUndoOperation(new FamilyUndoOperation
         {
@@ -451,7 +474,8 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
             storageType = AgentFamilySpecs.StorageTypeName(created.StorageType),
             spec = AgentFamilySpecs.SpecName(created.Definition),
             group = AgentFamilySpecs.GroupName(created.Definition),
-            formula = dryRun ? request.Formula?.Trim() : created.Formula
+            formula = dryRun ? request.Formula?.Trim() : created.Formula,
+            projectBinding
         };
 
         var types = AgentFamilyReader.GetTypes(manager);

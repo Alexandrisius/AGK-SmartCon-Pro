@@ -21,6 +21,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
     private const int MaxLimit = 500;
     private const int DefaultMaxValues = 20;
     private const int MaxValues = 100;
+    private const int MaxNestedFamiliesReported = 50;
     private const int LargeResultHintChars = 20000;
 
     /// <summary>
@@ -55,6 +56,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "as compact rows (name, guid, storage, instance flag, counts; compact=true) " +
             "instead of dropping families - formulas and values then need the single-family " +
             "form. " +
+            "isShared/nestedFamilies[] report the family's own shared flag and its nested " +
+            "subfamilies with theirs: a SHARED nested family is scheduled as a separate row " +
+            "and its parameters must be shared too, while a geometric nesting needs nothing " +
+            "(nestedCount/sharedNestedCount are the audit numbers). " +
             "Opens the family document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
@@ -245,6 +250,9 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 ["familyName"] = payload.GetValueOrDefault("familyName"),
                 ["ok"] = true,
                 ["typeCount"] = payload.GetValueOrDefault("typeCount"),
+                ["isShared"] = payload.GetValueOrDefault("isShared"),
+                ["nestedCount"] = payload.GetValueOrDefault("nestedCount"),
+                ["sharedNestedCount"] = payload.GetValueOrDefault("sharedNestedCount"),
                 ["parametersTotalInFamily"] = payload.GetValueOrDefault("parametersTotalInFamily"),
                 ["matchedCount"] = payload.GetValueOrDefault("matchedCount"),
                 ["nameContains"] = payload.GetValueOrDefault("nameContains"),
@@ -347,6 +355,33 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             var manager = familyDoc!.FamilyManager;
             var types = AgentFamilyReader.GetTypes(manager);
 
+            // Shared nested families are scheduled as separate rows and need
+            // shared parameters of their own; geometric nesting needs nothing.
+            // Collected from the already-open family document (v14 pilot).
+            var nestedRows = new List<object>();
+            var nestedTotal = 0;
+            var sharedNestedCount = 0;
+            var nestedTruncated = false;
+            foreach (var element in new FilteredElementCollector(familyDoc)
+                         .OfClass(typeof(Autodesk.Revit.DB.Family)))
+            {
+                if (element is not Autodesk.Revit.DB.Family nestedFamily || nestedFamily.IsOwnerFamily)
+                    continue;
+
+                nestedTotal++;
+                var isShared = nestedFamily.get_Parameter(BuiltInParameter.FAMILY_SHARED)
+                    ?.AsInteger() == 1;
+                if (isShared)
+                    sharedNestedCount++;
+                if (nestedRows.Count < MaxNestedFamiliesReported)
+                    nestedRows.Add(new { name = nestedFamily.Name, isShared });
+                else
+                    nestedTruncated = true;
+            }
+
+            var ownerIsShared = familyDoc.OwnerFamily
+                .get_Parameter(BuiltInParameter.FAMILY_SHARED)?.AsInteger() == 1;
+
             var filtered = new List<FamilyParameter>();
             foreach (var parameter in manager.GetParameters())
             {
@@ -392,6 +427,11 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 ["familyId"] = family.Id.GetValue(),
                 ["familyName"] = family.Name,
                 ["category"] = family.FamilyCategory?.Name,
+                ["isShared"] = ownerIsShared,
+                ["nestedCount"] = nestedTotal,
+                ["sharedNestedCount"] = sharedNestedCount,
+                ["nestedFamilies"] = nestedRows,
+                ["nestedFamiliesTruncated"] = nestedTruncated ? true : null,
                 // Total in the family BEFORE nameContains/scope filters: "total" below
                 // is the paging total of the filtered set and used to read as "the
                 // family only has this many parameters" (external harness feedback).
@@ -416,6 +456,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                           manager.GetParameters().Count + " in the family, " + types.Count +
                           " type(s)" +
                           (nextOffset < filtered.Count ? ", next offset " + nextOffset : string.Empty) +
+                          (nestedTotal > 0
+                              ? "; " + nestedTotal + " nested famil(ies), " + sharedNestedCount +
+                                " SHARED (scheduled separately)"
+                              : string.Empty) +
                           (types.Count == 0 ? ". The family has no types (empty family)." : ".");
             return (payload, message, null);
         }

@@ -19,10 +19,11 @@ public sealed partial class AgentFamilyReadToolsTests
     private const int InventoryMeasuredRecords = 300;
     private const int InventoryEstimatedRecords = 500;
 
-    private static readonly string[] TenFamilyFields =
+    private static readonly string[] AllFamilyFields =
     {
         "familyId", "uniqueId", "name", "category", "categoryId",
-        "typeCount", "placedInstanceCount", "isEditable", "isInPlace", "isParametric"
+        "typeCount", "placedInstanceCount", "isEditable", "isInPlace", "isParametric",
+        "isShared"
     };
 
     private static readonly string[] CompactFamilyFields = { "familyId", "name", "category", "typeCount" };
@@ -54,7 +55,7 @@ public sealed partial class AgentFamilyReadToolsTests
         await Assert.That(defaultData.GetProperty("total").GetInt32()).IsEqualTo(facts.Total);
         await Assert.That(defaultData.GetProperty("returned").GetInt32()).IsEqualTo(defaultCount);
         await Assert.That(defaultData.GetProperty("truncated").GetBoolean()).IsEqualTo(facts.Total > 200);
-        await Assert.That(Names(defaultData.GetProperty("availableFields"))).IsEqualTo(Names(TenFamilyFields));
+        await Assert.That(Names(defaultData.GetProperty("availableFields"))).IsEqualTo(Names(AllFamilyFields));
         await Assert.That(Names(defaultData.GetProperty("fields"))).IsEqualTo(Names(CompactFamilyFields));
         foreach (var record in defaultData.GetProperty("families").EnumerateArray())
         {
@@ -119,9 +120,9 @@ public sealed partial class AgentFamilyReadToolsTests
         // (3) compact=false returns all ten fields; explicit fields replace the default set.
         var full = tool.ExecuteForTests(Doc, Parse("{\"compact\":false,\"limit\":5}"), CancellationToken.None);
         await Assert.That(full.Success).IsTrue();
-        await Assert.That(Names(Data(full).GetProperty("fields"))).IsEqualTo(Names(TenFamilyFields));
+        await Assert.That(Names(Data(full).GetProperty("fields"))).IsEqualTo(Names(AllFamilyFields));
         foreach (var record in Data(full).GetProperty("families").EnumerateArray())
-            await Assert.That(Names(record)).IsEqualTo(Names(TenFamilyFields));
+            await Assert.That(Names(record)).IsEqualTo(Names(AllFamilyFields));
 
         var projected = tool.ExecuteForTests(
             Doc, Parse("{\"fields\":[\"name\",\"isEditable\"],\"limit\":5}"), CancellationToken.None);
@@ -276,7 +277,7 @@ public sealed partial class AgentFamilyReadToolsTests
         await Assert.That(result.Message).IsNotNull();
         await Assert.That(result.Message!.StartsWith("Unknown field(s): width, Color.", StringComparison.Ordinal))
             .IsTrue();
-        foreach (var field in TenFamilyFields)
+        foreach (var field in AllFamilyFields)
             await Assert.That(result.Message.Contains(field, StringComparison.Ordinal)).IsTrue();
     }
 }

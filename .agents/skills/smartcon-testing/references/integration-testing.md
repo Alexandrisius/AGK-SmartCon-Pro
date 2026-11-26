@@ -80,7 +80,10 @@ dotnet run --project src/SmartCon.IntegrationTests/SmartCon.IntegrationTests.csp
    `static readonly XYZ P = new(...)`) — TUnit 1.33+ выполняет инициализаторы
    полей ДО инъекции Revit; преждевременная загрузка RevitAPI ломает инжектор:
    `InvalidOperationException: Attempted to write protected memory` в
-   `Injector.InjectApplication()` (Nice3point/RevitUnit#78). Паттерн:
+   `Injector.InjectApplication()` (Nice3point/RevitUnit#78). Достаточно ДЖЕНЕРИК-контейнера
+   с ревит-типом: `private readonly List<ElementId> _ids = new();` валит ВСЮ сессию
+   так же (воспроизведено 2026-11-26, S.53) — копи id как `List<long>` и оборачивай
+   `ElementIdCompat.Create` в хелперах. Паттерн:
    nullable-поля + `private Document Doc => _document!;`, значения — в `[Before(Test)]`,
    Revit-значения — ленивые свойства (`private static XYZ Joint => new(10, 0, 0);`).
 2. **`Document.Regenerate()` — только внутри открытой транзакции** (в т.ч. в seed-хуках).
@@ -179,6 +182,7 @@ src/SmartCon.IntegrationTests/
 | Огибания стен «не синхронизируются» | `WRAPPING_AT_*` — legacy-параметры, есть только в старых Revit и только при shell-слоях | Источник — `CompoundStructure.EndCap/OpeningWrapping` |
 | Форумный сниппет `PipeScheduleType.Create(...).GetTypeId()` | `PipeScheduleType : ElementType`, `GetTypeId()` = Invalid | Передавать `.Id` самого элемента в `PipeSegment.Create` |
 | `doc.Delete` кидает на одних типах, молча откатывается на других | Разные механизмы отказа у Revit | Не полагаться на один режим; проверять статус коммита |
+| `hostFamilyDoc.LoadFamily(child.rfa, options, out _)` возвращает тихий `false` | Строчная перегрузка в СЕМЕЙНОМ документе так себя ведёт (в проектном — наоборот, требует транзакцию; Autodesk forum 2022 + Tammik «Nested Family») | Вложение: `Application.OpenDocumentFile(child.rfa)` → `childDoc.LoadFamily(hostDoc, options)` (+ опционально `hostDoc.FamilyCreate.NewFamilyInstance` в транзакции); загрузку хоста в проект — тоже через `OpenDocumentFile` + `LoadFamily(Doc, options)`: этот путь БРОСАЕТ честное исключение вместо тихого false (S.53, 2026-11-26) |
 
 ## Паттерн «зонд» — диагностика поведения Revit вместо гипотез
 

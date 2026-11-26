@@ -25,7 +25,7 @@ public sealed class ListFamiliesTool : AgentReadToolBase
     private static readonly string[] AvailableFields =
     {
         "familyId", "uniqueId", "name", "category", "categoryId",
-        "typeCount", PlacedField, "isEditable", "isInPlace", "isParametric"
+        "typeCount", PlacedField, "isEditable", "isInPlace", "isParametric", "isShared"
     };
 
     private static readonly string[] DefaultFields = { "familyId", "name", "category", "typeCount" };
@@ -52,8 +52,11 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             "Records are compact by default (familyId, name, category, typeCount): fields " +
             "selects other record fields (placedInstanceCount = instances of the family " +
             "placed in the model; 0 means it has no instance of its own - a nested or " +
-            "profile family may still be in use, so 0 does not mean unused), " +
-            "compact=false returns all ten, summary=true adds counts over the whole " +
+            "profile family may still be in use, so 0 does not mean unused; isShared = the " +
+            "family is shared - a shared NESTED family appears here as an unplaced family " +
+            "but is scheduled as a separate row; which host nests it: get_family_parameters " +
+            "nestedFamilies[]), " +
+            "compact=false returns all eleven, summary=true adds counts over the whole " +
             "filtered set (totalFamilies, totalTypes, byCategory, placed, unplaced, " +
             "familiesWithTypes/familiesWithoutTypes). familiesWithoutTypes are counted in " +
             "totalFamilies but are absent from symbol-based scans (group_families_by_shared_parameters, " +
@@ -63,7 +66,7 @@ public sealed class ListFamiliesTool : AgentReadToolBase
             "listed here: their types come from list_system_types.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family name.""},""category"":{""anyOf"":[{""type"":""string""},{""type"":""array"",""items"":{""type"":""string""}}],""description"":""Category name or OST_* built-in name. A family matches any of the listed categories.""},""includeInPlace"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: familyId, uniqueId, name, category, categoryId, typeCount, placedInstanceCount, isEditable, isInPlace, isParametric. Default: familyId, name, category, typeCount. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields. false: every record carries all ten fields.""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds summary over the whole filtered set, ignoring limit/offset: totalFamilies, totalTypes, byCategory [{category, families, types}] sorted by families desc, inPlace, nonParametric, placed, unplaced (families with/without an instance of their own in the model; unplaced does not mean unused - nested and profile families have no instance of their own), familiesWithTypes, familiesWithoutTypes, familiesWithoutTypesSample, familyScanNote (families without types are absent from symbol-based family scans).""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""documentId"":{""type"":""string"",""description"":""Background model routing: the documentId returned by open_model_background; omit for the active document""},""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring of the family name.""},""category"":{""anyOf"":[{""type"":""string""},{""type"":""array"",""items"":{""type"":""string""}}],""description"":""Category name or OST_* built-in name. A family matches any of the listed categories.""},""includeInPlace"":{""type"":""boolean"",""default"":true},""fields"":{""type"":""array"",""items"":{""type"":""string""},""description"":""Record fields to return in compact mode. Allowed: familyId, uniqueId, name, category, categoryId, typeCount, placedInstanceCount, isEditable, isInPlace, isParametric, isShared. Default: familyId, name, category, typeCount. Unknown names return invalid_arguments.""},""compact"":{""type"":""boolean"",""default"":true,""description"":""true: each record carries only the fields listed in fields. false: every record carries all eleven fields.""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Adds summary over the whole filtered set, ignoring limit/offset: totalFamilies, totalTypes, byCategory [{category, families, types}] sorted by families desc, inPlace, nonParametric, placed, unplaced (families with/without an instance of their own in the model; unplaced does not mean unused - nested and profile families have no instance of their own), familiesWithTypes, familiesWithoutTypes, familiesWithoutTypesSample, familyScanNote (families without types are absent from symbol-based family scans).""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -155,7 +158,11 @@ public sealed class ListFamiliesTool : AgentReadToolBase
                 ["placedInstanceCount"] = placedInstanceCount,
                 ["isEditable"] = family.IsEditable,
                 ["isInPlace"] = family.IsInPlace,
-                ["isParametric"] = family.IsParametric
+                ["isParametric"] = family.IsParametric,
+                // No Family.IsShared in the API: the built-in parameter is the
+                // flag (v14: shared nested families are scheduled separately).
+                ["isShared"] = family.get_Parameter(BuiltInParameter.FAMILY_SHARED)
+                    ?.AsInteger() == 1
             };
             families.Add(compact ? AgentListPayload.Project(record, selection) : record);
         }

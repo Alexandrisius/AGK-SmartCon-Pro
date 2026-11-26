@@ -67,7 +67,7 @@ public sealed class AgentToolPacksTests
             {
                 "set_parameters", "remap_parameter_values", "list_project_parameters",
                 "add_project_shared_parameter", "rebind_project_parameter",
-                "set_shared_parameter_file"
+                "remove_project_parameter", "set_shared_parameter_file"
             },
             ["changes"] = new[]
             {
@@ -152,7 +152,7 @@ public sealed class AgentToolPacksTests
             .SelectMany(pack => pack.Tools.Select(tool => (Tool: tool, Pack: pack.Name)))
             .ToArray();
 
-        Assert.Equal(140, placements.Length);
+        Assert.Equal(141, placements.Length);
         Assert.All(placements.GroupBy(pair => pair.Tool), group =>
             Assert.Single(group));
         Assert.All(placements, pair =>

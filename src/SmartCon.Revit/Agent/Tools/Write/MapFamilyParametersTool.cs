@@ -35,8 +35,12 @@ public sealed partial class MapFamilyParametersTool : AgentFamilyWriteToolBase
             "mode='values' copies the value of every family type (clearing a target formula " +
             "first), mode='formula' copies the source formula. This is the family-level path for " +
             "moving a family to customer shared parameters (ФОП/KRTRS) so values and formulas " +
-            "survive a reload. Detects instance/type scope conflicts and spec mismatches; " +
-            "reports per parameter and per type. Dry run by default.",
+            "survive a reload. A source parameter with no value in a type is skipped as " +
+            "sourceValueEmpty (it never overwrites a filled target). Detects instance/type scope " +
+            "conflicts and spec mismatches; reports per parameter and per type. Copies TYPE " +
+            "default values only — values of instance parameters on placed model elements are " +
+            "NOT touched (remap_parameter_values with filter.familyNames after the reload). " +
+            "Dry run by default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
         SupportsBulk = true,

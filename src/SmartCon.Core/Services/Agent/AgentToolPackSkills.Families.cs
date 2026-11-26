@@ -13,9 +13,8 @@ public static partial class AgentToolPackSkills
 - Параметры заказчика (ФОП), формулы и таблицы поиска по умолчанию живут В СЕМЕЙСТВЕ
   (`add_family_parameter` → `set_family_formula`/`map_family_parameters`): переживают
   перезагрузку и новый типовой каталог, формулы продолжают считать.
-- Проектные привязки (`add_project_shared_parameter`) — только по явному запросу: параметр
-  проекта замораживает значения и не участвует в формулах семейства.
-- Оба уровня — явный выбор пользователя, без молчаливого умолчания.
+- Проектные привязки (`add_project_shared_parameter`) — только по явному запросу: замораживают
+  значения, выключают формулы; уровень всегда выбирает пользователь.
 
 ### Карта тулов
 - Чтение: `list_families`, `list_family_types`, `get_family_parameters`,
@@ -23,20 +22,19 @@ public static partial class AgentToolPackSkills
   `find_families_with_parameter` (`includeInstanceParameters=true` — instance-параметры),
   `list_shared_parameters` (нужен активный ФОП; иначе `shared_parameter_file_missing` →
   `set_shared_parameter_file` пака params).
-- `category` (строка/массив, OST_*/имя/id; иначе `unknown_category`), `summary`,
-  `placedOnly`, `fields`/`parameterNames`. Системных семейств в списке нет — их типы даёт `list_system_types`.
+- `category` (строка/массив, OST_*/имя/id), `summary`, `placedOnly`, `fields`/`parameterNames`.
+  Системных семейств нет — их типы даёт `list_system_types`.
 - Запись: `rename_family_parameter`, `add_family_parameter` (один параметр или `items[]` до 50 —
   одна транзакция и ОДНА перезагрузка), `set_family_parameter_values`, `set_family_formula`,
   `map_family_parameters`, `remove_family_parameter`, `replace_family_parameter`.
-- Не общий параметр семейства **не бывает полем спецификации** (`field_not_available`): для
-  ведомости нужен общий (семейный — по умолчанию) или встроенный типовой.
+- Не общий параметр семейства не бывает полем спецификации (`field_not_available`).
 - Типы и файлы: `duplicate_family_type`, `rename_family_type`, `replace_family_type` (bulk),
   `load_family` (.rfa), `purge_families` (destructive, confirmNames), `delete_family_types`.
 - `blastRadius` в каждом write — показывайте радиус загрузки.
 
 ### Три уровня, которые нельзя путать
-- **Семейство** (`familyId`/`familyName`/`familyUniqueId`) → **тип** (`FamilySymbol`: размеры,
-  параметры типа) → **экземпляр** (`FamilyInstance`: `scope:instance`; `scope:type` — весь тип).
+- **Семейство** (`familyId`/`familyName`) → **тип** (`FamilySymbol`: параметры типа) →
+  **экземпляр** (`FamilyInstance`: `scope:instance`; `scope:type` — весь тип).
 
 ### Кухня Revit
 - `Document.EditFamily` — независимая копия без редактора; нельзя в транзакции, для
@@ -67,6 +65,7 @@ public static partial class AgentToolPackSkills
 - `createDefinition=true` пишет вне транзакции семейства: при откате определение в ФОП останется.
 - `map_family_parameters`: source/target одного scope и размерности (`scope_mismatch`/
   `spec_mismatch`), без конверсии; `values` снимает формулу target; `createTarget:true` — цель из ФОП.
+  Пустой источник — skip `sourceValueEmpty:true`.
 - `rename_family_parameter` не переименовывает **shared** (`shared_parameter_not_renameable`; имя
   из определения); built-in не переименовываются и не удаляются.
 - `remove_family_parameter` удаляет family и shared (по `guid`); built-in нельзя (`builtin_not_removable`).
@@ -79,9 +78,8 @@ public static partial class AgentToolPackSkills
   `text`/`yesno`/`integer`/`material` единицу не принимают.
 - `parameter` ищется по имени в рамках `scope`; при неоднозначности — `guid` (имена экземплярного
   и типового могут совпадать).
-- `set_family_parameter_values`: `typeId` — `FamilySymbol` **проекта** того же семейства;
-  `typeName` — имя типа в документе семейства.
-- Встроенный read-back проверяет только **типовые** параметры; instance — отдельно.
+- `set_family_parameter_values`: `typeId` — `FamilySymbol` **проекта**; `typeName` — тип
+  документа семейства. Read-back тулов проверяет только типовые; instance — отдельно.
 - `delete_family_types`, `remove/replace_family_parameter`, `purge_families` не откатываются
   (`undoSupported=false`; у первых трёх есть `backupPath`); `duplicate/rename/replace_family_type`
   и `load_family` (без overwrite) откатываются.
@@ -90,29 +88,33 @@ public static partial class AgentToolPackSkills
 - После записи — read-back (`get_family_parameters(includeValues=true)`).
 
 ### Форма get_family_parameters
-- Несколько семейств — одним вызовом `get_family_parameters(familyIds:[""…""])` (до 20):
-  ответ — `families[]` с тем же payload; не перебирайте по одному.
+- Несколько семейств — один вызов `get_family_parameters(familyIds:[…])` (до 20, ответ `families[]`).
 - `parameters[]` — плоский массив: `id`, `name`, `scope`, `isShared`, `guid`, `storageType`,
   `formula`, `canSetValue`.
 - `valuesByType[]` — `typeName`, `value` (внутренние единицы), `displayValue` (с единицей), `unit`,
   `hasValue`.
+- `isShared`/`nestedFamilies[]`/`sharedNestedCount`: **общее вложенное** семейство идёт в
+  спецификации отдельной строкой и его параметры обязаны быть общими; геометрическая
+  вложенность ничего не требует.
 - Тул читает **документ семейства** (FamilyManager): Проектный общий параметр в ответе
   отсутствует — читайте его `list_family_types(familyId, parameterNames, valueScope:type)`.
 - Read-back параметра: `get_family_parameter_values` (формула + значения).
-- Family write-тулы сами делают read-back (`readBack.verified`/`mismatched`).
+- Миграция ФОП: привязка проекта перекрывает scope/группу (`projectBinding` в ответе
+  `add_family_parameter`); instance-значения размещённых экземпляров и удаление пустых
+  проектных привязок — пак params. Instance-проверка — `list_family_types(valueScope:instance)`:
+  существующие типовые уходят в `typeScopedParameters`, `missingParameters` — только
+  реально отсутствующие.
 
 ### Рецепты
-1. «Добавь общий параметр <Имя> из ФОП»: `list_shared_parameters(nameContains:""<часть имени>"")` →
-   если нет, `add_family_parameter(name, storageType:""text"", isShared:true,
-   createDefinition:true)`; при `shared_parameter_file_missing` сначала
+1. «Добавь общий параметр из ФОП»: `list_shared_parameters(nameContains:)` → если нет,
+   `add_family_parameter(isShared:true, createDefinition:true)`; нет ФОП —
    `set_shared_parameter_file` (путь называет пользователь).
 2. «Перенеси значения из A в B»: `get_family_parameters(includeValues=true)` →
    `map_family_parameters(mappings:[{source:{name:A}, target:{name:B}}], mode:""values"")`.
 3. «Поставь формулу длины»: `set_family_formula(parameter:""Длина"", formula:""Ширина * 2"")`;
-   константа без единиц = единицы параметра (длина: ""100"" = 30.5 м). Юнит-литерал в
-   ВЫРАЖЕНИИ — стандартное снятие размерности: `Масса / 1 кг`, `if(Ед_м2, Площадь / 1 м2, 1)`;
-   отвергается юнит-константа только как ЗНАЧЕНИЕ не того типа — фикс-значение через
-   `set_family_parameter_values`.
+   константа без единиц = единицы параметра (длина: ""100"" = 30.5 м). Юнит-литерал в ВЫРАЖЕНИИ —
+   стандартное снятие размерности (`Масса / 1 кг`); юнит-константа как ЗНАЧЕНИЕ отвергается —
+   фикс через `set_family_parameter_values`.
 4. «Убери лишний тип»: `list_family_types(includePlaced=true)` → `delete_family_types(dryRun=true)`
    → решение о `force` → apply.
 5. «Независимый вариант типа»: `duplicate_family_type` → `set_family_parameter_values` на новый тип.
@@ -120,8 +122,8 @@ public static partial class AgentToolPackSkills
    `replace_family_type(fromTypeIds, targetTypeId)` — bulk одним вызовом.
 7. «Загрузи семейство из файла»: `load_family(path, dryRun=true)` → apply; дубль имени — решить
    с пользователем (`overwrite=true` или отказаться).
-8. «Почисти неиспользуемые семейства»: `purge_families(dryRun=true)` → candidates/names
-   (in-place — отдельно) → `purge_families(confirmNames:names[])`.
+8. «Почисти неиспользуемые семейства»: `purge_families(dryRun)` → candidates →
+   `purge_families(confirmNames:names[])`.
 9. «Массовая правка по десяткам/сотням семейств» — `start_job(action:""map_family_parameters"")`
    (до 200 family units); поштучный тул — для 1–5 семейств.
 10. «Переведи семейство на ФОП заказчика» (семейный путь по умолчанию):
