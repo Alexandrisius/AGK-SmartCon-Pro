@@ -72,7 +72,7 @@ public static class JobErrors
     public static JobError AlreadyActive(string activeJobId) =>
         new(JobErrorCodes.JobAlreadyActive,
             "Another job is already active on this document: " + activeJobId,
-            "do NOT call start_job again while it runs: poll get_job_status(jobId, waitSeconds=15, includeSample=false) " +
+            "do NOT call start_job again while it runs: call get_job_status(jobId, waitSeconds=2700, includeSample=false) " +
             "until status=completed/failed, then read get_job_report — only then start the next job or cancel_job");
 
     public static JobError DocumentMismatch(string expected, string actual) =>

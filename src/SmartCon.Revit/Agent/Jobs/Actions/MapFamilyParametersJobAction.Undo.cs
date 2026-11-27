@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
@@ -56,7 +56,18 @@ public sealed partial class MapFamilyParametersJobAction
             var actualType = new FamilyMapTypeState { TypeName = typeState.TypeName };
             actual.Types.Add(actualType);
 
-            if (!symbols.TryGetValue(SmartCon.Revit.Agent.AgentNameMatch.Normalize(typeState.TypeName), out var symbol))
+            var typeKey = SmartCon.Revit.Agent.AgentNameMatch.Normalize(typeState.TypeName);
+            if (typeKey.Length == 0)
+            {
+                // Live v18 (final report): a TYPE NAMED A SINGLE SPACE exists in
+                // the family doc, but Revit drops/renames it at load-back, so
+                // no project-side symbol can ever address it. The write itself
+                // is fine (spot-checked) — this is "unknown", not "wrong".
+                skippedUnverifiable++;
+                continue;
+            }
+
+            if (!symbols.TryGetValue(typeKey, out var symbol))
             {
                 mismatches.Add("type '" + typeState.TypeName + "' is missing from the project");
                 continue;

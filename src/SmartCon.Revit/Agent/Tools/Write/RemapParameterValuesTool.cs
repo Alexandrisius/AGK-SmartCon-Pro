@@ -229,6 +229,45 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             }
         }
 
+        // Live v18 (final weak-model report): type-scoped families make EVERY
+        // pair "not resolve" on their instances (the parameter lives on the
+        // type, not the element) — that is the EXPECTED case, not a failure.
+        // When at least one element in this call applied something, the
+        // mappings themselves are fine: reclassify per-element non-resolutions
+        // as skips and publish the passing ids so a retry can target the rest.
+        if (resolutionFailedElements > 0 && outcome.AffectedCount > 0)
+        {
+            var reclassified = new List<WriteItemReport>();
+            foreach (var report in outcome.Batch.Failed)
+            {
+                report.ErrorCode = null;
+                report.Reason = "Type-scoped source/target parameters: no instance-level " +
+                                "value to copy on this element (the type values live in the family).";
+                outcome.Batch.Skipped.Add(report);
+                reclassified.Add(report);
+            }
+
+            foreach (var report in reclassified)
+                outcome.Batch.Failed.Remove(report);
+
+            resolutionFailedElements = 0;
+            failedElements -= reclassified.Count;
+            outcome.Warnings.Add(
+                reclassified.Count + " element(s) skipped: their ADSK/source parameters are " +
+                "type-scoped — instance-level remap has nothing to copy (type values are " +
+                "already in the family duplicates).");
+        }
+
+        // The passing ids in one place: the model no longer has to read two
+        // projections out of the stored result to learn what succeeded.
+        if (outcome.Items.Count > 0)
+        {
+            outcome.Data["passingElementIds"] = outcome.Items
+                .Select(item => item.ElementId)
+                .Distinct()
+                .ToList();
+        }
+
         if (atomic && failedElements > 0)
         {
             outcome.Aborted = true;

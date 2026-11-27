@@ -1,4 +1,4 @@
-﻿namespace SmartCon.Core.Services.Agent;
+namespace SmartCon.Core.Services.Agent;
 
 /// <summary>
 /// Human-readable tool labels for the UI. Labels follow the tool name literally
@@ -143,7 +143,7 @@ public static class AgentToolDisplayNames
             ["read_tool_result"] = "Прочитать результат инструмента",
             ["execute_plan"] = "Выполнить план",
             ["start_job"] = "Запустить задание",
-            ["get_job_status"] = "Статус задания",
+            ["get_job_status"] = "Ожидание завершения работы",
             ["cancel_job"] = "Отменить задание",
             ["get_job_report"] = "Отчёт задания",
             ["rollback_job"] = "Откатить задание",

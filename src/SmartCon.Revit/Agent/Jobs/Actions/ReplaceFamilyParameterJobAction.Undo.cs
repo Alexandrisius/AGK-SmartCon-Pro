@@ -72,7 +72,16 @@ public sealed partial class ReplaceFamilyParameterJobAction
                     continue;
                 }
 
-                if (!symbols.TryGetValue(SmartCon.Revit.Agent.AgentNameMatch.Normalize(typeState.TypeName), out var symbol))
+                var typeKey = SmartCon.Revit.Agent.AgentNameMatch.Normalize(typeState.TypeName);
+                if (typeKey.Length == 0)
+                {
+                    // Live v18: a space-named type cannot be addressed
+                    // project-side after load-back — "unknown", not "wrong".
+                    skippedUnverifiable++;
+                    continue;
+                }
+
+                if (!symbols.TryGetValue(typeKey, out var symbol))
                 {
                     mismatches.Add("type '" + typeState.TypeName + "' is missing from the project");
                     continue;

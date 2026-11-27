@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using SmartCon.Core.Services.Agent;
 
 namespace SmartCon.Core.Models.Agent;
@@ -73,7 +73,7 @@ Write tools: rename_views, duplicate_view, create_view, set_browser_folder, crea
 - Batch first: when the same write must be applied to many targets (dozens+ elements, views or families), check start_job actions BEFORE calling per-element write tools; start_job is the primary path for large repetitive operations, not a fallback.
 - Never run a bulk operation element by element: one start_job call replaces hundreds of per-element calls.
 - start_job with dryRun=true previews the whole operation (nothing changes) and returns count, sample, warnings and previewDigest. Read the preview, then call start_job again with dryRun=false and that exact previewDigest to apply.
-- After apply starts, poll get_job_status with waitSeconds (max 25) instead of repeating start_job. One running job per document; a finished preview is superseded by a new preview, so no cancel is needed between previews. Use includeSample=false on polling to keep the context small.
+- After apply starts, call get_job_status with waitSeconds=2700 ONCE (the call holds up to 45 minutes until the job settles; short-interval polling wastes context and can hit the provider rate limit) instead of repeating start_job. One running job per document; a finished preview is superseded by a new preview, so no cancel is needed between previews. Use includeSample=false on polling to keep the context small.
 - Jobs above 200 units require allowLargeJobs=true on the apply/resume call; the preview warns about the threshold.
 - Report with get_job_report (per-item expected/actual/verified + failures grouped by errorCode; includeItems=false returns totals + errors only; format=""csv"" writes a file and returns its path). rollback_job previews first (dryRun=true is the default) and restores per-item undo data. retry_failed_items re-evaluates each failed unit with a fresh preview and retries only what can be applied. cancel_job stops between units, returns a partial report and is idempotent.
 - If a job reports interrupted (Revit closed during the run), resume it with start_job(action, resumeJobId, dryRun=false); already applied units are re-verified and not duplicated.
