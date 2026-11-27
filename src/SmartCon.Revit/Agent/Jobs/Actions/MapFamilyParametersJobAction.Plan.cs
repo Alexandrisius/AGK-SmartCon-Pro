@@ -3,6 +3,7 @@ using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent.Jobs;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Write;
 
@@ -39,6 +40,14 @@ public sealed partial class MapFamilyParametersJobAction
             return null;
         }
 
+        // formula_repointed rewrites source references to the TARGET names of
+        // the whole mapping list, so the pairs are collected once up front.
+        var repointPairs = mappings
+            .Where(mapping => mapping.Source?.Name is not null && mapping.Target?.Name is not null)
+            .Select(mapping => new KeyValuePair<string, string>(
+                mapping.Source!.Name!.Trim(), mapping.Target!.Name!.Trim()))
+            .ToList();
+
         var plan = new FamilyMapPlan();
         var expectedByType = new Dictionary<string, List<FamilyMapValueState>>(StringComparer.Ordinal);
         var actualByType = new Dictionary<string, List<FamilyMapValueState>>(StringComparer.Ordinal);
@@ -57,18 +66,27 @@ public sealed partial class MapFamilyParametersJobAction
                 return null;
             }
 
-            var source = FindParameter(manager, sourceRef, out var sourceMessage);
+            var source = FindParameter(manager, sourceRef, out var sourceMessage, out var sourceErrorCode);
             if (source is null)
             {
                 if (mapping.SkipIfSourceMissing)
                 {
                     // One universal mapping list must survive families with
                     // different parameter signatures: the missing source is a
-                    // reported skip, not a unit failure. No entry and no change
-                    // count — the mapping simply does not apply to this family.
-                    plan.Warnings.Add(
-                        "mapping " + (index + 1) + " skipped: this family has no source parameter '" +
-                        (sourceRef.Name ?? sourceRef.SharedParameterGuid) + "'");
+                    // reported skip, not a unit failure. The verbatim reason
+                    // matters: "no parameter named X" and "X is an instance
+                    // parameter, but scope='type' was requested" need different
+                    // follow-ups (live v18 — instance-table sources were
+                    // silently lost behind a wrong "no source" wording).
+                    var reason = sourceMessage
+                        ?? "this family has no source parameter '" +
+                           (sourceRef.Name ?? sourceRef.SharedParameterGuid) + "'";
+                    if (string.Equals(sourceErrorCode, "scope_mismatch", StringComparison.Ordinal))
+                    {
+                        reason += " [Action: add a mapping with scope:instance (or scope:type) to cover it]";
+                    }
+
+                    plan.Warnings.Add("mapping " + (index + 1) + " skipped: " + reason);
                     continue;
                 }
 
@@ -82,9 +100,9 @@ public sealed partial class MapFamilyParametersJobAction
             var mode = string.IsNullOrWhiteSpace(mapping.Mode)
                 ? "values"
                 : mapping.Mode!.Trim().ToLowerInvariant();
-            if (mode != "values" && mode != "formula")
+            if (mode != "values" && mode != "formula" && mode != "formula_repointed")
             {
-                error = label + "mode must be 'values' or 'formula'. [Action: fix the mode]";
+                error = label + "mode must be 'values', 'formula' or 'formula_repointed'. [Action: fix the mode]";
                 return null;
             }
 
@@ -107,6 +125,7 @@ public sealed partial class MapFamilyParametersJobAction
                     allTypes,
                     label,
                     plan,
+                    repointPairs,
                     expectedByType,
                     actualByType,
                     ct);
@@ -205,6 +224,16 @@ public sealed partial class MapFamilyParametersJobAction
             var formula = source.Formula;
             if (string.IsNullOrWhiteSpace(formula))
             {
+                if (mode == "formula_repointed")
+                {
+                    // Honest instead of silent: the source value is manual, so
+                    // there is no formula to re-author over the target name.
+                    plan.Warnings.Add(
+                        "mapping " + (index + 1) + " skipped: source '" + source.Definition.Name +
+                        "' has no formula — nothing to repoint (its manual values carry the data; " +
+                        "use mode=values for them)");
+                }
+
                 // Nothing to copy: the current target values are both expected and actual.
                 var currentStorage = AgentFamilySpecs.StorageTypeName(target.StorageType);
                 foreach (var type in types)
@@ -217,7 +246,17 @@ public sealed partial class MapFamilyParametersJobAction
                 continue;
             }
 
-            if (!AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
+            if (mode == "formula_repointed")
+            {
+                var buildError = BuildRepointedFormula(
+                    label, mapping, source, target, repointPairs, plan.Warnings, out formula);
+                if (buildError is not null)
+                {
+                    error = buildError;
+                    return null;
+                }
+            }
+            else if (!AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
             {
                 error = SpecMismatchError(label, source, target);
                 return null;
@@ -299,6 +338,7 @@ public sealed partial class MapFamilyParametersJobAction
         IReadOnlyList<FamilyType> allTypes,
         string label,
         FamilyMapPlan plan,
+        IReadOnlyList<KeyValuePair<string, string>> repointPairs,
         Dictionary<string, List<FamilyMapValueState>> expectedByType,
         Dictionary<string, List<FamilyMapValueState>> actualByType,
         CancellationToken ct)
@@ -308,18 +348,30 @@ public sealed partial class MapFamilyParametersJobAction
         var mode = string.IsNullOrWhiteSpace(mapping.Mode)
             ? "values"
             : mapping.Mode!.Trim().ToLowerInvariant();
-        var formula = mode == "formula" ? source.Formula : null;
-        if (mode == "formula")
+        var formula = mode is "formula" or "formula_repointed" ? source.Formula : null;
+        if (mode is "formula" or "formula_repointed")
         {
             if (string.IsNullOrWhiteSpace(formula))
             {
-                return label + "the source parameter has no formula, so mode=formula has nothing " +
+                return label + "the source parameter has no formula, so mode=" + mode + " has nothing " +
                        "to copy. [Action: use mode=values to transfer the per-type values instead]";
+            }
+
+            if (mode == "formula_repointed")
+            {
+                // The created target inherits the source spec, so there is no
+                // mismatch to wrap — only the reference rewrite.
+                var buildError = BuildRepointedFormula(
+                    label, mapping, source, null, repointPairs, plan.Warnings, out formula);
+                if (buildError is not null)
+                {
+                    return buildError;
+                }
             }
 
             if (!AgentFamilyReader.TryFindMissingLookupTables(familyDoc, formula, out var missing))
             {
-                return label + "the source formula references lookup table(s) missing from the " +
+                return label + "the formula references lookup table(s) missing from the " +
                        "family: " + string.Join(", ", missing) +
                        ". [Action: load the lookup tables or map values instead]";
             }
@@ -390,7 +442,7 @@ public sealed partial class MapFamilyParametersJobAction
             Scope = targetScope
         });
 
-        if (mode == "formula")
+        if (mode is "formula" or "formula_repointed")
         {
             // The created target starts without a formula: clearing it back to
             // null is the undo of this step, and the formula is one change for
@@ -412,7 +464,10 @@ public sealed partial class MapFamilyParametersJobAction
             TargetName = targetName,
             Scope = targetScope,
             Storage = storage,
-            Mode = mode,
+            // The apply routes every formula-bearing entry through SetFormula;
+            // how the formula was derived (verbatim or repointed) lives in the
+            // preview warnings.
+            Mode = mode == "formula_repointed" ? "formula" : mode,
             FormulaToApply = formula,
             TypeNames = TypeNameSet(types),
             CreateTarget = true,
@@ -429,7 +484,7 @@ public sealed partial class MapFamilyParametersJobAction
         // Creating the parameter is itself a change, so the unit can never preview
         // as skipped; the per-type writes (values) or the formula are counted on top.
         plan.ChangeCount++;
-        if (mode == "formula")
+        if (mode is "formula" or "formula_repointed")
             plan.ChangeCount++;
 
         foreach (var type in types)
@@ -455,4 +510,162 @@ public sealed partial class MapFamilyParametersJobAction
         return null;
     }
 
+    /// <summary>How a formula result can participate in arithmetic across a
+    /// spec mismatch.</summary>
+    private enum FormulaArithmetic
+    {
+        Numeric,
+        UnitTyped,
+        NonArithmetic
+    }
+
+    /// <summary>
+    /// Builds the formula for mode=formula_repointed: the source formula with
+    /// every mapped source name rewritten to its target name (live v18 — the
+    /// migration duplicates must be driven by the SAME formulas, not chained
+    /// to the sources). A spec mismatch is closed with the Autodesk ×1/÷1
+    /// unit trick via mapping.formulaUnit; anything the trick cannot do is an
+    /// honest refusal with the next action. Self-references are left as-is:
+    /// replacing them would make the target circular, and following the old
+    /// parameter is hybrid-safe.
+    /// </summary>
+    private static string? BuildRepointedFormula(
+        string label,
+        MapFamilyMappingSpec mapping,
+        FamilyParameter source,
+        FamilyParameter? target,
+        IReadOnlyList<KeyValuePair<string, string>> repointPairs,
+        List<string> warnings,
+        out string formula)
+    {
+        formula = source.Formula ?? string.Empty;
+
+        // The mapping's own source→target pair must not be rewritten: a
+        // formula referencing its own parameter would become self-circular.
+        var ownName = source.Definition.Name;
+        var pairsForThis = repointPairs
+            .Where(pair => !string.Equals(pair.Key, ownName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        formula = AgentFormulaRepointer.Repoint(formula, pairsForThis, out var replaced);
+        if (replaced.Count > 0)
+        {
+            var replacements = pairsForThis
+                .Where(pair => replaced.Contains(pair.Key, StringComparer.Ordinal))
+                .Select(pair => pair.Key + "→" + pair.Value);
+            warnings.Add(label + "formula repointed: " + string.Join(", ", replacements) + ".");
+        }
+        else
+        {
+            warnings.Add(label + "formula kept as-is: no mapped source references inside.");
+        }
+
+        if (ReferencesParameter(formula, ownName))
+        {
+            warnings.Add(
+                label + "the formula still references its own source '" + ownName +
+                "' — left as-is to keep it valid (the value follows the old parameter until " +
+                "it is removed; Revit then keeps the last computed value).");
+        }
+
+        if (target is not null && !AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
+        {
+            var sourceKind = ClassifySpec(AgentFamilySpecs.SpecName(source.Definition));
+            var targetKind = ClassifySpec(AgentFamilySpecs.SpecName(target.Definition));
+            if (sourceKind == FormulaArithmetic.NonArithmetic || targetKind == FormulaArithmetic.NonArithmetic)
+            {
+                return label + "the target spec differs from the source (text/boolean/material take " +
+                       "no arithmetic), so the formula cannot be re-authored automatically. " +
+                       "[Action: use mode=values to transfer the computed values instead]";
+            }
+
+            if (sourceKind == FormulaArithmetic.UnitTyped && targetKind == FormulaArithmetic.Numeric)
+            {
+                var stripError = WrapByUnit(label, mapping, formula, addUnits: false, warnings, out var stripped);
+                if (stripError is not null)
+                {
+                    return stripError;
+                }
+
+                formula = stripped;
+            }
+            else if (sourceKind == FormulaArithmetic.Numeric && targetKind == FormulaArithmetic.UnitTyped)
+            {
+                var addError = WrapByUnit(label, mapping, formula, addUnits: true, warnings, out var added);
+                if (addError is not null)
+                {
+                    return addError;
+                }
+
+                formula = added;
+            }
+            else
+            {
+                return label + "the target spec differs from the source in dimension (e.g. Length → " +
+                       "Area); one ×1/÷1 wrap cannot convert that. [Action: pick a same-spec target, " +
+                       "or use mode=values]";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The Autodesk unit trick with an explicit constant (a bare 1 makes Revit
+    /// guess the units — developer guide "Formulas and Constants"): a
+    /// dimensioned formula wrapped as "(F) / 1 mm" yields a bare number of
+    /// millimetres; a bare number wrapped as "(F) * 1 mm" yields a length.
+    /// </summary>
+    private static string? WrapByUnit(
+        string label,
+        MapFamilyMappingSpec mapping,
+        string formula,
+        bool addUnits,
+        List<string> warnings,
+        out string wrapped)
+    {
+        var unit = mapping.FormulaUnit?.Trim() ?? string.Empty;
+        if (unit.Length == 0)
+        {
+            wrapped = formula;
+            return label + "the target spec differs from the source: the formula needs a unit wrap. " +
+                   "[Action: pass formulaUnit on this mapping — e.g. formulaUnit:\"mm\" wraps the " +
+                   "formula as '(F) / 1 mm' (a number of millimetres) or '(F) * 1 mm' (a length)]";
+        }
+
+        if (!AgentFormulaRepointer.IsValidUnitToken(unit))
+        {
+            wrapped = formula;
+            return label + "formulaUnit '" + unit + "' is not a usable unit constant. " +
+                   "[Action: use a Revit unit symbol like mm, m, m2, kg, MPa, °C]";
+        }
+
+        wrapped = AgentFormulaRepointer.WrapWithUnit(formula, unit, addUnits);
+        warnings.Add(
+            label + "unit wrap applied: the formula is now '" + wrapped + "' — check that the " +
+            "numeric meaning of the unit (" + unit + ") matches the customer's intent.");
+        return null;
+    }
+
+    private static FormulaArithmetic ClassifySpec(string specName) =>
+        specName is "number" or "integer"
+            ? FormulaArithmetic.Numeric
+            : specName is "text" or "yesno" or "material" or "unknown"
+                ? FormulaArithmetic.NonArithmetic
+                : FormulaArithmetic.UnitTyped;
+
+    private static bool ReferencesParameter(string formula, string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        var pattern = @"(?<![\p{L}\p{N}_])" + System.Text.RegularExpressions.Regex.Escape(name) +
+                      @"(?![\p{L}\p{N}_])";
+        return System.Text.RegularExpressions.Regex.IsMatch(
+            formula, pattern,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+    }
 }

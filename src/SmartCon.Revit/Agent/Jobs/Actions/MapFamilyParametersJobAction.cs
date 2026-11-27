@@ -36,7 +36,7 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         new()
         {
             Path = "mappings[]",
-            AllowedKeys = new[] { "source", "target", "mode", "typeNames", "createTarget", "skipIfSourceMissing" }
+            AllowedKeys = new[] { "source", "target", "mode", "typeNames", "createTarget", "skipIfSourceMissing", "formulaUnit" }
         },
         new()
         {
@@ -159,9 +159,9 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
             var mode = string.IsNullOrWhiteSpace(mapping.Mode)
                 ? "values"
                 : mapping.Mode!.Trim().ToLowerInvariant();
-            if (mode != "values" && mode != "formula")
+            if (mode is not ("values" or "formula" or "formula_repointed"))
             {
-                return label + "mode must be 'values' or 'formula'. [Action: fix the mode]";
+                return label + "mode must be 'values', 'formula' or 'formula_repointed'. [Action: fix the mode]";
             }
 
             var typeNames = mapping.TypeNames;
@@ -323,15 +323,22 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
     private static FamilyParameter? FindParameter(
         RevitFamilyManager manager,
         MapFamilyParameterRef reference,
-        out string? message) =>
+        out string? message,
+        out string? errorCode) =>
         AgentFamilyReader.FindParameter(
             manager,
             reference.Name,
             reference.SharedParameterGuid,
             reference.Scope,
-            out _,
+            out errorCode,
             out message);
 
     private static FamilyParameter? FindParameter(RevitFamilyManager manager, MapFamilyParameterRef reference) =>
-        FindParameter(manager, reference, out _);
+        FindParameter(manager, reference, out _, out _);
+
+    private static FamilyParameter? FindParameter(
+        RevitFamilyManager manager,
+        MapFamilyParameterRef reference,
+        out string? message) =>
+        FindParameter(manager, reference, out message, out _);
 }

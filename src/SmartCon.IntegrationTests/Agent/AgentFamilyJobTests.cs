@@ -1,12 +1,15 @@
 ﻿using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Agent.Services.Storage;
+using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent.Jobs;
 using SmartCon.Core.Services.Interfaces.Agent;
 using SmartCon.IntegrationTests.Support;
 using SmartCon.Revit.Agent;
 using SmartCon.Revit.Agent.Jobs;
 using SmartCon.Revit.Agent.Jobs.Actions;
+using SmartCon.Revit.Agent.Tools.Families;
+using SmartCon.Revit.Agent.Tools.Write;
 using SmartCon.Revit.Transactions;
 
 namespace SmartCon.IntegrationTests.Agent;
@@ -571,6 +574,121 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
         var seed = _seeds[0];
         await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, targetName)).IsNotNull();
         await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, "ЦельПропущена")).IsNull();
+    }
+
+    [Test]
+    public async Task FamilyJob_FormulaRepointed_ReauthorsFormulaOverTargetNames()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+
+        // The source formula references ANOTHER mapped parameter: after
+        // repointing it must reference the TARGET name (KRTRS-style chain,
+        // not the source chain). Cross-mapping references are why the apply
+        // creates all targets in a first pass.
+        var seed = _seeds[0];
+        var familyElement = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
+        await Assert.That(familyElement).IsNotNull();
+        var setupOutcome = new WriteOutcome();
+        using (var setup = AgentFamilySession.Open(Doc, familyElement!, setupOutcome))
+        {
+            await Assert.That(setup).IsNotNull();
+            var manager = setup!.FamilyDoc.FamilyManager;
+            using (var seedFormula = new Transaction(setup.FamilyDoc, "Seed source formula"))
+            {
+                seedFormula.Start();
+                manager.SetFormula(
+                    AgentFamilyReader.FindParameter(manager, FamilySeed.WidthParam, null, null, out _, out _)!,
+                    FamilySeed.HeightParam + " * 2");
+                seedFormula.Commit();
+            }
+
+            // The session closes the family document without saving on Dispose;
+            // load the formula back into the project or the job will not see it.
+            await Assert.That(setup.TryLoadBack(setupOutcome)).IsTrue();
+        }
+
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"" + FamilySeed.HeightParam + "\"},\"target\":{\"name\":\"ЦельВысота\"},\"createTarget\":true}," +
+            "{\"source\":{\"name\":\"" + FamilySeed.WidthParam + "\"},\"target\":{\"name\":\"ЦельШирина\"},\"createTarget\":true,\"mode\":\"formula_repointed\"}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        if (!preview.Success)
+        {
+            throw new InvalidOperationException(
+                "PREVIEW FAILED: " + preview.Error?.Code + ": " + preview.Error?.Message);
+        }
+
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        if (previewData.FailedCount != 0)
+        {
+            throw new InvalidOperationException(
+                "PREVIEW UNIT FAILED: " + string.Join(" | ", previewData.Sample.Select(s =>
+                    s.ErrorCode + ": " + (s.ErrorDetail ?? string.Empty))));
+        }
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        // The repointed formula lives on the target and follows the TARGET of
+        // the other mapping: ЦельШирина = ЦельВысота * 2 (equal per type).
+        var widthParam = seed.GetProjectParameter(FamilySeed.Type1, "ЦельШирина");
+        await Assert.That(widthParam).IsNotNull();
+        var heightTarget = seed.GetProjectParameter(FamilySeed.Type1, "ЦельВысота");
+        await Assert.That(heightTarget).IsNotNull();
+        await Assert.That(Math.Abs(widthParam!.AsDouble() - heightTarget!.AsDouble() * 2) < 1e-6).IsTrue();
+    }
+
+    [Test]
+    public async Task FamilyFailuresSuppressor_ResolvesWhitelistedPromptAndReports()
+    {
+        // Live v18: «Семейство больше не соответствует свойствам системы…» —
+        // the prompt the owner keeps confirming manually. What is under test
+        // here is the suppression path itself: the FailuresProcessing event
+        // fires and the whitelist matches the posted failure. An empty
+        // document gives the failure no resolutions (no family, no system),
+        // so the actual default-button press only happens on a live model;
+        // WhitelistMatches is the honest vacuum-proof signal.
+        using var suppressor = AgentFamilyFailuresSuppressor.Begin(Doc);
+        using var transaction = new Transaction(Doc, "SmartCon test: failures suppressor");
+        transaction.Start();
+        Doc.PostFailure(new FailureMessage(
+            BuiltInFailures.FamilyFailures.FamilyDoesntMatchSystemPropertiesDisconnected));
+        _ = transaction.Commit();
+
+        await Assert.That(suppressor.WhitelistMatches).IsGreaterThan(0);
     }
 
     private bool SeedFamilies(int count)

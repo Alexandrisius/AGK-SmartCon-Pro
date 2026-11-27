@@ -274,7 +274,10 @@ public sealed partial class SetFamilyParameterScopeJobAction
             {
                 Success = true,
                 ExpectedJson = preview.ExpectedJson,
-                UndoJson = finalJson
+                UndoJson = finalJson,
+                // Auto-resolved benign failures (system-disconnect prompts) are
+                // part of the unit's honest report (live v18).
+                Warnings = session.FailureWarnings()
             };
         }
         catch (OperationCanceledException)

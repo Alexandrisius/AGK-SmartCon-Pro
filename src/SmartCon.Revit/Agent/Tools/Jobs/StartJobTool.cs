@@ -128,10 +128,11 @@ public sealed class StartJobTool : IAgentTool
                   "guid": { "type": "string" }
                 }
               },
-              "mode": { "type": "string", "enum": ["values", "formula"] },
+              "mode": { "type": "string", "enum": ["values", "formula", "formula_repointed"] },
               "typeNames": { "type": "array", "items": { "type": "string" } },
               "createTarget": { "type": "boolean", "default": false, "description": "Create the missing target parameter from a shared definition (source spec/group); a definition written to the shared parameter file is not reverted by job undo" },
-              "skipIfSourceMissing": { "type": "boolean", "default": false, "description": "A mapping whose source parameter is absent in a family becomes a reported skip instead of failing that family unit - one universal mapping list covers families with different parameter signatures" }
+              "skipIfSourceMissing": { "type": "boolean", "default": false, "description": "A mapping whose source parameter is absent in a family becomes a reported skip instead of failing that family unit - one universal mapping list covers families with different parameter signatures" },
+              "formulaUnit": { "type": "string", "description": "Explicit unit constant for formula_repointed when the target spec differs from the source (Autodesk: a bare 1 makes Revit guess units): formulaUnit=mm wraps a Length formula as '(F) / 1 mm' (number of mm) or a Number as '(F) * 1 mm' (length). Use for a customer parameter of a different data type" }
             }
           }
         },

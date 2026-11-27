@@ -255,7 +255,9 @@ public sealed partial class ReplaceFamilyParameterJobAction
                 Success = true,
                 ExpectedJson = Json(plan.Expected),
                 UndoJson = finalJson,
-                Warnings = plan.Warnings
+                // Auto-resolved benign failures (system-disconnect prompts) are
+                // part of the unit's honest report (live v18).
+                Warnings = plan.Warnings.Concat(session.FailureWarnings()).ToList()
             };
         }
         catch (OperationCanceledException)

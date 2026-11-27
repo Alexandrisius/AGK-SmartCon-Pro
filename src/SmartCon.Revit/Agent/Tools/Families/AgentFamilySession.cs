@@ -19,6 +19,7 @@ internal sealed partial class AgentFamilySession : IDisposable
     private readonly List<SectionReport> _sections = new();
     private readonly List<FamilyReadBackExpectation> _expectations = new();
     private readonly List<FamilyUndoOperation> _undoOperations = new();
+    private AgentFamilyFailuresSuppressor? _failures;
     private bool _disposed;
 
     private AgentFamilySession(Document projectDoc, RevitFamily family, Document familyDoc)
@@ -26,6 +27,12 @@ internal sealed partial class AgentFamilySession : IDisposable
         ProjectDoc = projectDoc;
         FamilyDoc = familyDoc;
         FamilyName = family.Name;
+        // Known benign failure prompts («the family no longer matches the
+        // properties for the System…») block the write path exactly like the
+        // dialogs do; failures never reach DialogBoxShowing, so they get their
+        // own scope over every transaction of this session, load-back included
+        // (live v18 — a migration job waited minutes for the owner's click).
+        _failures = AgentFamilyFailuresSuppressor.Begin(projectDoc);
     }
 
     public Document ProjectDoc { get; }
@@ -249,6 +256,9 @@ internal sealed partial class AgentFamilySession : IDisposable
             LoadedFamilyId = loaded.Id.GetValue();
             LoadedFamilyUniqueId = loaded.UniqueId;
             AddSection("loadBack", "ok", "family loaded back into the project");
+            // The internal LoadFamily transaction is where the benign system
+            // prompts surface; report what the suppressor resolved on the way.
+            outcome.Warnings.AddRange(FailureWarnings());
             return true;
         }
         catch (Exception ex)
@@ -410,12 +420,22 @@ internal sealed partial class AgentFamilySession : IDisposable
             AddSection("readBack", "skipped", "dry run does not modify the project");
     }
 
+    /// <summary>
+    /// Warning lines for the failures auto-resolved during this session (edit
+    /// transaction + load-back). Job actions copy them into the unit result;
+    /// write tools get them through <see cref="WriteOutcome.Warnings"/>.
+    /// </summary>
+    internal List<string> FailureWarnings() =>
+        _failures?.WarningLines() ?? new List<string>();
+
     public void Dispose()
     {
         if (_disposed)
             return;
 
         _disposed = true;
+        _failures?.Dispose();
+        _failures = null;
         // FamilyManager batch pattern (#96 / REVIT-237190): close + synchronous
         // COM release + render-thread nudge after every family document cycle.
         // The close is confirmed, not assumed: a family document that survives

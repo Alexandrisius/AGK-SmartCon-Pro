@@ -216,6 +216,7 @@ public sealed partial class AddFamilyParametersJobAction
             session.SetBackup(backupPath, sourceBackupPath);
 
             var plan = BuildPlan(session.FamilyDoc.FamilyManager, args.Parameters!);
+            List<string>? applyFailureWarnings = null;
             if (plan.ChangeCount == 0)
             {
                 return new JobUnitApply
@@ -286,6 +287,10 @@ public sealed partial class AddFamilyParametersJobAction
                 return ApplyFail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
             }
 
+            // Auto-resolved benign failures (system-disconnect prompts) are part
+            // of the unit's honest report (live v18).
+            applyFailureWarnings = session.FailureWarnings();
+
             undo.NewFamilyUniqueId = session.LoadedFamilyUniqueId;
             var finalJson = Json(undo);
             try
@@ -302,7 +307,9 @@ public sealed partial class AddFamilyParametersJobAction
                 Success = true,
                 ExpectedJson = preview.ExpectedJson,
                 UndoJson = finalJson,
-                Warnings = plan.Warnings
+                // plan.Warnings plus the benign failures auto-resolved on the
+                // write path (live v18).
+                Warnings = plan.Warnings.Concat(applyFailureWarnings ?? new List<string>()).ToList()
             };
         }
         catch (OperationCanceledException)

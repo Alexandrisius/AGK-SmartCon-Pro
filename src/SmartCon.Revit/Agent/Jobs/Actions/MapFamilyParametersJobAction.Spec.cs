@@ -62,6 +62,15 @@ public sealed partial class MapFamilyParametersJobAction
         /// </summary>
         [JsonPropertyName("skipIfSourceMissing")]
         public bool SkipIfSourceMissing { get; set; }
+
+        /// <summary>
+        /// Explicit unit constant for the ×1/÷1 wrap when the target spec
+        /// differs from the source (Autodesk: a bare 1 makes Revit guess the
+        /// units): "mm" turns a Length formula into a number of millimetres
+        /// ("(F) / 1 mm") or a number into a length ("(F) * 1 mm").
+        /// </summary>
+        [JsonPropertyName("formulaUnit")]
+        public string? FormulaUnit { get; set; }
     }
 
     public sealed class MapFamilyParameterRef

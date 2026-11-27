@@ -248,6 +248,8 @@ public sealed partial class MapFamilyParametersJobAction
                 return ApplyFail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
             }
 
+            applyWarnings.AddRange(session.FailureWarnings());
+
             undo.NewFamilyUniqueId = session.LoadedFamilyUniqueId;
             var finalJson = Json(undo);
             try
@@ -292,6 +294,25 @@ public sealed partial class MapFamilyParametersJobAction
         CancellationToken ct)
     {
         var originalType = manager.CurrentType;
+        // Pass 1 — create every createTarget parameter before anything else:
+        // a repointed formula may reference a target created by ANOTHER
+        // mapping (Наименование краткое = Код изделия), so creation order in
+        // the mapping list must not matter (live v18). The per-entry creates
+        // below become no-ops after this pass.
+        foreach (var entry in plan.Entries)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!entry.CreateTarget || FindParameter(manager, entry.Target) is not null)
+            {
+                continue;
+            }
+
+            var createError = EnsureSharedTargetParameter(manager, projectDoc, entry, warnings);
+            if (createError is not null)
+            {
+                return createError;
+            }
+        }
         try
         {
             foreach (var entry in plan.Entries)
