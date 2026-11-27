@@ -36,7 +36,7 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
         new()
         {
             Path = "mappings[]",
-            AllowedKeys = new[] { "source", "target", "mode", "typeNames", "createTarget" }
+            AllowedKeys = new[] { "source", "target", "mode", "typeNames", "createTarget", "skipIfSourceMissing" }
         },
         new()
         {
@@ -71,7 +71,7 @@ public sealed partial class MapFamilyParametersJobAction : RevitJobActionBase
                 JobErrorCodes.InvalidSpec,
                 "map_family_parameters requires {select:{familyIds|familyUniqueIds|familyNames|nameContains|" +
                 "categoryIds|categoryNames, limit?}, mappings:[{source:{name,scope,guid?}, target:{name,scope,guid?}, mode, " +
-                "typeNames?, createTarget?}]}");
+                "typeNames?, createTarget?, skipIfSourceMissing?}]}");
         }
 
         var mappings = spec.Mappings!;

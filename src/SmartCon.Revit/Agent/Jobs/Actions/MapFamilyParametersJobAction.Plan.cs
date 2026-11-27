@@ -60,8 +60,22 @@ public sealed partial class MapFamilyParametersJobAction
             var source = FindParameter(manager, sourceRef, out var sourceMessage);
             if (source is null)
             {
+                if (mapping.SkipIfSourceMissing)
+                {
+                    // One universal mapping list must survive families with
+                    // different parameter signatures: the missing source is a
+                    // reported skip, not a unit failure. No entry and no change
+                    // count — the mapping simply does not apply to this family.
+                    plan.Warnings.Add(
+                        "mapping " + (index + 1) + " skipped: this family has no source parameter '" +
+                        (sourceRef.Name ?? sourceRef.SharedParameterGuid) + "'");
+                    continue;
+                }
+
                 error = label + "source: " + (sourceMessage ?? "parameter not found") +
-                        " [Action: check the parameter name/scope with get_family_parameters]";
+                        " [Action: check the parameter name/scope with get_family_parameters, or pass " +
+                        "skipIfSourceMissing=true when the mapping list is intentionally wider than one " +
+                        "family's signature]";
                 return null;
             }
 

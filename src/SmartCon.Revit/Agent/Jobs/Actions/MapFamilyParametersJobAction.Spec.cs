@@ -52,6 +52,16 @@ public sealed partial class MapFamilyParametersJobAction
         /// <summary>Create the target parameter from a shared definition when it is missing (#431).</summary>
         [JsonPropertyName("createTarget")]
         public bool CreateTarget { get; set; }
+
+        /// <summary>
+        /// A mapping whose source parameter is absent in THIS family becomes a
+        /// reported skip instead of failing the whole unit: one universal
+        /// mapping list then covers families with different parameter
+        /// signatures (live feedback v17 — one missing ADSK name killed the
+        /// whole family unit).
+        /// </summary>
+        [JsonPropertyName("skipIfSourceMissing")]
+        public bool SkipIfSourceMissing { get; set; }
     }
 
     public sealed class MapFamilyParameterRef
@@ -159,6 +169,9 @@ public sealed partial class MapFamilyParametersJobAction
         public List<FamilyUndoOperation> UndoOps { get; } = new();
 
         public List<FamilyMapCreateState> Creates { get; } = new();
+
+        /// <summary>Per-mapping skips (skipIfSourceMissing): shown in the unit preview/apply result.</summary>
+        public List<string> Warnings { get; } = new();
 
         public FamilyMapState Expected { get; set; } = new();
 

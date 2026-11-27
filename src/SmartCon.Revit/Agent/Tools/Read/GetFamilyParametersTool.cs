@@ -67,7 +67,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "Opens the family document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: read several families in one call; each entry gets the same payload as the single-family form. In a batch includeValues defaults to FALSE (metadata only — values are the timeout hot spot); pass includeValues=true explicitly to read per-type values""},""compact"":{""type"":""boolean"",""default"":false,""description"":""Return compact parameter rows (name, guid, storage, instance flag, counts) without formulas/values — the ФОП-audit shape a large batch falls back to anyway""},""parameterNamePrefix"":{""type"":""string"",""description"":""Keep only parameters whose name starts with this prefix (case-insensitive) — e.g. a vendor or ФОП prefix; turns a 50-family batch into a one-call audit of which family documents embed these definitions""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""description"":""Per-type values: true for a single family (default), false for a batch (default) — one parameter's values: get_family_parameter_values""},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: read several families in one call; each entry gets the same payload as the single-family form. In a batch includeValues defaults to FALSE (metadata only — values are the timeout hot spot); pass includeValues=true explicitly to read per-type values""},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""minItems"":1,""maxItems"":50,""description"":""Batch by family names instead of ids (same batch semantics as familyIds); unmatched names are listed in unknownFamilyNames""},""compact"":{""type"":""boolean"",""default"":false,""description"":""Return compact parameter rows (name, guid, storage, instance flag, counts) without formulas/values — the ФОП-audit shape a large batch falls back to anyway""},""parameterNamePrefix"":{""type"":""string"",""description"":""Keep only parameters whose name starts with this prefix (case-insensitive) — e.g. a vendor or ФОП prefix; turns a 50-family batch into a one-call audit of which family documents embed these definitions""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""description"":""Per-type values: true for a single family (default), false for a batch (default) — one parameter's values: get_family_parameter_values""},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -76,8 +76,53 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         // instead of hanging on a click (live v17, P0 1.1).
         using var dialogs = AgentFamilyDialogSuppressor.BeginSafe(Context);
         var batchIds = TryGetIntArray(args, "familyIds");
+        IReadOnlyList<string>? unknownFamilyNames = null;
+        if (batchIds is not { Count: > 0 })
+        {
+            // The name selector mirrors the job selects and list_family_types:
+            // before ids are known the model addresses families by name (live
+            // feedback v17 — the gap cost an extra list_families round).
+            var batchNames = TryGetStringArray(args, "familyNames");
+            if (batchNames is { Count: > 0 })
+            {
+                var resolvedIds = new List<long>();
+                var unknown = new List<string>();
+                foreach (var name in batchNames)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    var resolved = AgentFamilyReader.ResolveFamily(doc, null, name, null, out _, out _);
+                    if (resolved is not null)
+                        resolvedIds.Add(resolved.Id.GetValue());
+                    else
+                        unknown.Add(name);
+                }
+
+                batchIds = resolvedIds;
+                unknownFamilyNames = unknown;
+            }
+        }
+
         if (batchIds is { Count: > 0 })
-            return ExecuteBatch(doc, args, batchIds, dialogs, ct);
+            return ExecuteBatch(doc, args, batchIds, dialogs, ct, unknownFamilyNames);
+
+        if (unknownFamilyNames is { Count: > 0 })
+        {
+            // Every requested name missed: an honest empty batch beats a generic
+            // single-family "family not found".
+            var emptyPayload = new Dictionary<string, object?>
+            {
+                ["families"] = Array.Empty<object>(),
+                ["familyCount"] = 0,
+                ["okCount"] = 0,
+                ["failedCount"] = 0,
+                ["unknownFamilyNames"] = unknownFamilyNames
+            };
+            AttachSuppressedDialogs(emptyPayload, dialogs);
+            return ToolResult.Ok(
+                AgentJson.Serialize(emptyPayload),
+                "None of the " + unknownFamilyNames.Count + " family name(s) matched a loaded family: " +
+                string.Join(", ", unknownFamilyNames) + ". [Action: check the spelling with list_families]");
+        }
 
         var family = AgentFamilyReader.ResolveFamily(
             doc,
@@ -128,7 +173,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         JsonElement args,
         IReadOnlyList<long> familyIds,
         AgentFamilyDialogSuppressor? dialogs,
-        CancellationToken ct)
+        CancellationToken ct,
+        IReadOnlyList<string>? unknownFamilyNames = null)
     {
         var families = new List<object?>(familyIds.Count);
         var okCount = 0;
@@ -183,12 +229,17 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             ["familyCount"] = familyIds.Count,
             ["okCount"] = okCount,
             ["failedCount"] = failedCount,
+            ["unknownFamilyNames"] = unknownFamilyNames is { Count: > 0 } ? unknownFamilyNames : null,
             ["includeValues"] = batchIncludeValues
         };
         AttachSuppressedDialogs(batchPayload, dialogs);
 
         var baseMessage = "Read " + okCount + " of " + familyIds.Count + " family(ies)" +
                           (failedCount > 0 ? ", " + failedCount + " not found" : string.Empty) +
+                          (unknownFamilyNames is { Count: > 0 }
+                              ? ", " + unknownFamilyNames.Count + " name(s) not matched: " +
+                                string.Join(", ", unknownFamilyNames)
+                              : string.Empty) +
                           (batchIncludeValues
                               ? string.Empty
                               : " (values off by default in a batch — pass includeValues=true " +
@@ -588,5 +639,25 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         }
 
         return ids;
+    }
+
+    private static IReadOnlyList<string>? TryGetStringArray(JsonElement args, string property)
+    {
+        if (args.ValueKind != JsonValueKind.Object
+            || !args.TryGetProperty(property, out var value)
+            || value.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var names = new List<string>();
+        foreach (var item in value.EnumerateArray())
+        {
+            var name = item.ValueKind == JsonValueKind.String ? item.GetString()?.Trim() : null;
+            if (!string.IsNullOrEmpty(name))
+                names.Add(name!);
+        }
+
+        return names;
     }
 }

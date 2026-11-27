@@ -56,6 +56,14 @@ public sealed partial class MapFamilyParametersJobAction
                 return Fail(FamilyMappingInvalid, error!);
             }
 
+            var previewWarnings = new List<string>(plan.Warnings);
+            if (plan.Entries.Any(entry => entry.Scope == "instance"))
+            {
+                previewWarnings.Add(
+                    "Instance-scope targets become family-type defaults and are not verifiable from the " +
+                    "project after load-back.");
+            }
+
             return new JobUnitPreview
             {
                 Skipped = plan.ChangeCount == 0,
@@ -68,13 +76,7 @@ public sealed partial class MapFamilyParametersJobAction
                     Ops = plan.UndoOps
                 }),
                 Label = session.FamilyName,
-                Warnings = plan.Entries.Any(entry => entry.Scope == "instance")
-                    ? new[]
-                    {
-                        "Instance-scope targets become family-type defaults and are not verifiable from the " +
-                        "project after load-back."
-                    }
-                    : Array.Empty<string>()
+                Warnings = previewWarnings
             };
         }
         finally
@@ -188,8 +190,9 @@ public sealed partial class MapFamilyParametersJobAction
             persistUndo?.Invoke(Json(undo));
 
             // Surfaced in the unit result: createTarget definitions are written to the
-            // shared parameter file, which the job undo cannot revert.
-            var applyWarnings = new List<string>();
+            // shared parameter file, which the job undo cannot revert. Skipped
+            // mappings (skipIfSourceMissing) ride the same list.
+            var applyWarnings = new List<string>(plan.Warnings);
             using var transaction = new Transaction(session.FamilyDoc, "SmartCon job: map_family_parameters");
             var started = false;
             try

@@ -499,6 +499,80 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
         await Assert.That(detail.Contains("createTarget")).IsTrue();
     }
 
+    [Test]
+    public async Task FamilyJob_SkipIfSourceMissing_SkipsMappingInsteadOfFailingUnit()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+        // Live feedback v17: one universal mapping list over families with
+        // different signatures — the family has Ширина but no НетТакогоПараметра,
+        // and that second mapping must become a reported skip, not a unit failure.
+        const string targetName = "ЦельНовая";
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"Ширина\"},\"target\":{\"name\":\"" + targetName +
+            "\"},\"createTarget\":true}," +
+            "{\"source\":{\"name\":\"НетТакогоПараметра\"},\"target\":{\"name\":\"ЦельПропущена\"}," +
+            "\"createTarget\":true,\"skipIfSourceMissing\":true}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.Count).IsEqualTo(1);
+        await Assert.That(previewData.FailedCount).IsEqualTo(0);
+        await Assert.That(previewData.WillChangeCount).IsEqualTo(1);
+
+        var previewItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        using var expected = System.Text.Json.JsonDocument.Parse(previewItems[0].ExpectedJson!);
+        // Only the first mapping materialized: the skipped one created no target.
+        var creates = expected.RootElement.GetProperty("wouldCreateTargets");
+        await Assert.That(creates.GetArrayLength()).IsEqualTo(1);
+        await Assert.That(creates[0].GetProperty("name").GetString()).IsEqualTo(targetName);
+        await Assert.That(previewItems[0].PreviewJson!.Contains("НетТакогоПараметра")).IsTrue();
+        await Assert.That(previewItems[0].PreviewJson!.Contains("skipped")).IsTrue();
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        var applyItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(applyItems.Count(item => item.State == JobItemState.Done)).IsEqualTo(1);
+
+        var seed = _seeds[0];
+        await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, targetName)).IsNotNull();
+        await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, "ЦельПропущена")).IsNull();
+    }
+
     private bool SeedFamilies(int count)
     {
         for (var index = 1; index <= count; index++)
