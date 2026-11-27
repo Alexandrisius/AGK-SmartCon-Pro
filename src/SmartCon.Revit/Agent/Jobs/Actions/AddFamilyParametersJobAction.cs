@@ -116,7 +116,7 @@ public sealed partial class AddFamilyParametersJobAction : RevitJobActionBase
 
         var specNames = parameters
             .Select(parameter => parameter.Name?.Trim())
-            .Where(name => !string.IsNullOrWhiteSpace(name) && name!.Contains('-', StringComparison.Ordinal))
+            .Where(name => !string.IsNullOrWhiteSpace(name) && name!.IndexOf("-", StringComparison.Ordinal) >= 0)
             .Select(name => name!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();

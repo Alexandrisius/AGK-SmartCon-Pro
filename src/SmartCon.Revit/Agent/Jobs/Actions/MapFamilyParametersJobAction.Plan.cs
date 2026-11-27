@@ -730,7 +730,7 @@ public sealed partial class MapFamilyParametersJobAction
         foreach (FamilyParameter parameter in manager.GetParameters())
         {
             var name = parameter.Definition.Name;
-            if (name.Contains('-', StringComparison.Ordinal)
+            if (name.IndexOf("-", StringComparison.Ordinal) >= 0
                 && AgentFormulaRepointer.ReferencesParameter(formula, name))
             {
                 return label + "the formula references '" + name + "', whose name contains a '-' — " +

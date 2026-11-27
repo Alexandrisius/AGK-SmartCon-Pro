@@ -109,7 +109,7 @@ public sealed partial class AddFamilyParametersJobAction
                 foreach (FamilyParameter candidate in manager.GetParameters())
                 {
                     var candidateName = candidate.Definition.Name;
-                    if (!candidateName.Contains('-', StringComparison.Ordinal))
+                    if (candidateName.IndexOf("-", StringComparison.Ordinal) < 0)
                         continue;
 
                     if (AgentFormulaRepointer.ReferencesParameter(formula, candidateName))
