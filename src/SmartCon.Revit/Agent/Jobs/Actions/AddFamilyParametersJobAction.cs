@@ -3,6 +3,7 @@ using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent.Jobs;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Write;
 
@@ -87,6 +88,55 @@ public sealed partial class AddFamilyParametersJobAction : RevitJobActionBase
         if (parameterError is not null)
         {
             return ExpansionFail(JobErrorCodes.InvalidSpec, parameterError);
+        }
+
+        // Live v18 formula pre-gates at EXPANSION (before any family opens —
+        // the weak-model run burned ~11 minutes of preview+apply on 34 units
+        // Revit would refuse anyway):
+        // 1) material/yesno/image parameters take no formulas;
+        // 2) a formula referencing a hyphenated name (Revit parses '-' as
+        //    minus) fails instantly against the spec's own names.
+        foreach (var request in parameters)
+        {
+            if (string.IsNullOrWhiteSpace(request.Formula))
+                continue;
+
+            if (AgentFamilySpecs.TryResolveSpec(
+                    request.StorageType, out var specId, out _, out _)
+                && specId is not null
+                && AgentFamilySpecs.SpecNameOf(specId) is "material" or "yesno" or "integer")
+            {
+                return ExpansionFail(
+                    JobErrorCodes.InvalidSpec,
+                    "parameter '" + request.Name + "': the spec '" +
+                    AgentFamilySpecs.SpecNameOf(specId) + "' takes no formulas. " +
+                    "[Action: drop the formula and transfer values instead]");
+            }
+        }
+
+        var specNames = parameters
+            .Select(parameter => parameter.Name?.Trim())
+            .Where(name => !string.IsNullOrWhiteSpace(name) && name!.Contains('-', StringComparison.Ordinal))
+            .Select(name => name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        foreach (var request in parameters)
+        {
+            if (string.IsNullOrWhiteSpace(request.Formula))
+                continue;
+
+            foreach (var hyphenated in specNames)
+            {
+                if (AgentFormulaRepointer.ReferencesParameter(request.Formula!, hyphenated))
+                {
+                    return ExpansionFail(
+                        JobErrorCodes.InvalidSpec,
+                        "parameter '" + request.Name + "': the formula references '" + hyphenated +
+                        "', whose name contains a '-' — Revit parses it as minus, so the formula " +
+                        "string is invalid. [Action: use mode=values in map_family_parameters or " +
+                        "drop the formula]");
+                }
+            }
         }
 
         var select = spec.Select!;

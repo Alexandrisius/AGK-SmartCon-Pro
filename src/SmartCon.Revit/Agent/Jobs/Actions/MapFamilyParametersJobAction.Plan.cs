@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB;
 using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
 using SmartCon.Core.Compatibility;
@@ -109,6 +109,20 @@ public sealed partial class MapFamilyParametersJobAction
             var target = FindParameter(manager, targetRef, out var targetMessage);
             if (target is null)
             {
+                if (mapping.SkipIfSourceMissing && !mapping.CreateTarget)
+                {
+                    // Live v18: a missing TARGET is the same "this pair does not
+                    // apply to this family" case as a missing source — with the
+                    // skip flag it becomes a reported skip instead of failing
+                    // the whole unit (11 units lost copying over one missing
+                    // target parameter).
+                    plan.Warnings.Add(
+                        "mapping " + (index + 1) + " skipped: " +
+                        (targetMessage ?? "the target parameter '" + (targetRef.Name ?? targetRef.SharedParameterGuid) +
+                         "' was not found"));
+                    continue;
+                }
+
                 if (!mapping.CreateTarget)
                 {
                     error = label + "target: " + (targetMessage ?? "parameter not found") +
@@ -131,6 +145,14 @@ public sealed partial class MapFamilyParametersJobAction
                     ct);
                 if (error is not null)
                 {
+                    if (mapping.SkipIfSourceMissing)
+                    {
+                        // PlanCreateTarget checks everything before mutating the
+                        // plan, so skipping here leaves no half state behind.
+                        plan.Warnings.Add("mapping " + (index + 1) + " skipped: " + error);
+                        continue;
+                    }
+
                     return null;
                 }
 
@@ -256,7 +278,15 @@ public sealed partial class MapFamilyParametersJobAction
                     return null;
                 }
             }
-            else if (!AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
+
+            var gateError = ValidateFormulaWritability(label, manager, source, target.Definition, formula!);
+            if (gateError is not null)
+            {
+                error = gateError;
+                return null;
+            }
+
+            if (!AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
             {
                 error = SpecMismatchError(label, source, target);
                 return null;
@@ -382,6 +412,12 @@ public sealed partial class MapFamilyParametersJobAction
                 {
                     return buildError;
                 }
+            }
+
+            var ctGateError = ValidateFormulaWritability(label, manager, source, null, formula!);
+            if (ctGateError is not null)
+            {
+                return ctGateError;
             }
 
             if (!AgentFamilyReader.TryFindMissingLookupTables(familyDoc, formula, out var missing))
@@ -575,7 +611,7 @@ public sealed partial class MapFamilyParametersJobAction
             warnings.Add(label + "formula kept as-is: no mapped source references inside.");
         }
 
-        if (ReferencesParameter(formula, ownName))
+        if (AgentFormulaRepointer.ReferencesParameter(formula, ownName))
         {
             warnings.Add(
                 label + "the formula still references its own source '" + ownName +
@@ -669,18 +705,40 @@ public sealed partial class MapFamilyParametersJobAction
                 ? FormulaArithmetic.NonArithmetic
                 : FormulaArithmetic.UnitTyped;
 
-    private static bool ReferencesParameter(string formula, string name)
+    /// <summary>
+    /// Shared pre-gate for every formula-bearing mapping (live v18: Revit
+    /// refused a vendor-parameter reference as a formula at APPLY time — 34
+    /// previewed units failed for nothing; material/yesno take no formulas at
+    /// all). Runs at PLAN time: a hyphenated referenced parameter (Revit
+    /// parses '-' as minus) and formula-hostile specs fail with the values
+    /// action before any apply cycle.
+    /// </summary>
+    private static string? ValidateFormulaWritability(
+        string label,
+        RevitFamilyManager manager,
+        FamilyParameter source,
+        Autodesk.Revit.DB.Definition? targetDefinition,
+        string formula)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        var hostSpec = AgentFamilySpecs.SpecName(targetDefinition ?? source.Definition);
+        if (hostSpec is "material" or "yesno" or "integer")
         {
-            return false;
+            return label + "the parameter spec '" + hostSpec + "' takes no formulas. " +
+                   "[Action: use mode=values for this mapping]";
         }
 
-        var pattern = @"(?<![\p{L}\p{N}_])" + System.Text.RegularExpressions.Regex.Escape(name) +
-                      @"(?![\p{L}\p{N}_])";
-        return System.Text.RegularExpressions.Regex.IsMatch(
-            formula, pattern,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
-            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        foreach (FamilyParameter parameter in manager.GetParameters())
+        {
+            var name = parameter.Definition.Name;
+            if (name.Contains('-', StringComparison.Ordinal)
+                && AgentFormulaRepointer.ReferencesParameter(formula, name))
+            {
+                return label + "the formula references '" + name + "', whose name contains a '-' — " +
+                       "Revit parses it as minus, so the formula string is invalid. " +
+                       "[Action: use mode=values for this mapping]";
+            }
+        }
+
+        return null;
     }
 }

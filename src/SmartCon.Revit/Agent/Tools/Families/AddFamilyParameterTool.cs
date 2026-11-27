@@ -179,7 +179,9 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
                     "parameter_exists",
                     "The family already has a parameter named '" + name + "' (" +
                     (existing.IsInstance ? "instance" : "type") + "). " +
-                    "Use rename_family_parameter to rename it or pick another name.");
+                    "Revit allows the same name as BOTH scopes: if you meant the other scope, pass scope=\""
+                    + (existing.IsInstance ? "type" : "instance") + "\". "
+                    + "Use rename_family_parameter to rename it or pick another name.");
                 return false;
             }
         }

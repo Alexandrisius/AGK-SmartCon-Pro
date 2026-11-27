@@ -3,6 +3,7 @@ using RevitFamily = Autodesk.Revit.DB.Family;
 using RevitFamilyManager = Autodesk.Revit.DB.FamilyManager;
 using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent.Jobs;
+using SmartCon.Core.Services.Agent;
 using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Write;
 
@@ -101,6 +102,40 @@ public sealed partial class AddFamilyParametersJobAction
             }
 
             plan.ChangeCount++;
+            var formula = string.IsNullOrWhiteSpace(request.Formula) ? null : request.Formula!.Trim();
+            var formulaRejected = false;
+            if (formula is not null)
+            {
+                foreach (FamilyParameter candidate in manager.GetParameters())
+                {
+                    var candidateName = candidate.Definition.Name;
+                    if (!candidateName.Contains('-', StringComparison.Ordinal))
+                        continue;
+
+                    if (AgentFormulaRepointer.ReferencesParameter(formula, candidateName))
+                    {
+                        // Exact per-family check (no false positives): Revit
+                        // parses '-' as minus, so this formula can never apply.
+                        plan.Entries.Add(new AddFamilyPlanEntry
+                        {
+                            Name = name,
+                            Action = "skip",
+                            Reason = "the formula references '" + candidateName + "', whose name " +
+                                     "contains a '-' — Revit parses it as minus, so the formula " +
+                                     "string is invalid. Transfer the value instead."
+                        });
+                        plan.Warnings.Add(
+                            "parameter '" + name + "': formula skipped — it references '" +
+                            candidateName + "' with a '-' (invalid in Revit formulas).");
+                        formulaRejected = true;
+                        break;
+                    }
+                }
+            }
+
+            if (formulaRejected)
+                continue;
+
             plan.Entries.Add(new AddFamilyPlanEntry
             {
                 Name = name,
@@ -108,7 +143,7 @@ public sealed partial class AddFamilyParametersJobAction
                 Group = request.Group,
                 IsInstance = request.IsInstance,
                 IsShared = request.IsShared,
-                Formula = string.IsNullOrWhiteSpace(request.Formula) ? null : request.Formula!.Trim()
+                Formula = formula
             });
         }
 
@@ -407,7 +442,35 @@ public sealed partial class AddFamilyParametersJobAction
                             "present in the family: " + string.Join(", ", missingTables) + ".");
                     }
 
-                    manager.SetFormula(created, entry.Formula!);
+                    try
+                    {
+                        manager.SetFormula(created, entry.Formula!);
+                    }
+                    catch (Exception formulaEx)
+                    {
+                        // Per-item isolation, as documented ("in a batch the
+                        // other items stand"): remove THIS item's parameter and
+                        // keep the rest of the family transaction (live v18 —
+                        // one bad formula rolled back the whole family).
+                        try
+                        {
+                            manager.RemoveParameter(created);
+                        }
+                        catch (Exception removeEx)
+                        {
+                            return (FamilyAddInvalid,
+                                "parameter '" + name + "': Revit rejected the formula (" +
+                                formulaEx.Message + ") and the compensating removal failed (" +
+                                removeEx.Message + "). [Action: run the preview again]");
+                        }
+
+                        plan.Warnings.Add(
+                            "parameter '" + name + "': Revit rejected the formula — '" +
+                            formulaEx.Message + "'. The created parameter was removed; the other " +
+                            "parameters of this family are kept. [Action: transfer the value with " +
+                            "map_family_parameters mode=values instead]");
+                        continue;
+                    }
                 }
             }
             catch (Exception ex)

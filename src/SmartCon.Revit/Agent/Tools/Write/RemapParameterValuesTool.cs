@@ -40,7 +40,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             "copies type defaults only.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""mapping"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""source"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false},""target"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false}},""required"":[""target""],""additionalProperties"":false}},""filter"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""familyIds"":{""type"":""array"",""items"":{""type"":""integer"",""maxItems"":50,""description"":""Placed instances of these loadable families; combine with familyNames""}},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":50,""description"":""Placed instances of these loadable families by NAME (the stable key — familyId changes on every reload); every name must resolve""},""limit"":{""type"":""integer"",""default"":500}},""additionalProperties"":false},""offset"":{""type"":""integer"",""default"":0,""description"":""Skip the first N matching elements (paging with limit; repeat until hasMore=false)""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""mapping""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""mapping"":{""type"":""array"",""minItems"":1,""maxItems"":20,""items"":{""type"":""object"",""properties"":{""source"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false},""target"":{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string""},""scope"":{""type"":""string""}},""additionalProperties"":false}},""required"":[""target""],""additionalProperties"":false}},""filter"":{""type"":""object"",""properties"":{""categories"":{""type"":""array"",""items"":{""type"":""string""}},""levelIds"":{""type"":""array"",""items"":{""type"":""integer""}},""typeIds"":{""type"":""array"",""items"":{""type"":""integer""}},""elementIds"":{""type"":""array"",""items"":{""type"":""integer""},""description"":""Exact element ids to process - repeat ONLY for the failed elements instead of the whole selection""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer"",""maxItems"":50,""description"":""Placed instances of these loadable families; combine with familyNames""}},""familyNames"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":50,""description"":""Placed instances of these loadable families by NAME (the stable key — familyId changes on every reload); every name must resolve""},""limit"":{""type"":""integer"",""default"":500}},""additionalProperties"":false},""offset"":{""type"":""integer"",""default"":0,""description"":""Skip the first N matching elements (paging with limit; repeat until hasMore=false)""},""dryRun"":{""type"":""boolean"",""default"":true},""atomic"":{""type"":""boolean"",""default"":false}},""required"":[""mapping""],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -91,6 +91,7 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
             outcome.Message = familyReason;
             return;
         }
+        var elementFilter = new HashSet<long>(filter.ElementIds ?? new List<long>());
         var levelFilter = new HashSet<long>(filter.LevelIds ?? new List<long>());
         var typeFilter = new HashSet<long>(filter.TypeIds ?? new List<long>());
 
@@ -110,6 +111,11 @@ public sealed class RemapParameterValuesTool : AgentWriteToolBase
                 var categoryId = element.Category?.Id.GetValue();
                 if (categoryId is null || !categories.Contains(categoryId.Value))
                     continue;
+            }
+
+            if (elementFilter.Count > 0 && !elementFilter.Contains(element.Id.GetValue()))
+            {
+                continue;
             }
 
             if (familyFilter is not null)

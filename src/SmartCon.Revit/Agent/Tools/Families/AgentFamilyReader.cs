@@ -55,10 +55,7 @@ internal static partial class AgentFamilyReader
                 }
 
                 if (!string.IsNullOrWhiteSpace(familyName)
-                    && !string.Equals(
-                        familyByUniqueId.Name,
-                        familyName!.Trim(),
-                        StringComparison.OrdinalIgnoreCase))
+                    && !AgentNameMatch.EqualsNormalized(familyByUniqueId.Name, familyName))
                 {
                     errorCode = "invalid_value";
                     message = "familyUniqueId '" + familyUniqueId + "' is family '" +
@@ -84,10 +81,7 @@ internal static partial class AgentFamilyReader
             if (element is RevitFamily familyById)
             {
                 if (!string.IsNullOrWhiteSpace(familyName)
-                    && !string.Equals(
-                        familyById.Name,
-                        familyName!.Trim(),
-                        StringComparison.OrdinalIgnoreCase))
+                    && !AgentNameMatch.EqualsNormalized(familyById.Name, familyName))
                 {
                     errorCode = "invalid_value";
                     message = "familyId " + familyId.Value + " is family '" +
@@ -118,7 +112,7 @@ internal static partial class AgentFamilyReader
         var loaded = LoadableFamilies(doc);
         foreach (var family in loaded)
         {
-            if (string.Equals(family.Name, familyName!.Trim(), StringComparison.OrdinalIgnoreCase))
+            if (AgentNameMatch.EqualsNormalized(family.Name, familyName))
                 matches.Add(family);
         }
 

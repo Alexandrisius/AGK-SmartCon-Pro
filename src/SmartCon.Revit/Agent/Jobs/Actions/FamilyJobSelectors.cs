@@ -145,7 +145,9 @@ internal static class FamilyJobSelectors
             }
 
             loadedNames.Add(family.Name);
-            pendingNames.Remove(family.Name);
+            // NBSP-safe: the matched family clears its requested-name entry
+            // even when the stored name carries a non-breaking space.
+            pendingNames.RemoveWhere(requested => AgentNameMatch.EqualsNormalized(requested, family.Name));
             if (!Matches(family, familyIds, familyNames, familyUniqueIds, nameContains, categoryIds))
             {
                 continue;
@@ -300,7 +302,7 @@ internal static class FamilyJobSelectors
         foreach (var element in new FilteredElementCollector(document).OfClass(typeof(RevitFamily)))
         {
             if (element is RevitFamily candidate
-                && string.Equals(candidate.Name, familyName!, StringComparison.OrdinalIgnoreCase))
+                && AgentNameMatch.EqualsNormalized(candidate.Name, familyName))
             {
                 family = candidate;
                 return true;
@@ -368,7 +370,9 @@ internal static class FamilyJobSelectors
     {
         foreach (var name in names)
         {
-            if (string.Equals(name?.Trim(), familyName, StringComparison.OrdinalIgnoreCase))
+            // NBSP-safe (live v18: the model sends plain spaces, Revit stores
+            // non-breaking ones — normalization keeps the selector stable).
+            if (AgentNameMatch.EqualsNormalized(name, familyName))
             {
                 return true;
             }

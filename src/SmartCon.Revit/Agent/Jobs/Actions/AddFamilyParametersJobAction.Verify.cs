@@ -204,11 +204,17 @@ public sealed partial class AddFamilyParametersJobAction
 
     private static Dictionary<string, FamilySymbol> CollectSymbols(Document document, RevitFamily family)
     {
+        // Keys go through AgentNameMatch: trimmed type names at load-back
+        // (v16 D1) and NBSP names (live v18) must match normalized requests.
         var symbols = new Dictionary<string, FamilySymbol>(StringComparer.OrdinalIgnoreCase);
         foreach (var typeId in family.GetFamilySymbolIds())
         {
-            if (document.GetElement(typeId) is FamilySymbol symbol && !symbols.ContainsKey(symbol.Name))
-                symbols.Add(symbol.Name, symbol);
+            if (document.GetElement(typeId) is FamilySymbol symbol)
+            {
+                var key = SmartCon.Revit.Agent.AgentNameMatch.Normalize(symbol.Name);
+                if (!symbols.ContainsKey(key))
+                    symbols.Add(key, symbol);
+            }
         }
 
         return symbols;

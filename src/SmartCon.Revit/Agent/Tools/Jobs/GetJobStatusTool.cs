@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Models.Agent.Jobs;
@@ -20,7 +20,7 @@ public sealed class GetJobStatusTool : IAgentTool
     /// The wait reads SQLite off the Revit thread, so a long hold blocks
     /// nothing.
     /// </summary>
-    private const int MaxWaitSeconds = 240;
+    private const int MaxWaitSeconds = 2700;
 
     /// <summary>Identical instant polls before the answer starts pushing the
     /// long-poll instead of feeding the loop.</summary>
@@ -44,7 +44,7 @@ public sealed class GetJobStatusTool : IAgentTool
         Description =
             "Returns progress of a bulk job: state, counters, saved cursor, preview digest, " +
             "recent job history and the next step. waitSeconds long-polls without blocking Revit " +
-            "(up to 240 s — the answer arrives when the job settles, a heavy family edit can run " +
+            "(up to 2700 s — the answer arrives when the job settles, a heavy family edit can run " +
             "for tens of minutes; do NOT poll in a loop, one long wait replaces dozens of instant " +
             "calls). Omit jobId for the most recent job of the active document. " +
             "includeSample=true adds the 5-item preview sample (default false).",
@@ -53,8 +53,8 @@ public sealed class GetJobStatusTool : IAgentTool
         SupportsBulk = true,
         Category = "jobs",
         Tags = new[] { "job", "status", "progress", "poll", "wait", "history" },
-        TimeoutMs = 300000,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""waitSeconds"":{""type"":""integer"",""minimum"":0,""maximum"":240,""description"":""Long-poll: hold the call until the job settles or the wait expires; 120-240 s replaces a poll loop""},""includeSample"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
+        TimeoutMs = 3600000,
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""waitSeconds"":{""type"":""integer"",""minimum"":0,""maximum"":2700,""description"":""Long-poll: hold the call until the job settles or the wait expires; one call holds until the job settles (up to 45 min) and replaces a poll loop""},""includeSample"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     public async Task<ToolResult> ExecuteAsync(
@@ -187,7 +187,7 @@ public sealed class GetJobStatusTool : IAgentTool
                 {
                     pollHint = " This is instant status call #" + _instantPollStreak +
                                " in a row with an unchanged answer; polling again changes nothing. " +
-                               "[Action: pass waitSeconds=240 — the call holds until the job settles " +
+                               "[Action: pass waitSeconds=2700 — the call holds until the job settles " +
                                "(a heavy family edit can run for tens of minutes) — and stop looping]";
                 }
             }

@@ -413,5 +413,9 @@ internal sealed class RemapFilter
 
     public List<string>? FamilyNames { get; set; }
 
+    /// <summary>Exact elements to process (live v18: "repeat WITHOUT the failed
+    /// items" needs a per-element filter — pass the failed element ids here).</summary>
+    public List<long>? ElementIds { get; set; }
+
     public int? Limit { get; set; }
 }

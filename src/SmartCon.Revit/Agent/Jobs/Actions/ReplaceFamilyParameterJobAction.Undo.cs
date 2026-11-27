@@ -72,7 +72,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
                     continue;
                 }
 
-                if (!symbols.TryGetValue(typeState.TypeName, out var symbol))
+                if (!symbols.TryGetValue(SmartCon.Revit.Agent.AgentNameMatch.Normalize(typeState.TypeName), out var symbol))
                 {
                     mismatches.Add("type '" + typeState.TypeName + "' is missing from the project");
                     continue;
@@ -118,15 +118,17 @@ public sealed partial class ReplaceFamilyParameterJobAction
                 };
             }
 
-            // Fail closed: a unit with no checkable target and nothing skipped had
-            // an empty expected state — that is never silently "done".
+            // Fail closed — but the real reasons ride along (live v18: type
+            // lookups failing must not be hidden behind the generic text).
+            var failReason = mismatches.Count > 0
+                ? "No project-side target could be checked: " + string.Join("; ", mismatches)
+                : "No target can be verified from the project side (instance scope or elementId storage)" +
+                  " [Action: verify the family in the Family Editor, or replace type-scope parameters only]";
             return new JobUnitVerification
             {
                 Verified = false,
                 ActualJson = Json(actual),
-                MismatchReason =
-                    "No target can be verified from the project side (instance scope or elementId storage)" +
-                    " [Action: verify the family in the Family Editor, or replace type-scope parameters only]"
+                MismatchReason = failReason
             };
         }
 
@@ -265,12 +267,18 @@ public sealed partial class ReplaceFamilyParameterJobAction
 
     private static Dictionary<string, FamilySymbol> CollectSymbols(Document document, RevitFamily family)
     {
+        // Keys go through AgentNameMatch: trimmed type names at load-back
+        // (v16 D1) and NBSP names (live v18) must match normalized requests.
         var symbols = new Dictionary<string, FamilySymbol>(StringComparer.OrdinalIgnoreCase);
         foreach (var typeId in family.GetFamilySymbolIds())
         {
-            if (document.GetElement(typeId) is FamilySymbol symbol && !symbols.ContainsKey(symbol.Name))
+            if (document.GetElement(typeId) is FamilySymbol symbol)
             {
-                symbols.Add(symbol.Name, symbol);
+                var key = SmartCon.Revit.Agent.AgentNameMatch.Normalize(symbol.Name);
+                if (!symbols.ContainsKey(key))
+                {
+                    symbols.Add(key, symbol);
+                }
             }
         }
 

@@ -92,6 +92,24 @@ public static class AgentFormulaRepointer
             ? "(" + formula + ") * 1 " + unit
             : "(" + formula + ") / 1 " + unit;
 
+    /// <summary>
+    /// True when <paramref name="formula"/> references the identifier
+    /// <paramref name="name"/> (word-boundary match, case-insensitive — the
+    /// way Revit resolves parameter names). Used by the job pre-gates: Revit
+    /// formulas cannot reference parameters whose names contain '-' (parsed
+    /// as minus), and material/yesno parameters take no formulas at all.
+    /// </summary>
+    public static bool ReferencesParameter(string formula, string name)
+    {
+        if (string.IsNullOrWhiteSpace(formula) || string.IsNullOrWhiteSpace(name))
+            return false;
+
+        var pattern = @"(?<![\p{L}\p{N}_])" + Regex.Escape(name) + @"(?![\p{L}\p{N}_])";
+        return Regex.IsMatch(
+            formula, pattern,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
     /// <summary>A unit constant a formula can carry: mm, m2, kg, MPa, °C…</summary>
     public static bool IsValidUnitToken(string unit) =>
         !string.IsNullOrWhiteSpace(unit)

@@ -1,4 +1,4 @@
-﻿using Autodesk.Revit.DB;
+using Autodesk.Revit.DB;
 using Nice3point.TUnit.Revit;
 using SmartCon.Agent.Services.Storage;
 using SmartCon.Core.Compatibility;
@@ -669,6 +669,109 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
         var heightTarget = seed.GetProjectParameter(FamilySeed.Type1, "ЦельВысота");
         await Assert.That(heightTarget).IsNotNull();
         await Assert.That(Math.Abs(widthParam!.AsDouble() - heightTarget!.AsDouble() * 2) < 1e-6).IsTrue();
+    }
+
+    [Test]
+    public async Task FamilyJob_NbspFamilyName_ResolvesThroughSelector()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+
+        // Live v18: a family whose stored name carries a NON-BREAKING space
+        // resolved intermittently (the model sends a plain space, Revit
+        // stores NBSP). Rename the seeded family to an NBSP name, then
+        // address it by the plain-space name — the selector must match.
+        var seed = _seeds[0];
+        using (var renameTx = new Transaction(Doc, "Rename family with NBSP"))
+        {
+            renameTx.Start();
+            var familyElement = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
+            await Assert.That(familyElement).IsNotNull();
+            familyElement!.Name = FamilyPrefix + "1" + " " + "Premim WW";
+            renameTx.Commit();
+        }
+
+        const string targetName = "ЦельНБСП";
+        var spec =
+            "{\"select\":{\"familyNames\":[\"" + FamilyPrefix + "1 Premim WW\"]},\"mappings\":[" +
+            "{\"source\":{\"name\":\"" + FamilySeed.WidthParam + "\"},\"target\":{\"name\":\"" + targetName +
+            "\"},\"createTarget\":true}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        if (!preview.Success)
+        {
+            throw new InvalidOperationException(
+                "NBSP PREVIEW FAILED: " + preview.Error?.Code + ": " + preview.Error?.Message);
+        }
+
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.Count).IsEqualTo(1);
+        await Assert.That(previewData.FailedCount).IsEqualTo(0);
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        // seed.GetProjectParameter/FamilyId look the family up by the ORIGINAL
+        // name/id, both stale after the rename and the reload — find the
+        // reloaded family by its NBSP name fragment.
+        Autodesk.Revit.DB.Family? reloaded = null;
+        foreach (var element in new FilteredElementCollector(Doc).OfClass(typeof(Autodesk.Revit.DB.Family)))
+        {
+            if (element is Autodesk.Revit.DB.Family candidate
+                && candidate.Name.Contains("Premim WW", StringComparison.Ordinal))
+            {
+                reloaded = candidate;
+            }
+        }
+
+        await Assert.That(reloaded).IsNotNull();
+        Parameter? created = null;
+        Parameter? widthOnType = null;
+        foreach (var typeId in reloaded!.GetFamilySymbolIds())
+        {
+            if (Doc.GetElement(typeId) is FamilySymbol symbol
+                && symbol.Name == FamilySeed.Type1)
+            {
+                created = symbol.LookupParameter(targetName);
+                widthOnType = symbol.LookupParameter(FamilySeed.WidthParam);
+            }
+        }
+
+        await Assert.That(created).IsNotNull();
+        // Units-independent: the copied value must match the source on the
+        // same type (as in FamilyJob_CreateTarget_CreatesAndMaps).
+        await Assert.That(Math.Abs(created!.AsDouble() - widthOnType!.AsDouble()) < 1e-9).IsTrue();
     }
 
     [Test]

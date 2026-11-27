@@ -56,7 +56,7 @@ public sealed partial class MapFamilyParametersJobAction
             var actualType = new FamilyMapTypeState { TypeName = typeState.TypeName };
             actual.Types.Add(actualType);
 
-            if (!symbols.TryGetValue(typeState.TypeName, out var symbol))
+            if (!symbols.TryGetValue(SmartCon.Revit.Agent.AgentNameMatch.Normalize(typeState.TypeName), out var symbol))
             {
                 mismatches.Add("type '" + typeState.TypeName + "' is missing from the project");
                 continue;
@@ -131,15 +131,18 @@ public sealed partial class MapFamilyParametersJobAction
                 };
             }
 
-            // Fail closed: a unit with no checkable target and nothing skipped had
-            // an empty expected state — that is never silently "done".
+            // Fail closed — but the real reasons ride along (live v18: the
+            // type-space families hit the fail-closed text and hid the actual
+            // "type is missing" line, so correct data looked broken).
+            var reason = mismatches.Count > 0
+                ? "No project-side target could be checked: " + string.Join("; ", mismatches)
+                : "No target can be verified from the project side (instance scope or elementId storage)" +
+                  " [Action: verify these values in the Family Editor, or map type-scope targets only]";
             return new JobUnitVerification
             {
                 Verified = false,
                 ActualJson = Json(actual),
-                MismatchReason =
-                    "No target can be verified from the project side (instance scope or elementId storage)" +
-                    " [Action: verify these values in the Family Editor, or map type-scope targets only]"
+                MismatchReason = reason
             };
         }
 
@@ -556,12 +559,20 @@ public sealed partial class MapFamilyParametersJobAction
 
     private static Dictionary<string, FamilySymbol> CollectSymbols(Document document, RevitFamily family)
     {
+        // Keys go through AgentNameMatch: Revit trims type names at load-back
+        // (v16 D1), and NBSP names must match their space-normalized requests
+        // (live v18 — a type named " " in the family doc made every type
+        // lookup fail, which the old fail-closed branch then hid).
         var symbols = new Dictionary<string, FamilySymbol>(StringComparer.OrdinalIgnoreCase);
         foreach (var typeId in family.GetFamilySymbolIds())
         {
-            if (document.GetElement(typeId) is FamilySymbol symbol && !symbols.ContainsKey(symbol.Name))
+            if (document.GetElement(typeId) is FamilySymbol symbol)
             {
-                symbols.Add(symbol.Name, symbol);
+                var key = SmartCon.Revit.Agent.AgentNameMatch.Normalize(symbol.Name);
+                if (!symbols.ContainsKey(key))
+                {
+                    symbols.Add(key, symbol);
+                }
             }
         }
 
