@@ -94,14 +94,23 @@ public sealed partial class MapFamilyParametersJobAction
 
                 if (!ValuesEqual(value.Value, current, value.Storage))
                 {
-                    var shadow = projectBoundNames.Contains(value.Name)
-                        ? " — this parameter is also PROJECT-BOUND, so the binding (empty until " +
-                          "remap_parameter_values fills it) shadows the family value on read-back. " +
-                          "[Action: remap_parameter_values on the placed elements/types, or " +
-                          "remove_project_parameter after the migration]"
+                    // Autodesk ("Behavior and risks when the same shared
+                    // parameter exists in both family and a project"): a
+                    // family parameter and a project binding of the same GUID
+                    // MERGE into one parameter on load — the binding does NOT
+                    // shadow the family value (pinned by IT
+                    // ProjectBinding_SameGuid_MergesWithFamilyValue). So for a
+                    // project-bound target a mismatch means the family-side
+                    // write itself did not land, not a "shadowed" read.
+                    var boundNote = projectBoundNames.Contains(value.Name)
+                        ? " — this parameter is also PROJECT-BOUND: family parameter and binding are " +
+                          "ONE parameter after load (the family value is what the project shows), " +
+                          "so the mismatch means the family-side write did not land. [Action: read " +
+                          "the type value with get_family_parameters(includeValues=true) and rerun " +
+                          "this mapping for the family]"
                         : string.Empty;
                     mismatches.Add("target '" + value.Name + "' of type '" + typeState.TypeName + "' is '" +
-                                   current + "' instead of '" + value.Value + "'" + shadow);
+                                   current + "' instead of '" + value.Value + "'" + boundNote);
                 }
             }
         }

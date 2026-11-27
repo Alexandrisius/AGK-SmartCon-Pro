@@ -713,6 +713,100 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
     }
 
     [Test]
+    public async Task ProjectBinding_SameGuid_MergesWithFamilyValue()
+    {
+        // Owner's challenge (live v18): does a project binding of the SAME
+        // shared parameter shadow the family value on a project-side
+        // read-back? Autodesk (support article "Behavior and risks when the
+        // same shared parameter exists in both family and a project"): the
+        // family parameter and the binding MERGE into one parameter when the
+        // family loads. This test pins it on our stack: after binding the
+        // definition to the family category, symbol.LookupParameter must
+        // still return the FAMILY value — the migration verify path relies
+        // on exactly that.
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+        const string mergeParamName = "ПараметрСлив";
+        var seed = _seeds[0];
+        var familyElement = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
+        await Assert.That(familyElement).IsNotNull();
+
+        // 1) Add the shared parameter to the family and set a per-type value.
+        var setupOutcome = new WriteOutcome();
+        using (var setup = AgentFamilySession.Open(Doc, familyElement!, setupOutcome))
+        {
+            await Assert.That(setup).IsNotNull();
+            var file = Doc.Application.OpenSharedParameterFile();
+            await Assert.That(file).IsNotNull();
+            var group = file!.Groups.Create("SC_Merge");
+            var creationOptions = new ExternalDefinitionCreationOptions(mergeParamName, SpecTypeId.String.Text);
+            var externalDefinition = group.Definitions.Create(creationOptions) as ExternalDefinition;
+            await Assert.That(externalDefinition).IsNotNull();
+
+            var manager = setup!.FamilyDoc.FamilyManager;
+            using (var tx = new Transaction(setup.FamilyDoc, "Add merge parameter"))
+            {
+                tx.Start();
+                var created = manager.AddParameter(externalDefinition!, GroupTypeId.General, false);
+                foreach (var type in AgentFamilyReader.GetTypes(manager))
+                {
+                    if (type.Name != FamilySeed.Type1)
+                    {
+                        continue;
+                    }
+
+                    manager.CurrentType = type;
+                    manager.Set(created, "ABC");
+                }
+
+                tx.Commit();
+            }
+
+            await Assert.That(setup.TryLoadBack(setupOutcome)).IsTrue();
+        }
+
+        // 2) Bind the same definition to the family category in the project.
+        var familyAfter = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
+        await Assert.That(familyAfter).IsNotNull();
+        var categorySet = Doc.Application.Create.NewCategorySet();
+        categorySet.Insert(familyAfter!.FamilyCategory);
+        var bindingFile = Doc.Application.OpenSharedParameterFile();
+        await Assert.That(bindingFile).IsNotNull();
+        Autodesk.Revit.DB.Definition? bindingDefinition = null;
+        foreach (var groupCandidate in bindingFile!.Groups)
+        {
+            foreach (var definitionCandidate in groupCandidate.Definitions)
+            {
+                if (definitionCandidate.Name == mergeParamName
+                    && definitionCandidate is ExternalDefinition asExternal)
+                {
+                    bindingDefinition = asExternal;
+                }
+            }
+        }
+
+        await Assert.That(bindingDefinition).IsNotNull();
+        using (var tx = new Transaction(Doc, "Bind merge parameter"))
+        {
+            tx.Start();
+            var instanceBinding = Doc.Application.Create.NewInstanceBinding(categorySet);
+            var inserted = Doc.ParameterBindings.Insert(
+                bindingDefinition!, instanceBinding, GroupTypeId.General);
+            await Assert.That(inserted).IsTrue();
+            tx.Commit();
+        }
+
+        // 3) The project-side read-back (the verify path): family value wins.
+        var value = seed.GetProjectParameter(FamilySeed.Type1, mergeParamName);
+        await Assert.That(value).IsNotNull();
+        await Assert.That(value!.AsString()).IsEqualTo("ABC");
+    }
+
+    [Test]
     public async Task FamilyFailuresSuppressor_ResolvesWhitelistedPromptAndReports()
     {
         // Live v18: «Семейство больше не соответствует свойствам системы…» —
