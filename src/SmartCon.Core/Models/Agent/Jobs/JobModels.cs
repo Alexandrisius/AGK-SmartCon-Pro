@@ -332,4 +332,12 @@ public sealed class JobActionContext
     public string? SpecJson { get; init; }
 
     public CancellationToken CancellationToken { get; init; }
+
+    /// <summary>
+    /// Host context of the session that started the job: family-editing
+    /// actions pass it to <c>AgentFamilySession.Open</c> so modal dialogs are
+    /// suppressed while <c>EditFamily</c> opens family documents (live
+    /// feedback v17, 1.1b). Null in UI-less hosts (integration tests).
+    /// </summary>
+    public Services.Interfaces.IRevitContext? RevitContext { get; init; }
 }

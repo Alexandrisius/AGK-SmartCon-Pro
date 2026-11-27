@@ -211,9 +211,11 @@ public static class AgentToolRegistration
         if (services is null) throw new ArgumentNullException(nameof(services));
 
         // One active job per document; the pump runs on its own ExternalEvent so a
-        // long batch never blocks agent tool calls and vice versa.
+        // long batch never blocks agent tool calls and vice versa. The runner gets
+        // the host context too: family-editing job actions suppress modal dialogs
+        // while EditFamily opens family documents (live feedback v17, 1.1b).
         var jobActions = CreateJobActions();
-        var jobRunner = new JobRunner(jobStore, jobActions, new RevitTransactionService(revitContext));
+        var jobRunner = new JobRunner(jobStore, jobActions, new RevitTransactionService(revitContext), revitContext);
         services.AddSingleton<IJobStore>(jobStore);
         services.AddSingleton(jobRunner);
         services.AddSingleton<IJobScheduler>(jobRunner);

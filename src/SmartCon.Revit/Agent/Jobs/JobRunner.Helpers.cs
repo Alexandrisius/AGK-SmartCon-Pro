@@ -24,7 +24,8 @@ public sealed partial class JobRunner
             JobId = jobId,
             DryRun = dryRun,
             SpecJson = spec.SpecJson,
-            CancellationToken = CancellationToken.None
+            CancellationToken = CancellationToken.None,
+            RevitContext = _revitContext
         };
 
     private static IReadOnlyList<JobUnit> Normalize(IReadOnlyList<JobUnit> units)

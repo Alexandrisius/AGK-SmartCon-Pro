@@ -23,6 +23,7 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
     private readonly IJobStore _store;
     private readonly IReadOnlyDictionary<string, IJobAction> _actions;
     private readonly ITransactionService _transactions;
+    private readonly IRevitContext? _revitContext;
     private readonly object _gate = new();
 
     private readonly HashSet<string> _reconciledDocuments = new(StringComparer.Ordinal);
@@ -36,11 +37,13 @@ public sealed partial class JobRunner : IJobScheduler, IJobRecovery
     public JobRunner(
         IJobStore store,
         IEnumerable<IJobAction> actions,
-        ITransactionService transactions)
+        ITransactionService transactions,
+        IRevitContext? revitContext = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         if (actions is null) throw new ArgumentNullException(nameof(actions));
         _transactions = transactions ?? throw new ArgumentNullException(nameof(transactions));
+        _revitContext = revitContext;
 
         var map = new Dictionary<string, IJobAction>(StringComparer.OrdinalIgnoreCase);
         foreach (var action in actions)

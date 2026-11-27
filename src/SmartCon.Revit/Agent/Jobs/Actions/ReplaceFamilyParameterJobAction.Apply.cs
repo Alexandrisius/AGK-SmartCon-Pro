@@ -44,7 +44,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
         AgentFamilySession? session = null;
         try
         {
-            session = AgentFamilySession.Open(context.Document, family, outcome);
+            session = AgentFamilySession.Open(context.Document, family, outcome, context.RevitContext);
             if (session is null)
             {
                 return Fail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
@@ -146,7 +146,7 @@ public sealed partial class ReplaceFamilyParameterJobAction
                     "changed. [Action: run the preview again]");
             }
 
-            session = AgentFamilySession.Open(context.Document, familyForEdit, outcome);
+            session = AgentFamilySession.Open(context.Document, familyForEdit, outcome, context.RevitContext);
             if (session is null)
             {
                 return ApplyFail(FamilyJobOutcome.CodeOf(outcome), FamilyJobOutcome.Describe(outcome));
