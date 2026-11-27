@@ -129,6 +129,29 @@ public sealed class AgentReadToolsTests : RevitApiTest
     }
 
     [Test]
+    public async Task ListCategories_NameContains_FindsEnumNameCaseInsensitive()
+    {
+        if (!_wallCreated)
+            Skip.Test("В шаблоне проекта по умолчанию нет типа стены — сидирование категории невозможно");
+
+        var tool = new ListCategoriesTool(new StubRevitContext(Doc));
+        // A guessed OST_ spelling differs from the localized display name ("Стены"):
+        // the filter must match the enum name half instead of forcing pagination
+        // (live feedback — guessed OST_AirTerminal vs the real OST_DuctTerminal).
+        var args = JsonDocument.Parse("{\"nameContains\":\"walls\"}").RootElement.Clone();
+
+        var result = tool.ExecuteForTests(Doc, args, CancellationToken.None);
+
+        await Assert.That(result.Success).IsTrue();
+        var categories = result.Data!.Value.GetProperty("categories");
+        var walls = categories.EnumerateArray()
+            .FirstOrDefault(item => item.GetProperty("name").GetString() == "OST_Walls");
+
+        await Assert.That(walls.ValueKind).IsEqualTo(JsonValueKind.Object);
+        await Assert.That(categories.GetArrayLength()).IsGreaterThan(0);
+    }
+
+    [Test]
     public async Task GetSelectedElements_WithoutUiSelection_ReturnsStructuredFailure()
     {
         var tool = new GetSelectedElementsTool(new StubRevitContext(Doc), new NoSelectionProvider());

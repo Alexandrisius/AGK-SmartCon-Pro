@@ -22,10 +22,11 @@ public sealed class ListCategoriesTool : AgentReadToolBase
         Description =
             "Lists model categories available in the project with element counts. " +
             "By default returns only categories that currently contain elements, " +
-            "sorted by element count descending. Each row has categoryId (for list_filterable_parameters and categoryIds) and the OST_/display name. Use built-in names (OST_...) in queries.",
+            "sorted by element count descending. Each row has categoryId (for list_filterable_parameters and categoryIds) and the OST_/display name. Use built-in names (OST_...) in queries. " +
+            "nameContains (case-insensitive substring over the OST_ enum name AND the display name) finds the exact spelling in one call instead of paging — guess an OST_ name once and the filter shows what Revit actually calls it.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""usedOnly"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":200},""offset"":{""type"":""integer"",""minimum"":0,""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""nameContains"":{""type"":""string"",""description"":""Case-insensitive substring over the OST_ enum name and the display name - use it to find the exact spelling before passing a category to another tool""},""usedOnly"":{""type"":""boolean"",""default"":true},""limit"":{""type"":""integer"",""minimum"":1,""maximum"":500,""default"":200},""offset"":{""type"":""integer"",""minimum"":0,""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(
@@ -34,6 +35,7 @@ public sealed class ListCategoriesTool : AgentReadToolBase
         CancellationToken ct)
     {
         var usedOnly = AgentJson.GetBool(args, "usedOnly", true);
+        var nameContains = AgentJson.GetString(args, "nameContains");
         var limit = Math.Max(1, Math.Min(AgentJson.GetInt(args, "limit", DefaultLimit), MaxLimit));
         var offset = Math.Max(0, AgentJson.GetInt(args, "offset", 0));
 
@@ -79,6 +81,19 @@ public sealed class ListCategoriesTool : AgentReadToolBase
                 ? byCount
                 : string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
         });
+
+        // The exact-spelling search: a guessed OST_ name often differs from the
+        // real BuiltInCategory member (live feedback — OST_AirTerminal vs
+        // OST_DuctTerminal), and without a filter the caller must page through
+        // the whole list to learn the correct spelling.
+        if (!string.IsNullOrWhiteSpace(nameContains))
+        {
+            categories = categories
+                .Where(card =>
+                    (card.Name?.IndexOf(nameContains!, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0
+                    || (card.DisplayName?.IndexOf(nameContains!, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0)
+                .ToList();
+        }
 
         var total = categories.Count;
         var page = categories.Skip(offset).Take(limit).ToList();

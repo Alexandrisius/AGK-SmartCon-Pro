@@ -109,7 +109,9 @@ public sealed class SummarizeElementsTool : AgentReadToolBase
                 "unknown_category",
                 "Unknown categories: " + string.Join(", ", result.UnknownCategories) +
                 AgentCategoryResolver.SuggestSuffix(doc, result.UnknownCategories[0]) +
-                ". Use list_categories to see available names.");
+                ". [Action: call list_categories(nameContains=<part of the name>) to get the exact " +
+                "OST_/display name and retry; a guessed OST_ spelling is often not a real " +
+                "BuiltInCategory member]");
         }
 
         if (result.UnknownParameterFailure() is { } unknownParameter)
