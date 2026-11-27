@@ -42,6 +42,10 @@ public sealed partial class MapFamilyParametersJobAction
         }
 
         var symbols = CollectSymbols(context.Document, family);
+        // Live v18: a target that is ALSO project-bound shadows the family
+        // value on this project-side read-back — the mismatch line must name
+        // the shadowing instead of looking like a broken write.
+        var projectBoundNames = CollectProjectSharedParameterNames(context.Document);
         var actual = new FamilyMapState();
         var mismatches = new List<string>();
         var checkedTargets = 0;
@@ -90,8 +94,14 @@ public sealed partial class MapFamilyParametersJobAction
 
                 if (!ValuesEqual(value.Value, current, value.Storage))
                 {
+                    var shadow = projectBoundNames.Contains(value.Name)
+                        ? " — this parameter is also PROJECT-BOUND, so the binding (empty until " +
+                          "remap_parameter_values fills it) shadows the family value on read-back. " +
+                          "[Action: remap_parameter_values on the placed elements/types, or " +
+                          "remove_project_parameter after the migration]"
+                        : string.Empty;
                     mismatches.Add("target '" + value.Name + "' of type '" + typeState.TypeName + "' is '" +
-                                   current + "' instead of '" + value.Value + "'");
+                                   current + "' instead of '" + value.Value + "'" + shadow);
                 }
             }
         }
@@ -131,6 +141,33 @@ public sealed partial class MapFamilyParametersJobAction
             ActualJson = Json(actual),
             MismatchReason = mismatches.Count == 0 ? null : string.Join("; ", mismatches)
         };
+    }
+
+    /// <summary>Names of the shared parameters bound in the PROJECT: a target
+    /// with such a name reads the binding's value (not the family value) on
+    /// this side of the document.</summary>
+    private static HashSet<string> CollectProjectSharedParameterNames(Document document)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var element in new FilteredElementCollector(document)
+                         .OfClass(typeof(SharedParameterElement)))
+            {
+                var definition = ((SharedParameterElement)element).GetDefinition();
+                if (!string.IsNullOrEmpty(definition?.Name))
+                {
+                    names.Add(definition!.Name);
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // The hint is best-effort: an unreadable collector just removes
+            // the shadowing explanation, never breaks the verification.
+        }
+
+        return names;
     }
 
     public override JobUnitUndo Undo(

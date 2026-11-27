@@ -17,6 +17,54 @@ namespace SmartCon.Revit.Agent.Tools.Families;
 internal static class AgentFamilyDocCloser
 {
     /// <summary>
+    /// Closes PATHLESS family documents left open by an interrupted operation
+    /// (dead session, crash): an EditFamily document has no .rfa path, while a
+    /// document a human has open in the Family Editor always carries one and
+    /// is never touched (live v18 — three orphans made every following
+    /// EditFamily refuse with family_open_conflict until a manual cleanup).
+    /// Returns the number of documents actually closed.
+    /// </summary>
+    internal static int CloseOrphanFamilyDocuments(Document projectDoc)
+    {
+        var closed = 0;
+        try
+        {
+            foreach (var doc in projectDoc.Application.Documents.Cast<Document>().ToArray())
+            {
+                try
+                {
+                    if (!doc.IsFamilyDocument || doc.IsLinked || !string.IsNullOrEmpty(doc.PathName))
+                    {
+                        continue;
+                    }
+
+                    if (doc.Equals(projectDoc) || ReferenceEquals(doc, projectDoc))
+                    {
+                        continue;
+                    }
+
+                    if (Close(doc))
+                    {
+                        closed++;
+                    }
+                }
+                catch (Exception)
+                {
+                    // One unreadable wrapper must not stop the sweep.
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SmartConLogger.Warn(
+                "The orphan family-document sweep failed: " + ex.GetType().Name + ": " + ex.Message +
+                " [Action: close the Family Editor windows manually and retry]");
+        }
+
+        return closed;
+    }
+
+    /// <summary>
     /// Closes the document and returns true only when it is really gone (the
     /// Revit wrapper is invalid afterwards). A family document that survives
     /// Close keeps its project read-only, so a false result must reach the

@@ -312,6 +312,21 @@ public sealed partial class MapFamilyParametersJobAction
             }
         }
 
+        // Live v18: one unit = one family = types × mappings value writes; a
+        // 273-type family with 15 mappings froze the UI for 44 minutes with no
+        // warning. The preview names the weight up front and points at the
+        // split lever (typeNames) instead of leaving the model to guess why
+        // the job "hung".
+        var heavyWeight = allTypes.Count * mappings.Count;
+        if (heavyWeight > 500)
+        {
+            plan.Warnings.Add(
+                "Heavy family: " + allTypes.Count + " types × " + mappings.Count + " mapping(s) ≈ " +
+                heavyWeight + " value writes — Revit is single-threaded and the UI is frozen for " +
+                "the whole unit. [Action: split this family into several jobs by typeNames, or " +
+                "accept the long freeze knowingly]");
+        }
+
         plan.Expected = BuildState(expectedByType);
         plan.Actual = BuildState(actualByType);
         if (plan.Creates.Count > 0)

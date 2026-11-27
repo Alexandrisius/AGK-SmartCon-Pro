@@ -61,7 +61,8 @@ internal static class FamilyJobSelectors
         string? nameContains,
         IReadOnlyList<long>? categoryIds,
         IReadOnlyList<string>? categoryNames,
-        int? limit)
+        int? limit,
+        bool placedOnly = false)
     {
         if (limit.HasValue && limit.Value <= 0)
         {
@@ -156,11 +157,29 @@ internal static class FamilyJobSelectors
                 continue;
             }
 
+            // placedOnly narrows the work to families with at least one placed
+            // instance (live v18: «migrate all families» silently grew to the
+            // whole library and alphabet put an unplaced 273-type family at
+            // the head of the queue for 44 minutes — the placed ones stayed
+            // in the interrupted tail).
+            if (placedOnly && !PlacedFamilyIds(document).Contains(family.Id.GetValue()))
+            {
+                continue;
+            }
+
             families.Add(family);
         }
 
         families.Sort((left, right) =>
             string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase));
+
+        if (families.Count == 0 && placedOnly)
+        {
+            return Error(
+                JobErrorCodes.SelectorEmpty,
+                "select.placedOnly: none of the matched families has placed instances. " +
+                "[Action: drop placedOnly to include the unplaced library, or check the selector]");
+        }
 
         if (families.Count == 0)
         {
@@ -212,6 +231,33 @@ internal static class FamilyJobSelectors
         }
 
         return new FamilySelection { Families = families, Warnings = warnings };
+    }
+
+    /// <summary>
+    /// <summary>
+    /// Ids of families that have at least one placed instance in the project
+    /// (one collector pass per job expansion; placedOnly lives on it).
+    /// </summary>
+    private static HashSet<long> PlacedFamilyIds(Document document)
+    {
+        var ids = new HashSet<long>();
+        foreach (var element in new FilteredElementCollector(document)
+                     .WhereElementIsNotElementType()
+                     .WhereElementIsViewIndependent())
+        {
+            if (element is not FamilyInstance instance)
+            {
+                continue;
+            }
+
+            var symbol = instance.Symbol;
+            if (symbol?.Family is { } family)
+            {
+                ids.Add(family.Id.GetValue());
+            }
+        }
+
+        return ids;
     }
 
     /// <summary>

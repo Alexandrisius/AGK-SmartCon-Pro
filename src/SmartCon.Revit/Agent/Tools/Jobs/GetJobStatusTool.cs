@@ -12,10 +12,25 @@ namespace SmartCon.Revit.Agent.Tools.Jobs;
 /// </summary>
 public sealed class GetJobStatusTool : IAgentTool
 {
-    private const int MaxWaitSeconds = 25;
+    /// <summary>
+    /// Long-poll ceiling sized for family-edit jobs: one heavy family edit can
+    /// legitimately run for tens of minutes (live v18 — 44 minutes on one
+    /// unit), and a model that can only wait 25 seconds falls into a tight
+    /// poll loop (thousands of calls → provider rate limit → dead session).
+    /// The wait reads SQLite off the Revit thread, so a long hold blocks
+    /// nothing.
+    /// </summary>
+    private const int MaxWaitSeconds = 240;
+
+    /// <summary>Identical instant polls before the answer starts pushing the
+    /// long-poll instead of feeding the loop.</summary>
+    private const int PollHintAfter = 3;
 
     private readonly IJobStore _store;
     private readonly IJobScheduler _scheduler;
+    private readonly object _pollGate = new();
+    private string? _lastPollKey;
+    private int _instantPollStreak;
 
     public GetJobStatusTool(IJobStore store, IJobScheduler scheduler)
     {
@@ -29,15 +44,17 @@ public sealed class GetJobStatusTool : IAgentTool
         Description =
             "Returns progress of a bulk job: state, counters, saved cursor, preview digest, " +
             "recent job history and the next step. waitSeconds long-polls without blocking Revit " +
-            "(max 25). Omit jobId for the most recent job of the active document. " +
+            "(up to 240 s — the answer arrives when the job settles, a heavy family edit can run " +
+            "for tens of minutes; do NOT poll in a loop, one long wait replaces dozens of instant " +
+            "calls). Omit jobId for the most recent job of the active document. " +
             "includeSample=true adds the 5-item preview sample (default false).",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = true,
         SupportsBulk = true,
         Category = "jobs",
         Tags = new[] { "job", "status", "progress", "poll", "wait", "history" },
-        TimeoutMs = 40000,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""waitSeconds"":{""type"":""integer"",""minimum"":0,""maximum"":25},""includeSample"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
+        TimeoutMs = 300000,
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""jobId"":{""type"":""string""},""waitSeconds"":{""type"":""integer"",""minimum"":0,""maximum"":240,""description"":""Long-poll: hold the call until the job settles or the wait expires; 120-240 s replaces a poll loop""},""includeSample"":{""type"":""boolean"",""default"":false}},""additionalProperties"":false}"
     };
 
     public async Task<ToolResult> ExecuteAsync(
@@ -150,9 +167,40 @@ public sealed class GetJobStatusTool : IAgentTool
               " unit(s)/min, ~" + Math.Ceiling(pending / pace.Value) + " min left for " +
               pending + " unit(s).";
 
+        // Poll-loop guard (live v18: ~2100 instant status calls → provider
+        // rate limit → dead session): a streak of identical instant polls
+        // gets a direct instruction to long-poll instead. The wait itself is
+        // the fix — the guard only names it.
+        var pollHint = string.Empty;
+        lock (_pollGate)
+        {
+            var pollKey = job.JobId.ToString("D") + ":" + job.State + ":" + totals.Done;
+            if (waitSeconds > 0)
+            {
+                _instantPollStreak = 0;
+                _lastPollKey = null;
+            }
+            else if (pollKey == _lastPollKey)
+            {
+                _instantPollStreak++;
+                if (_instantPollStreak >= PollHintAfter)
+                {
+                    pollHint = " This is instant status call #" + _instantPollStreak +
+                               " in a row with an unchanged answer; polling again changes nothing. " +
+                               "[Action: pass waitSeconds=240 — the call holds until the job settles " +
+                               "(a heavy family edit can run for tens of minutes) — and stop looping]";
+                }
+            }
+            else
+            {
+                _instantPollStreak = 0;
+                _lastPollKey = pollKey;
+            }
+        }
+
         return ToolResult.Ok(
             JobToolPayloads.Serialize(payload),
-            job.State + " — " + summary + "." + etaText + JobToolPayloads.CausesLine(failedItems) +
+            job.State + " — " + summary + "." + etaText + pollHint + JobToolPayloads.CausesLine(failedItems) +
             " " + JobToolPayloads.NextHint(job));
     }
 }

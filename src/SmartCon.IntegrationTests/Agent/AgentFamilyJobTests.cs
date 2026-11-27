@@ -672,6 +672,47 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
     }
 
     [Test]
+    public async Task FamilyJob_PlacedOnly_RefusesUnplacedSelection()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        // Live v18: seeded families have no placed instances, so the placed
+        // selector must refuse the expansion instead of silently sizing the
+        // job to the whole (unplaced) library.
+        UseSharedParameterFile();
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\",\"placedOnly\":true},\"mappings\":[" +
+            "{\"source\":{\"name\":\"" + FamilySeed.WidthParam + "\"},\"target\":{\"name\":\"ЦельШирина\"},\"createTarget\":true}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        // The expansion refuses at Start: nothing is placed in this test
+        // document, so placedOnly must not silently size a job to zero units
+        // either — it is an honest selector_empty with the next action.
+        if (!preview.Success)
+        {
+            await Assert.That(preview.Error?.Code).IsEqualTo(JobErrorCodes.SelectorEmpty);
+            await Assert.That(preview.Error!.Message.Contains("placedOnly")).IsTrue();
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "PLACEDONLY DID NOT REFUSE: the job started with state " + preview.Job!.State);
+    }
+
+    [Test]
     public async Task FamilyFailuresSuppressor_ResolvesWhitelistedPromptAndReports()
     {
         // Live v18: «Семейство больше не соответствует свойствам системы…» —

@@ -28,8 +28,10 @@ public sealed partial class MapFamilyParametersJobAction
         var source = FindParameter(manager, entry.Source);
         if (source is null)
         {
+            // Live v18: the nameless variant gave the agent nothing to fix.
             return ItemFailed(
-                "A mapped source parameter disappeared while applying. [Action: run the preview again]");
+                "The mapped source parameter '" + (entry.SourceName ?? entry.Source.Name) +
+                "' disappeared while applying. [Action: run the preview again]");
         }
 
         ForgeTypeId spec;

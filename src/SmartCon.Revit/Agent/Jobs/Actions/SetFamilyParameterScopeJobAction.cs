@@ -32,7 +32,7 @@ public sealed partial class SetFamilyParameterScopeJobAction : RevitJobActionBas
         new()
         {
             Path = "select",
-            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "categoryNames", "categories", "limit" }
+            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "categoryNames", "categories", "limit", "placedOnly" }
         },
         new()
         {
@@ -87,7 +87,8 @@ public sealed partial class SetFamilyParameterScopeJobAction : RevitJobActionBas
             select.CategoryIds,
             FamilyJobSelectors.MergeCategoryNameAliases(
                 select.CategoryNames, select.Categories),
-            select.Limit);
+            select.Limit,
+            select.PlacedOnly);
         if (!selection.Success)
         {
             return ExpansionFail(selection.ErrorCode!, selection.ErrorDetail!);

@@ -44,6 +44,11 @@ public sealed partial class SetFamilyParameterScopeJobAction
         public List<string>? Categories { get; set; }
 
         public int? Limit { get; set; }
+
+        /// <summary>Narrow the job to families with at least one placed instance
+        /// (live v18: «all families» = placed first, library later).</summary>
+        [JsonPropertyName("placedOnly")]
+        public bool PlacedOnly { get; set; }
     }
 
     internal sealed class SetScopeParameterRef

@@ -138,13 +138,51 @@ internal sealed partial class AgentFamilySession : IDisposable
         }
         catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
         {
-            Fail(
-                outcome,
-                "family_open_conflict",
-                "Revit refused to open the family document: " + ex.Message,
-                "Close the Family Editor for '" + family.Name + "' (or the other pending " +
-                "SmartCon operation) and retry.");
-            return null;
+            // Live v18: after a dead agent session Revit can keep the family
+            // documents of PREVIOUS edits open; every following EditFamily
+            // then refuses with this error and nothing self-heals ("close the
+            // Family Editor" is impossible for an API — the docs are invisible
+            // in the UI). Orphan = pathless family document: a doc a human has
+            // open in the Family Editor always carries its .rfa path and is
+            // never touched. One healing attempt, then the honest refusal.
+            var healed = AgentFamilyDocCloser.CloseOrphanFamilyDocuments(projectDoc);
+            if (healed > 0)
+            {
+                SmartConLogger.Warn(
+                    "family_open_conflict while opening '" + family.Name + "': closed " + healed +
+                    " orphan family document(s) left over from an interrupted operation and retried once " +
+                    "[Action: if it still refuses, check the Family Editor manually]");
+                try
+                {
+                    familyDoc = revitContext is SmartCon.Revit.Context.IRevitUIContext
+                        ? OpenWithDialogSuppression(projectDoc, family, revitContext, outcome)
+                        : projectDoc.EditFamily(family);
+                    outcome.Warnings.Add(
+                        "family_open_conflict self-healed: " + healed +
+                        " orphan family document(s) from an interrupted operation were closed.");
+                }
+                catch (Exception retryEx)
+                {
+                    Fail(
+                        outcome,
+                        "family_open_conflict",
+                        "Revit refused to open the family document even after closing " + healed +
+                        " orphan family document(s): " + retryEx.Message,
+                        "Close the Family Editor for '" + family.Name + "' (or the other pending " +
+                        "SmartCon operation) and retry.");
+                    return null;
+                }
+            }
+            else
+            {
+                Fail(
+                    outcome,
+                    "family_open_conflict",
+                    "Revit refused to open the family document: " + ex.Message,
+                    "Close the Family Editor for '" + family.Name + "' (or the other pending " +
+                    "SmartCon operation) and retry.");
+                return null;
+            }
         }
         catch (Autodesk.Revit.Exceptions.ArgumentException ex)
         {
