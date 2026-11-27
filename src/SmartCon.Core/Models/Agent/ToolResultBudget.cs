@@ -23,11 +23,22 @@ public static class ToolResultBudget
     /// </summary>
     public const int MetaMaxCharacters = 90000;
 
+    /// <summary>
+    /// The family-parameter matrix tool carries a WHOLE migration inventory per
+    /// call (41 families x 15+ shared parameters ≈ 90k compact chars): the
+    /// default 40k trimmed it to 5 parameters per family and forced the model
+    /// into a dozen single-family follow-up calls (live v18, owner report) —
+    /// one 120k result is five times cheaper in context than the split.
+    /// </summary>
+    public const int FamilyMatrixMaxCharacters = 120000;
+
     /// <summary>Character budget for a tool result of the given tool.</summary>
     public static int MaxCharactersFor(string? toolName) =>
         string.Equals(toolName, "load_tool_pack", StringComparison.Ordinal)
             ? MetaMaxCharacters
-            : DefaultMaxCharacters;
+            : string.Equals(toolName, "get_family_parameters", StringComparison.Ordinal)
+                ? FamilyMatrixMaxCharacters
+                : DefaultMaxCharacters;
 
     public const string TruncationHint =
         "The result was trimmed to fit the context budget. Narrow the request " +
