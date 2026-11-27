@@ -48,7 +48,7 @@ public sealed class GetParameterUsageTool : AgentReadToolBase
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson +
-            @"""names"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":60,""description"":""Parameter names to audit (exact, case-insensitive)""},""guids"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":60,""description"":""Shared parameter GUIDs — the safe key when names repeat""},""namePrefix"":{""type"":""string"",""description"":""Audit every parameter whose name starts with this prefix: the document's shared definitions plus project bindings are scanned for the prefix""}},""additionalProperties"":false}"
+            @"""names"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":60,""description"":""Parameter names to audit (exact, case-insensitive)""},""guids"":{""type"":""array"",""items"":{""type"":""string""},""maxItems"":60,""description"":""Shared parameter GUIDs — the safe key when names repeat""},""namePrefix"":{""type"":""string"",""description"":""Audit every parameter whose name starts with this prefix: the document's shared definitions plus project bindings are scanned for the prefix""},""limit"":{""type"":""integer"",""default"":60,""minimum"":1,""maximum"":60,""description"":""Page size when namePrefix matches many parameters""},""offset"":{""type"":""integer"",""default"":0,""description"":""Page through a wide namePrefix sweep""}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -139,15 +139,6 @@ public sealed class GetParameterUsageTool : AgentReadToolBase
             }
         }
 
-        if (targets.Count > MaxParametersPerCall)
-        {
-            return ToolResult.Fail(
-                "invalid_arguments",
-                "The request matches " + targets.Count + " parameters; at most " +
-                MaxParametersPerCall + " per call. " +
-                "[Action: use a longer namePrefix or pass explicit names[]/guids[]]");
-        }
-
         var requestedNames = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
         foreach (var name in requestedNames)
         {
@@ -180,9 +171,27 @@ public sealed class GetParameterUsageTool : AgentReadToolBase
             }
         }
 
-        var schedulesById = CollectSchedules(doc, targets.Values, ct);
-        var filtersById = CollectFilters(doc, targets.Values, ct);
-        foreach (var target in targets.Values)
+        // A wide prefix can match hundreds of parameters: page the audit
+        // instead of failing (live feedback v17, 2.1).
+        var limit = Math.Max(
+            1,
+            Math.Min(
+                AgentJson.GetInt(args, "limit", MaxParametersPerCall),
+                MaxParametersPerCall));
+        var pageOffset = AgentPaging.NormalizeOffset(AgentJson.GetInt(args, "offset", 0));
+        var totalMatched = targets.Count;
+        var page = targets.Values
+            .OrderBy(target => target.Name, StringComparer.OrdinalIgnoreCase)
+            .Skip(pageOffset)
+            .Take(limit)
+            .ToList();
+        var pageNextOffset = pageOffset + page.Count < totalMatched
+            ? pageOffset + page.Count
+            : (int?)null;
+
+        var schedulesById = CollectSchedules(doc, page, ct);
+        var filtersById = CollectFilters(doc, page, ct);
+        foreach (var target in page)
         {
             schedulesById.TryGetValue(target.Key, out var schedules);
             filtersById.TryGetValue(target.Key, out var filters);
@@ -190,9 +199,7 @@ public sealed class GetParameterUsageTool : AgentReadToolBase
             target.Filters = filters ?? new List<object>();
         }
 
-        var ordered = targets.Values
-            .OrderBy(target => target.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var ordered = page;
         var usedAnywhere = ordered.Count(target =>
             target.Schedules.Count > 0 || target.Filters.Count > 0);
         var payload = new Dictionary<string, object?>
@@ -217,6 +224,9 @@ public sealed class GetParameterUsageTool : AgentReadToolBase
                 ["filters"] = target.Filters
             }).ToList(),
             ["parameterCount"] = ordered.Count,
+            ["totalMatched"] = totalMatched,
+            ["offset"] = pageOffset,
+            ["nextOffset"] = pageNextOffset,
             ["usedAnywhereCount"] = usedAnywhere,
             ["note"] =
                 "Schedules are matched by field parameter id and by column heading; filters by " +
@@ -226,8 +236,12 @@ public sealed class GetParameterUsageTool : AgentReadToolBase
                 "Templates are skipped."
         };
 
-        var messageText = "Parameter usage: " + ordered.Count + " parameter(s) audited" +
+        var messageText = "Parameter usage: " + ordered.Count + " of " + totalMatched +
+                          " parameter(s) audited" +
                           (prefix is { Length: > 0 } ? " (prefix '" + prefix + "')" : string.Empty) +
+                          (pageNextOffset is not null
+                              ? ", next offset " + pageNextOffset
+                              : string.Empty) +
                           "; " + usedAnywhere + " used in schedules/filters" +
                           (ordered.Count - usedAnywhere > 0
                               ? ", " + (ordered.Count - usedAnywhere) + " unused"

@@ -68,6 +68,10 @@ public sealed partial class FindFamiliesWithParameterTool
             ["byPrefixTruncated"] = ordered.Count > byPrefix.Count,
             ["byParameterName"] = BuildByParameterName(outcome),
             ["byParameterNameTruncated"] = outcome.ByParameterName.Count > MaxParameterNameRows,
+            ["verificationRemainingCandidates"] = outcome.ScopeVerificationStats?.Unverified,
+            ["verificationNextOffset"] = outcome.ScopeVerificationStats?.Truncated == true
+                ? outcome.ScopeVerificationStats.NextOffset
+                : null,
             ["summaryScope"] = instancesScanned ? "type+instance" : "type",
             ["summaryNote"] =
                 "familiesWithoutAnyShared and byPrefix count shared parameters only. " +
@@ -103,7 +107,26 @@ public sealed partial class FindFamiliesWithParameterTool
                 ["verifiedFamilies"] = aggregate.Families.Count(id =>
                     outcome.Families.TryGetValue(id, out var scan)
                     && string.Equals(scan.ScopeVerification, "verified", StringComparison.Ordinal)
-                    && scan.ScopeByName.ContainsKey(aggregate.Name))
+                    && scan.ScopeByName.ContainsKey(aggregate.Name)),
+                // Live v17 (1.2/1.3): "verifiedFamilies: 0" was read as "absent"
+                // although the name simply was not checked yet, and project
+                // bindings posed as family parameters. Make the source explicit.
+                ["familiesFromProjectBindingOnly"] = aggregate.Families.Count(id =>
+                    outcome.Families.TryGetValue(id, out var scan)
+                    && string.Equals(scan.ScopeVerification, "verified", StringComparison.Ordinal)
+                    && scan.ScopeByName.TryGetValue(aggregate.Name, out var scope)
+                    && string.Equals(scope, "project", StringComparison.OrdinalIgnoreCase)),
+                ["familiesNotChecked"] = aggregate.Families.Count(id =>
+                    outcome.Families.TryGetValue(id, out var scan)
+                    && !string.Equals(scan.ScopeVerification, "verified", StringComparison.Ordinal)
+                    && !string.Equals(scan.ScopeVerification, "failed", StringComparison.Ordinal)
+                    && scan.ScopeByName.ContainsKey(aggregate.Name)),
+                ["verificationState"] =
+                    outcome.ScopeVerificationStats is null
+                        ? "not-checked"
+                        : outcome.ScopeVerificationStats.Truncated
+                            ? "partial"
+                            : "complete"
             })
             .ToList();
 

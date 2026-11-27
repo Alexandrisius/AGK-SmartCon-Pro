@@ -38,14 +38,16 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
         Description =
-            "Reads the active shared parameter file (ФОП): its path, groups and every " +
-            "definition with name, GUID, data type, parameter group, visible and " +
+            "Reads a shared parameter file (ФОП): the active one by default, or ANY " +
+            ".txt by its absolute path (path) — read as text, the active file is NOT " +
+            "switched (compare two ФОП standards by calling this twice). Every " +
+            "definition comes with name, GUID, data type, parameter group, visible and " +
             "userModifiable flags. Use it to pick the exact definition before " +
             "add_family_parameter(isShared=true) or to check which ФОП is active. " +
             "Filters: group, nameContains; paged with limit/offset. summary=true " +
             "returns the inventory without pages: byPrefix[] and byGroup[] counters " +
             "over the whole (filtered) file.",
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""group"":{""type"":""string"",""description"":""Group name or its part (case-insensitive)""},""nameContains"":{""type"":""string""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Inventory in one call: byPrefix[] (the part of the name before '_'), byGroup[] with definition counts - no pages to read""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""path"":{""type"":""string"",""description"":""Absolute path of another shared parameter .txt to read INSTEAD of the active one - read as text, the active file is not switched; use it to compare the old and the new standard""},""group"":{""type"":""string"",""description"":""Group name or its part (case-insensitive)""},""nameContains"":{""type"":""string""},""summary"":{""type"":""boolean"",""default"":false,""description"":""Inventory in one call: byPrefix[] (the part of the name before '_'), byGroup[] with definition counts - no pages to read""},""limit"":{""type"":""integer"",""default"":200,""maximum"":1000},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     public override bool SupportsDocumentRouting => false;
@@ -59,6 +61,57 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             DefaultLimit,
             MaxLimit);
         var offset = AgentPaging.NormalizeOffset(AgentJson.GetInt(args, "offset", 0));
+
+        // path: read ANOTHER file as text — the active ФОП stays untouched
+        // (switching it is a global user setting that never rolls back; live
+        // feedback v17, 1.4).
+        var pathArgument = AgentJson.GetString(args, "path");
+        if (!string.IsNullOrWhiteSpace(pathArgument))
+        {
+            if (!SmartCon.Core.Services.Agent.AgentSharedParameterFileText.TryParseFile(
+                    pathArgument!, out var entries, out var textGroups, out var parseError))
+            {
+                return ToolResult.Fail(
+                    "invalid_arguments",
+                    "Could not read the shared parameter file '" + pathArgument + "': " +
+                    parseError + ". [Action: pass the absolute path of a Revit shared " +
+                    "parameter .txt file]");
+            }
+
+            var textMatches = new List<SharedParameterRow>();
+            foreach (var entry in entries)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (!string.IsNullOrWhiteSpace(groupFilter)
+                    && entry.Group.IndexOf(groupFilter!, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(nameContains)
+                    && entry.Name.IndexOf(nameContains!, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+
+                if (!Guid.TryParse(entry.Guid, out var guid))
+                    continue;
+
+                textMatches.Add(new SharedParameterRow
+                {
+                    Group = entry.Group,
+                    Name = entry.Name,
+                    Guid = guid,
+                    Spec = entry.DataType.ToLowerInvariant(),
+                    Visible = entry.Visible,
+                    UserModifiable = entry.UserModifiable,
+                    Description = entry.Description
+                });
+            }
+
+            return Finish(textMatches, textGroups, pathArgument!, parsedFromText: true,
+                AgentJson.GetBool(args, "summary", false), limit, offset);
+        }
 
         DefinitionFile? file;
         try
@@ -142,9 +195,22 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
                 : string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase);
         });
 
+        return Finish(matches, groupsCount, file.Filename, parsedFromText: false,
+            AgentJson.GetBool(args, "summary", false), limit, offset);
+    }
+
+    private ToolResult Finish(
+        IReadOnlyList<SharedParameterRow> matches,
+        int groupsCount,
+        string filePath,
+        bool parsedFromText,
+        bool summary,
+        int limit,
+        int offset)
+    {
         // The inventory in one call: prefix/group counters over the whole
         // (filtered) file instead of paging through 130 definitions (S.48, #533).
-        if (AgentJson.GetBool(args, "summary", false))
+        if (summary)
         {
             var byPrefix = matches
                 .GroupBy(row => AgentSharedParameterResolver.PrefixOf(row.Name))
@@ -161,16 +227,21 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             return ToolResult.Ok(
                 AgentJson.Serialize(new Dictionary<string, object?>
                 {
-                    ["filePath"] = file.Filename,
+                    ["filePath"] = filePath,
+                    ["parsedFromText"] = parsedFromText ? true : null,
                     ["groupsCount"] = groupsCount,
                     ["total"] = matches.Count,
                     ["byPrefix"] = byPrefix,
                     ["byGroup"] = byGroup,
                     ["note"] = "summary=true: counters over the whole (filtered) file; the " +
                                "prefix is the part of the definition name before '_'. Read the " +
-                               "definitions of one bucket with nameContains=<prefix>."
+                               "definitions of one bucket with nameContains=<prefix>." +
+                               (parsedFromText
+                                   ? " The file was read as text: the ACTIVE shared parameter " +
+                                     "file was not switched."
+                                   : string.Empty)
                 }),
-                "Shared parameter file '" + file.Filename + "': " + matches.Count +
+                "Shared parameter file '" + filePath + "': " + matches.Count +
                 " definition(s), " + byPrefix.Count + " prefix(es), " + byGroup.Count + " group(s).");
         }
 
@@ -194,7 +265,8 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
         var nextOffset = offset + page.Count;
         var payload = new Dictionary<string, object?>
         {
-            ["filePath"] = file.Filename,
+            ["filePath"] = filePath,
+            ["parsedFromText"] = parsedFromText ? true : null,
             ["groupsCount"] = groupsCount,
             ["total"] = matches.Count,
             ["parameters"] = page,
@@ -204,15 +276,20 @@ public sealed class ListSharedParametersTool : AgentReadToolBase
             ["truncated"] = nextOffset < matches.Count,
             ["hint"] = "Pass the exact name or guid to add_family_parameter(isShared=true); " +
                        "createDefinition stays false by default, so a missing definition is " +
-                       "reported instead of being added to this file."
+                       "reported instead of being added to this file." +
+                       (parsedFromText
+                           ? " This file was read as text: the ACTIVE shared parameter file " +
+                             "was not switched."
+                           : string.Empty)
         };
 
         return ToolResult.Ok(
             AgentJson.Serialize(payload),
             matches.Count == 0
-                ? "The active shared parameter file contains no definitions matching the request."
+                ? "The shared parameter file contains no definitions matching the request."
                 : "Read " + page.Count + " of " + matches.Count + " shared parameter " +
-                  "definition(s) from " + file.Filename + ".");
+                  "definition(s) from " + filePath +
+                  (parsedFromText ? " (read as text; the active file was not switched)." : "."));
     }
 
     private sealed class SharedParameterRow

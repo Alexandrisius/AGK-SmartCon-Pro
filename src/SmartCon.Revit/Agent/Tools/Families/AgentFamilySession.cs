@@ -65,10 +65,30 @@ internal sealed partial class AgentFamilySession : IDisposable
     /// </summary>
     private static readonly TimeSpan EditableWait = TimeSpan.FromSeconds(1);
 
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static Document OpenWithDialogSuppression(
+        Document projectDoc,
+        RevitFamily family,
+        SmartCon.Core.Services.Interfaces.IRevitContext revitContext,
+        WriteOutcome outcome)
+    {
+        using var dialogs = AgentFamilyDialogSuppressor.Begin(revitContext);
+        var familyDoc = projectDoc.EditFamily(family);
+        foreach (var dialog in dialogs.Suppressed)
+        {
+            outcome.Warnings.Add(
+                "Revit dialog auto-dismissed while opening the family: '" +
+                dialog.DialogId + "' (" + dialog.Answer + ").");
+        }
+
+        return familyDoc;
+    }
+
     public static AgentFamilySession? Open(
         Document projectDoc,
         RevitFamily family,
-        WriteOutcome outcome)
+        WriteOutcome outcome,
+        SmartCon.Core.Services.Interfaces.IRevitContext? revitContext = null)
     {
         if (!TryEnterEditableProject(projectDoc, family.Name, outcome))
         {
@@ -99,7 +119,15 @@ internal sealed partial class AgentFamilySession : IDisposable
         Document? familyDoc;
         try
         {
-            familyDoc = projectDoc.EditFamily(family);
+            // Family-open dialogs (dependency behaviour warnings, upgrade
+            // prompts) hang the write path until a human clicks OK — dismiss
+            // and report (live v17, P0 1.1; ShareProjectCommand pattern).
+            // The guard keeps RevitAPIUI out of UI-less hosts (integration
+            // tests): OpenWithDialogSuppression is only JIT-ed when called
+            // (#153 pattern — a FileLoadException here killed the suite).
+            familyDoc = revitContext is SmartCon.Revit.Context.IRevitUIContext
+                ? OpenWithDialogSuppression(projectDoc, family, revitContext, outcome)
+                : projectDoc.EditFamily(family);
         }
         catch (Autodesk.Revit.Exceptions.InvalidOperationException ex)
         {

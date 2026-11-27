@@ -521,6 +521,21 @@ JSON-схемы тулов/параметров (источник для `AgentT
 
 Единицы/конверсия значений параметров семейств для агента.
 
+## AgentSharedParameterFileEntry
+
+Строка PARAM файла общих параметров (ФОП), прочитанного как текст: группа, 
+имя, GUID, тип данных (строка DATATYPE как в файле), visible, 
+userModifiable, описание.
+
+## AgentSharedParameterFileText
+
+Парсер файла общих параметров (ФОП) КАК ТЕКСТ — без смены активного файла 
+(Revit API читает только активный; переключение — глобальная настройка без 
+отката). Формат Autodesk Definition File: блоки META/GROUP/PARAM с 
+таб-разделителями; кодировка детектится по BOM (UTF-16 LE/BE, UTF-8). 
+`TryParseFile`/`TryParse` возвращают записи + число групп; файл без 
+GROUP/PARAM — честная ошибка. Питает `list_shared_parameters(path)`.
+
 ## AgentListPayload
 
 Общие части payload list-тулов: проекция записи на запрошенные `fields` 

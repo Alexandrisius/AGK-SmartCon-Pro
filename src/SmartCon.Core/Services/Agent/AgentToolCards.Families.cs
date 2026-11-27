@@ -254,6 +254,9 @@ public static partial class AgentToolCards
             Purpose =
                 "Аудит/миграция: живой поиск загруженных семейств по имени параметра — " +
                 "exact, contains или prefix (PREFIX_, BP_, BIM_) — и необязательному значению. " +
+                "sources[] в строке семейства отличает реальные параметры ДОКУМЕНТА семейства " +
+                "от проектных привязок (binding покрывает категорию целиком); окна Revit при " +
+                "открытии семейств закрываются автоматически и перечисляются в suppressedDialogs[]. " +
                 "parameterNamePrefix — алиас prefix-поиска. summary=true одним вызовом " +
                 "добавляет byCategory[] по совпавшим семействам (без выкачивания страниц), " +
                 "familiesWithoutAnyShared, unplacedCount и byPrefix[] (prefix, families, " +

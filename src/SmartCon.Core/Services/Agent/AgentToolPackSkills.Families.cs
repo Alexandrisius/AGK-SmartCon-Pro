@@ -27,7 +27,8 @@ public static partial class AgentToolPackSkills
   API (CF-3799), перепривязка вручную в Family Editor; «марки живы» — TagText меток через
   get_element_details),
   `list_shared_parameters` (нужен активный ФОП; иначе `shared_parameter_file_missing` →
-  `set_shared_parameter_file` пака params).
+  `set_shared_parameter_file` пака params; чужой ФОП читается по `path` — как текст, активный
+  не переключается: сравнение стандартов двумя вызовами).
 - `category` (строка/массив, OST_*/имя/id), `summary`, `placedOnly`, `fields`/`parameterNames`.
   Системных семейств нет — их типы даёт `list_system_types`.
 - Запись: `rename_family_parameter`, `add_family_parameter` (один параметр или `items[]` до 50 —
@@ -50,8 +51,8 @@ public static partial class AgentToolPackSkills
   и при открытом Family Editor.
 - Документ семейства — отдельный `Document` (I-03b): транзакции на нём.
 - Правится только `FamilyManager.CurrentType`; без типов значения задавать некуда.
-- После правки семейство **загружается заново**: `familyId`/`familyUniqueId` меняются
-  (`previousFamilyId`), дальше адресуйте по `familyName`.
+- После правки семейство **перезагружается**: id/uniqueId меняются (`previousFamilyId`),
+  адресуйте по `familyName`.
 - Перезагрузка не переименовывает типы проекта: переименованный тип — дубль
   (`rename_family_type`; дубль удаляет `delete_family_types`).
 - `Document.Delete(FamilySymbol)` удаляет тип **и все экземпляры** — это `force=true`.
@@ -106,14 +107,13 @@ public static partial class AgentToolPackSkills
 - Тул читает **документ семейства** (FamilyManager): Проектный общий параметр в ответе
   отсутствует — его читает `list_family_types(familyId, parameterNames, valueScope:type)`.
 - Read-back параметра: `get_family_parameter_values` (формула + значения).
-- Миграция ФОП: привязка проекта перекрывает scope/группу (`projectBinding` в ответе
-  `add_family_parameter`); instance-значения размещённых экземпляров и удаление пустых
-  проектных привязок — пак params. Instance-проверка — `list_family_types(valueScope:instance)`:
-  существующие типовые уходят в `typeScopedParameters`, `missingParameters` — только
-  реально отсутствующие.
+- Миграция ФОП: привязка проекта перекрывает scope/группу (`projectBinding` у
+  add_family_parameter); instance-значения экземпляров и удаление пустых привязок — пак
+  params. Instance-проверка — `list_family_types(valueScope:instance)`: типовые уходят в
+  `typeScopedParameters`, `missingParameters` — реально отсутствующие.
 - **Scope в `find_families_with_parameter`**: `family+project` без проверки — ПРЕДПОЛОЖЕНИЕ
-  по GUID-биндингу (биндинг покрывает всю категорию, даже без параметра в семействе —
-  непортированные выглядели «уже портированными»). `verifyFamilyScope:true` (умолчание)
+  по GUID-биндингу (биндинг покрывает всю категорию без параметра в семействе —
+  непортированные выглядели портированными). `verifyFamilyScope:true` (умолчание)
   открывает документы семейств и понижает до `project`; пасс ограничен `verificationLimit=25`
   И `verificationSeconds=120` (~1 с на тяжёлое .rfa); при `truncated:true` — `verificationOffset`
   = `scopeVerification.nextVerificationOffset`. Миграцию планируйте по

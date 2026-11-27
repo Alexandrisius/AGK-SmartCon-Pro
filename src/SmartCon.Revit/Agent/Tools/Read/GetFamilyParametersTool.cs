@@ -72,9 +72,12 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
+        // Batch reads open family documents: dismiss and report modal dialogs
+        // instead of hanging on a click (live v17, P0 1.1).
+        using var dialogs = AgentFamilyDialogSuppressor.BeginSafe(Context);
         var batchIds = TryGetIntArray(args, "familyIds");
         if (batchIds is { Count: > 0 })
-            return ExecuteBatch(doc, args, batchIds, ct);
+            return ExecuteBatch(doc, args, batchIds, dialogs, ct);
 
         var family = AgentFamilyReader.ResolveFamily(
             doc,
@@ -91,6 +94,8 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         if (payload is null)
             return ToolResult.Fail(
                 failure ?? "family_open_failed", familyMessage);
+
+        AttachSuppressedDialogs(payload, dialogs);
 
         if (AgentJson.GetBool(args, "compact", false))
         {
@@ -122,6 +127,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         Document doc,
         JsonElement args,
         IReadOnlyList<long> familyIds,
+        AgentFamilyDialogSuppressor? dialogs,
         CancellationToken ct)
     {
         var families = new List<object?>(familyIds.Count);
@@ -179,6 +185,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             ["failedCount"] = failedCount,
             ["includeValues"] = batchIncludeValues
         };
+        AttachSuppressedDialogs(batchPayload, dialogs);
 
         var baseMessage = "Read " + okCount + " of " + familyIds.Count + " family(ies)" +
                           (failedCount > 0 ? ", " + failedCount + " not found" : string.Empty) +
@@ -203,6 +210,23 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         return CompactBatch(families, familyIds.Count, okCount, failedCount, baseMessage);
     }
 
+    private static void AttachSuppressedDialogs(
+        Dictionary<string, object?> payload,
+        AgentFamilyDialogSuppressor? dialogs)
+    {
+        if (dialogs?.Suppressed.Count is not > 0)
+            return;
+
+        payload["suppressedDialogs"] = dialogs.Suppressed
+            .Select(dialog => new Dictionary<string, object?>
+            {
+                ["dialogId"] = dialog.DialogId,
+                ["message"] = dialog.Message,
+                ["answer"] = dialog.Answer
+            })
+            .ToList();
+    }
+
     private ToolResult CompactBatch(
         List<object?> families,
         int familyCount,
@@ -221,9 +245,9 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 ["familyCount"] = familyCount,
                 ["okCount"] = okCount,
                 ["failedCount"] = failedCount,
-                ["hint"] = "Compact rows: parameter name, guid, storage, instance flag, " +
-                           "type count. For formulas, values and lookup tables call " +
-                           "get_family_parameters with a single familyId."
+                ["hint"] = "Compact rows: parameter name, guid, storage, spec, group, " +
+                           "instance flag, type count. For formulas, values and lookup " +
+                           "tables call get_family_parameters with a single familyId."
             };
             if (AgentJson.Serialize(payload).GetRawText().Length <= BatchTargetCharacters
                 || shown <= MinShownParameters)
@@ -283,6 +307,10 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                         ["name"] = parameter.Name,
                         ["guid"] = parameter.Guid,
                         ["storageType"] = parameter.StorageType,
+                        // spec/group decide whether a ФОП definition is
+                        // compatible BEFORE any write (live v17, 2.2).
+                        ["spec"] = parameter.Spec,
+                        ["group"] = parameter.Group,
                         ["isInstance"] = parameter.IsInstance
                     })
                     .ToList()

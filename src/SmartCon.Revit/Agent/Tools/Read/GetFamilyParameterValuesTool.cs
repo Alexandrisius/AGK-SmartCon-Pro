@@ -40,6 +40,8 @@ public sealed class GetFamilyParameterValuesTool : AgentReadToolBase
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
+        using var dialogs = AgentFamilyDialogSuppressor.BeginSafe(Context);
+
         var family = AgentFamilyReader.ResolveFamily(
             doc,
             TryGetLong(args, "familyId"),

@@ -66,6 +66,8 @@ public sealed class GetFamilyLabelsTool : AgentReadToolBase
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
+        using var dialogs = AgentFamilyDialogSuppressor.BeginSafe(Context);
+
         var batchIds = TryGetIntArray(args, "familyIds");
         if (batchIds is { Count: > 0 })
         {

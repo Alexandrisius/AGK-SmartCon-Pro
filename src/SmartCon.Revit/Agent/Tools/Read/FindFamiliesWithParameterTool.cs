@@ -123,6 +123,10 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
     {
+        // Family-open dialogs (dependency warnings, upgrade prompts) used to
+        // hang a read-only verification until a human clicked OK (live v17,
+        // P0 1.1) — dismiss and REPORT them instead.
+        using var dialogs = AgentFamilyDialogSuppressor.BeginSafe(Context);
         var queryError = ResolveQuery(args, out var parameterName, out var mode, out var modeText);
         if (queryError is not null)
             return ToolResult.Fail("invalid_arguments", queryError);
@@ -293,6 +297,10 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
               (unknownCategories.Count > 0
                   ? "; unknown categories ignored: " + string.Join(", ", unknownCategories)
                   : string.Empty) +
+              (dialogs?.Suppressed.Count > 0
+                  ? "; " + dialogs.Suppressed.Count + " Revit dialog(s) auto-dismissed " +
+                    "(see suppressedDialogs)"
+                  : string.Empty) +
               ".";
 
         return ToolResult.Ok(AgentJson.Serialize(payload), messageText);
@@ -327,6 +335,16 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
                 ["instanceParametersTotal"] = instanceMatches,
                 ["unknownCategories"] = unknownCategories.Count > 0 ? unknownCategories : null,
                 ["warnings"] = warnings.Count > 0 ? warnings : null,
+                ["suppressedDialogs"] = dialogs?.Suppressed.Count > 0
+                    ? dialogs.Suppressed
+                        .Select(dialog => new Dictionary<string, object?>
+                        {
+                            ["dialogId"] = dialog.DialogId,
+                            ["message"] = dialog.Message,
+                            ["answer"] = dialog.Answer
+                        })
+                        .ToList()
+                    : null,
                 ["scopeVerification"] = BuildScopeVerification(outcome, verifyFamilyScope),
                 ["scopeNote"] =
                     "Type parameters are read from family symbols. With includeInstanceParameters=true " +
@@ -380,6 +398,17 @@ public sealed partial class FindFamiliesWithParameterTool : AgentReadToolBase
                 .ToList(),
             ["sampleTruncated"] = item.MatchedParameterNames.Count > MaxSampleParameterNames,
             ["scopes"] = item.ParameterScopes,
+            // Live v17 (1.2): where each matched name ACTUALLY lives — a
+            // project binding alone shows the parameter on every element of
+            // the bound category and used to pose as a family parameter.
+            ["sources"] = item.ScopeByName.ToDictionary(
+                pair => pair.Key,
+                pair => string.Equals(pair.Value, "project", StringComparison.OrdinalIgnoreCase)
+                    ? "project-binding"
+                    : string.Equals(item.ScopeVerification, "verified", StringComparison.Ordinal)
+                        ? "family-document"
+                        : "project-binding(assumed)",
+                StringComparer.OrdinalIgnoreCase),
             ["scopeVerification"] = item.ScopeVerification,
             ["scopeVerifyError"] = item.ScopeVerifyError,
             ["matchedTypeCount"] = item.MatchedTypesTotal,

@@ -44,6 +44,9 @@ public abstract class AgentReadToolBase : IAgentTool
 
     private readonly IRevitContext _revitContext;
 
+    /// <summary>The tool's Revit context (for dialog suppression and alike).</summary>
+    protected IRevitContext Context => _revitContext;
+
     protected AgentReadToolBase(IRevitContext revitContext)
     {
         _revitContext = revitContext ?? throw new ArgumentNullException(nameof(revitContext));

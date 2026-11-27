@@ -96,7 +96,7 @@ public abstract class AgentFamilyWriteToolBase : AgentWriteToolBase
                 return;
             }
 
-            session = AgentFamilySession.Open(document, familyForEdit, outcome);
+            session = AgentFamilySession.Open(document, familyForEdit, outcome, Context);
             if (session is null)
                 return;
 

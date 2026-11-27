@@ -90,6 +90,10 @@ public sealed class AgentFamiliesV16Tests : RevitApiTest
             new AddFamilyParameterTool(new StubRevitContext(Doc), _transactions!, _changeSets!),
             "{\"familyName\":\"" + Seed.FamilyName + "\",\"name\":\"Копия_Марки\"," +
             "\"storageType\":\"text\",\"dryRun\":false}");
+        if (!add.Success)
+            throw new InvalidOperationException(
+                "ADD FAILED: " + add.ErrorCode + " / " + add.Message + " / " +
+                (add.Data?.GetRawText() ?? ""));
         await Assert.That(add.Success).IsTrue();
 
         var map = Run(
@@ -156,7 +160,8 @@ public sealed class AgentFamiliesV16Tests : RevitApiTest
         await Assert.That(compactParameter.TryGetProperty("name", out _)).IsTrue();
         await Assert.That(compactParameter.TryGetProperty("formula", out _)).IsFalse();
         await Assert.That(compactParameter.TryGetProperty("valuesByType", out _)).IsFalse();
-        await Assert.That(compactParameter.EnumerateObject().Count()).IsLessThanOrEqualTo(4);
+        await Assert.That(compactParameter.TryGetProperty("spec", out _)).IsTrue();
+        await Assert.That(compactParameter.EnumerateObject().Count()).IsLessThanOrEqualTo(6);
 
         var prefix = tool.ExecuteForTests(
             Doc,
@@ -313,9 +318,18 @@ public sealed class AgentFamiliesV16Tests : RevitApiTest
             var first = tool.ExecuteForTests(
                 Doc,
                 Parse("{\"parameterName\":\"" + parameterName + "\",\"verifyFamilyScope\":true," +
-                      "\"verificationLimit\":1,\"verificationSeconds\":150}"),
+                      "\"verificationLimit\":1,\"verificationSeconds\":150,\"summary\":true}"),
                 CancellationToken.None);
             await Assert.That(first.Success).IsTrue();
+            // v17 (1.2/1.3): the per-name inventory says WHAT was checked —
+            // "verifiedFamilies: 0" must never read as "absent".
+            var firstName = Data(first).GetProperty("byParameterName")[0];
+            await Assert.That(firstName.GetProperty("familiesFromProjectBindingOnly")
+                .GetInt32()).IsGreaterThanOrEqualTo(1);
+            await Assert.That(firstName.GetProperty("familiesNotChecked").GetInt32())
+                .IsGreaterThanOrEqualTo(2);
+            await Assert.That(Data(first).GetProperty("verificationRemainingCandidates")
+                .GetInt32()).IsGreaterThanOrEqualTo(2);
             var firstStats = Data(first).GetProperty("scopeVerification");
             await Assert.That(firstStats.GetProperty("candidates").GetInt32())
                 .IsGreaterThanOrEqualTo(3);
@@ -323,6 +337,10 @@ public sealed class AgentFamiliesV16Tests : RevitApiTest
             await Assert.That(firstStats.GetProperty("truncated").GetBoolean()).IsTrue();
             var next = firstStats.GetProperty("nextVerificationOffset").GetInt32();
             await Assert.That(next).IsEqualTo(1);
+            // v17 (1.2): the source of a matched name is explicit.
+            var firstRow = Data(first).GetProperty("families")[0];
+            await Assert.That(firstRow.GetProperty("sources").GetProperty(parameterName)
+                .GetString()).IsNotNull();
 
             var second = tool.ExecuteForTests(
                 Doc,
@@ -356,6 +374,49 @@ public sealed class AgentFamiliesV16Tests : RevitApiTest
         {
             foreach (var seed in seeds)
                 seed.Dispose();
+        }
+    }
+
+    [Test]
+    public async Task ListSharedParameters_Path_ReadsFileWithoutSwitchingActive()
+    {
+        // v17 (1.4): compare two ФОП standards without touching the user's
+        // active file — parsed as text, filePath echoes the path.
+        var path = Path.Combine(
+            Path.GetTempPath(), "sc-fop-alt-" + Guid.NewGuid().ToString("N") + ".txt");
+        var lines = new[]
+        {
+            "*META\tVERSION\tMINVERSION",
+            "META\t2\t1",
+            "*GROUP\tID\tNAME",
+            "GROUP\t1\tSC_Alt",
+            "*PARAM\tGUID\tNAME\tDATATYPE\tDATACATEGORY\tGROUP\tVISIBLE\tDESCRIPTION\tUSERMODIFIABLE",
+            "PARAM\t5e0d1a44-39fa-4c1e-8f21-4d1a5f33a101\tSC_Alt_Парам\tTEXT\t\t1\t1\t\t1",
+            "PARAM\t5e0d1a44-39fa-4c1e-8f21-4d1a5f33a102\tSC_Alt_Второй\tLENGTH\t\t1\t1\t\t1"
+        };
+        await File.WriteAllTextAsync(path, string.Join("\n", lines));
+        try
+        {
+            var tool = new ListSharedParametersTool(new StubRevitContext(Doc));
+            var result = tool.ExecuteForTests(
+                Doc,
+                Parse("{\"path\":\"" + path.Replace("\\", "\\\\") + "\"}"),
+                CancellationToken.None);
+
+            await Assert.That(result.Success).IsTrue();
+            var data = Data(result);
+            await Assert.That(data.GetProperty("filePath").GetString()).IsEqualTo(path);
+            await Assert.That(data.GetProperty("parsedFromText").GetBoolean()).IsTrue();
+            await Assert.That(data.GetProperty("groupsCount").GetInt32()).IsEqualTo(1);
+            await Assert.That(data.GetProperty("total").GetInt32()).IsEqualTo(2);
+            var names = data.GetProperty("parameters").EnumerateArray()
+                .Select(row => row.GetProperty("name").GetString())
+                .ToList();
+            await Assert.That(names.Contains("SC_Alt_Парам")).IsTrue();
+        }
+        finally
+        {
+            File.Delete(path);
         }
     }
 

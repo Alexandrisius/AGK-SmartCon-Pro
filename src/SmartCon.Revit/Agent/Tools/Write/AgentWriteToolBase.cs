@@ -17,6 +17,9 @@ namespace SmartCon.Revit.Agent.Tools.Write;
 public abstract partial class AgentWriteToolBase : IAgentTool, IAgentToolPreflight
 {
     private readonly IRevitContext _revitContext;
+
+    /// <summary>The tool's Revit context (for dialog suppression and alike).</summary>
+    protected IRevitContext Context => _revitContext;
     private readonly ITransactionService _transactions;
     private readonly IAgentChangeSetStore _changeSets;
 
