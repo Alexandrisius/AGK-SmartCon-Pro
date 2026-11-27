@@ -32,7 +32,7 @@ public sealed partial class ReplaceFamilyParameterJobAction : RevitJobActionBase
         new()
         {
             Path = "select",
-            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "limit" }
+            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "categoryNames", "categories", "limit" }
         },
         new()
         {
@@ -97,6 +97,8 @@ public sealed partial class ReplaceFamilyParameterJobAction : RevitJobActionBase
             select.FamilyNames,
             select.NameContains,
             select.CategoryIds,
+            FamilyJobSelectors.MergeCategoryNameAliases(
+                select.CategoryNames, select.Categories),
             select.Limit);
         if (!selection.Success)
         {

@@ -154,10 +154,22 @@ public abstract partial class AgentWriteToolBase
             var failedIds = string.Join(", ", outcome.Batch.Failed
                 .Take(10)
                 .Select(item => item.Id?.ToString() ?? item.Name ?? "?"));
-            summary += " " + outcome.Batch.Failed.Count +
-                       " item(s) failed validation and will fail again: [" + failedIds +
-                       "] (max 10). Repeat the SAME call with dryRun:false WITHOUT the " +
-                       "failed items — the passing items are ready to apply.";
+            if (outcome.Batch.Changed.Count == 0)
+            {
+                // Nothing passed: "the passing items are ready to apply" used to
+                // send the model into an empty apply (dogfood v16, Ops-1).
+                summary += " " + outcome.Batch.Failed.Count +
+                           " item(s) failed validation and NONE passed — there is nothing " +
+                           "to apply. [Action: fix them from the error codes/availableFields " +
+                           "in the result, then repeat the dry run]";
+            }
+            else
+            {
+                summary += " " + outcome.Batch.Failed.Count +
+                           " item(s) failed validation and will fail again: [" + failedIds +
+                           "] (max 10). Repeat the SAME call with dryRun:false WITHOUT the " +
+                           "failed items — the passing items are ready to apply.";
+            }
         }
 
         var result = outcome.Success

@@ -35,7 +35,7 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
     {
         Name = "add_family_parameter",
         Description =
-            "Adds parameters to a family: normal or shared (customer ФОП/KRTRS definitions), " +
+            "Adds parameters to a family: normal or shared (customer shared-parameter definitions), " +
             "instance or type, with a parameter group and storage type. Pass ONE parameter as " +
             "flat fields or MANY as items[] (up to 50) - a batch costs one family open, one " +
             "transaction and one load-back, not one per parameter. For a shared parameter the " +
@@ -438,6 +438,18 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
         {
             var diverges = !string.Equals(
                 projectBinding.Scope, scopeText, StringComparison.OrdinalIgnoreCase);
+            var requestedGroupName = request.Group is not null
+                                     && AgentFamilySpecs.TryResolveGroup(
+                                         request.Group, out var requestedGroup, out _)
+                                     && requestedGroup is not null
+                ? AgentFamilySpecs.GroupNameOf(requestedGroup)
+                : null;
+            var groupDiffers = requestedGroupName is not null
+                               && projectBinding.Group is not null
+                               && !string.Equals(
+                                   requestedGroupName,
+                                   projectBinding.Group,
+                                   StringComparison.OrdinalIgnoreCase);
             outcome.Warnings.Add(
                 "Project binding of '" + created.Definition.Name + "': " + projectBinding.Scope +
                 ", group " + (projectBinding.Group ?? "(unknown)") +
@@ -446,7 +458,12 @@ public sealed partial class AddFamilyParameterTool : AgentFamilyWriteToolBase
                     ? "scopes diverge: family " + scopeText + " vs binding " + projectBinding.Scope +
                       "; schedules read the binding's scope"
                     : "the requested group shows as " + projectBinding.Group +
-                      " in project read-back") + ").");
+                      " in project read-back") + ")." +
+                (groupDiffers
+                    ? " [Action: to force the group, rebind the project binding: " +
+                      "rebind_project_parameter(name/guid, group:'" + requestedGroupName +
+                      "') — the rebind drops existing values of this parameter in the project]"
+                    : string.Empty));
         }
 
         outcome.Batch.Changed.Add(new WriteItemReport

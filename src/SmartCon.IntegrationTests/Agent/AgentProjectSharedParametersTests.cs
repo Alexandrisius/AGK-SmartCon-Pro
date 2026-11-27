@@ -157,6 +157,52 @@ public sealed class AgentProjectSharedParametersTests : RevitApiTest
     }
 
     [Test]
+    public async Task Rebind_GroupOnly_MovesTheBindingToTheRequestedGroup()
+    {
+        // D4 (v16): the group of a shared parameter follows the PROJECT
+        // binding, and a family add cannot override it — the honest path is a
+        // group-only rebind.
+        SeedDefinition("SC_Proj_Group", SpecTypeId.String.Text);
+        var add = Add(
+            "{\"name\":\"SC_Proj_Group\",\"spec\":\"text\"," +
+            "\"categories\":[\"OST_PipeCurves\"],\"binding\":\"instance\",\"dryRun\":false}");
+        await Assert.That(add.Success).IsTrue();
+
+        var tool = new RebindProjectParameterTool(
+            new StubRevitContext(Doc), _transactions!, _changeSets!);
+        var dryRun = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Group\",\"group\":\"PG_IDENTITY_DATA\",\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(dryRun.Success).IsTrue();
+        await Assert.That(Data(dryRun).GetProperty("targetGroup").GetString())
+            .IsEqualTo("PG_IDENTITY_DATA");
+        await Assert.That(Data(dryRun).GetProperty("valuesWillBeLost").GetBoolean()).IsTrue();
+
+        var applied = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Group\",\"group\":\"PG_IDENTITY_DATA\",\"dryRun\":false}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(applied.Success).IsTrue();
+        await Assert.That(Data(applied).GetProperty("verifiedGroup").GetString())
+            .IsEqualTo("PG_IDENTITY_DATA");
+
+        var repeat = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Group\",\"group\":\"PG_IDENTITY_DATA\",\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(repeat.Success).IsTrue();
+        await Assert.That(repeat.Message!).Contains("already");
+
+        var neither = tool.ExecuteForTests(
+            Parse("{\"name\":\"SC_Proj_Group\",\"dryRun\":true}"),
+            approved: true,
+            CancellationToken.None);
+        await Assert.That(neither.Success).IsFalse();
+        await Assert.That(neither.ErrorCode).IsEqualTo("invalid_arguments");
+    }
+
+    [Test]
     public async Task Add_DryRun_ChangesNothing()
     {
         SeedDefinition("SC_Proj_DryRun", SpecTypeId.String.Text);

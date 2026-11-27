@@ -310,7 +310,10 @@ internal sealed partial class AgentFamilySession : IDisposable
             mismatches++;
             outcome.Batch.Failed.Add(new WriteItemReport
             {
-                Name = expectation.TypeName + "." + expectation.ParameterName,
+                // The type name is shown trimmed and quoted: a whitespace-only
+                // vendor type name used to render as " .Parameter" and read as
+                // corruption (v16 pilot, D1).
+                Name = "'" + expectation.TypeName.Trim() + "'." + expectation.ParameterName,
                 ErrorCode = "read_back_mismatch",
                 Reason = problem
             });

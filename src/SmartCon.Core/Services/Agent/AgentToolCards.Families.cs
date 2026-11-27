@@ -126,9 +126,11 @@ public static partial class AgentToolCards
             Purpose =
                 "Параметры семейства с областью действия (экземпляр/тип), общим GUID, типом " +
                 "хранения, формулой, lookup-таблицами, canSetValue/canSetFormula и значениями " +
-                "по каждому типу семейства. Батч familyIds (до 20) читает ЗНАЧЕНИЯ только при " +
+                "по каждому типу семейства. Батч familyIds (до 50) читает ЗНАЧЕНИЯ только при " +
                 "явном includeValues=true (по умолчанию выключены — метаданные быстрее и не " +
-                "ложатся по таймауту); при превышении бюджета контекста отдаёт ВСЕ семейства " +
+                "ложатся по таймауту); parameterNamePrefix + compact проверяют за один вызов, " +
+                "какие определения реально лежат в документах полусотни семейств; при " +
+                "превышении бюджета контекста отдаёт ВСЕ семейства " +
                 "компактными строками (имя, GUID, хранение, instance). Формула/значения " +
                 "одного параметра — get_family_parameter_values.",
             WhenToUse =
@@ -273,8 +275,10 @@ public static partial class AgentToolCards
                 "ВАЖНО: family+project без проверки — ПРЕДПОЛОЖЕНИЕ по GUID-биндингу " +
                 "проекта (биндинг показывает параметр на всех элементах категории " +
                 "независимо от семейства); verifyFamilyScope=true (по умолчанию) " +
-                "доказывает его открытием документов семейств (≤ verificationLimit=25 " +
-                "за вызов, дальше verificationOffset) и честно понижает до project, " +
+                "доказывает его открытием документов семейств (до verificationLimit=25 ИЛИ " +
+                "verificationSeconds=120 с за вызов — тяжёлые .rfa ~1 с на открытие; дальше " +
+                "verificationOffset=scopeVerification.nextVerificationOffset) и честно понижает " +
+                "до project, " +
                 "если параметра в семействе нет — строки несут scopeVerification. " +
                 "При планировании миграции требуйте parameterScope=family+ (family ИЛИ " +
                 "family+project — всё, что живёт в документах семейств; строгий family " +
@@ -323,7 +327,7 @@ public static partial class AgentToolCards
                 "Сгруппируй семейства по полному набору GUID"
             },
             Idempotent = true,
-            TimeoutMs = 60000,
+            TimeoutMs = 180000,
             Bulk = false
         },
         new AgentToolCard

@@ -64,6 +64,7 @@ public static class AgentToolRegistration
         services.AddSingleton<IAgentTool, GetFamilyParametersTool>();
         services.AddSingleton<IAgentTool, GetFamilyParameterValuesTool>();
         services.AddSingleton<IAgentTool, GetFamilyLabelsTool>();
+        services.AddSingleton<IAgentTool, GetParameterUsageTool>();
         services.AddSingleton<IAgentTool, FindFamiliesWithParameterTool>();
         services.AddSingleton<IAgentTool, ListSharedParametersTool>();
         services.AddSingleton<IAgentTool, ListProjectParametersTool>();
@@ -283,6 +284,7 @@ public static class AgentToolRegistration
         typeof(GetFamilyParametersTool),
         typeof(GetFamilyParameterValuesTool),
         typeof(GetFamilyLabelsTool),
+        typeof(GetParameterUsageTool),
         typeof(FindFamiliesWithParameterTool),
         typeof(ListSharedParametersTool),
         typeof(ListProjectParametersTool),

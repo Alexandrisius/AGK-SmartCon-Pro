@@ -18,6 +18,17 @@ public sealed partial class FindFamiliesWithParameterTool
 
     private const int MaxVerificationLimit = 200;
 
+    /// <summary>
+    /// Time budget of the verification pass (v16 D2): heavy vendor .rfa take
+    /// ~1 s per EditFamily open, so a count cap alone hit the tool timeout at
+    /// ~45 documents. The pass stops at the deadline and reports an honest
+    /// nextVerificationOffset; the card timeout is 180 s, so the budget stays
+    /// below it (the preliminary scan needs the rest — validator v16, P2-2).
+    /// </summary>
+    private const int DefaultVerificationSeconds = 120;
+
+    private const int MaxVerificationSeconds = 150;
+
     private const int MaxScopeVerifyWarnings = 5;
 
     private static ScanOutcome ScanFamilies(
@@ -216,7 +227,7 @@ public sealed partial class FindFamiliesWithParameterTool
     /// says "project-bound" and reclassifies each matched name against the
     /// real <see cref="FamilyManager"/> parameter list: present = family (or
     /// family+project when the definition is also bound in the project),
-    /// absent = project (the binding alone produced the match — the KRTRS
+    /// absent = project (the binding alone produced the match — the vendor-prefix
     /// lesson of the v15 run: 9 project bindings made every bound-category
     /// family look "already ported"). Bounded by the verification limit; the
     /// remaining candidates are marked "unverified" and their scopes stay
@@ -227,6 +238,7 @@ public sealed partial class FindFamiliesWithParameterTool
         ScanOutcome outcome,
         int verificationLimit,
         int verificationOffset,
+        int verificationSeconds,
         List<string> warnings,
         CancellationToken ct)
     {
@@ -239,6 +251,14 @@ public sealed partial class FindFamiliesWithParameterTool
         var failed = 0;
         var skipped = 0;
         var truncated = false;
+        // Time budget: opening family documents dominates the cost (~1 s each
+        // on heavy vendor .rfa), so a count cap alone either timed the tool out
+        // or left the model half-verified. The deadline stops the pass EARLY
+        // with an honest nextVerificationOffset instead of a tool_timeout
+        // (v16 live run, D2: 45 documents already hit the 60 s cap).
+        var deadline = verificationSeconds > 0
+            ? DateTime.UtcNow.AddSeconds(verificationSeconds)
+            : (DateTime?)null;
         foreach (var scan in candidates)
         {
             ct.ThrowIfCancellationRequested();
@@ -249,7 +269,9 @@ public sealed partial class FindFamiliesWithParameterTool
                 continue;
             }
 
-            if (verified >= verificationLimit)
+            if (verified >= verificationLimit
+                || (deadline is not null && DateTime.UtcNow >= deadline
+                    && verified + failed > 0))
             {
                 truncated = true;
                 scan.ScopeVerification = "unverified";
@@ -357,6 +379,17 @@ public sealed partial class FindFamiliesWithParameterTool
             Limit = verificationLimit,
             Offset = verificationOffset
         };
+
+        // An offset beyond the candidate list verifies nothing and used to
+        // look like "verification complete" without any hint (validator v16, P3).
+        if (verificationOffset > 0 && verificationOffset >= candidates.Count)
+        {
+            warnings.Add(
+                "verificationOffset " + verificationOffset + " is at or beyond the " +
+                candidates.Count + " verification candidate(s): nothing was verified in " +
+                "this pass. [Action: use the value from scopeVerification.nextVerificationOffset " +
+                "of the previous call]");
+        }
     }
 
     /// <summary>
@@ -496,7 +529,7 @@ public sealed partial class FindFamiliesWithParameterTool
     /// <summary>
     /// One pass over doc.ParameterBindings: shared GUIDs (and non-shared names)
     /// bound at the PROJECT level. A parameter that is only bound here does not
-    /// exist in the family document (the KRTRS_ lesson of the ФОП session:
+    /// exist in the family document (the vendor-prefix lesson of the ФОП session:
     /// 194 "families" were project bindings, family docs held zero).
     /// </summary>
 }

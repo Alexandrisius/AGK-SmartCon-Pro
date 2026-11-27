@@ -101,7 +101,7 @@ public static class AgentToolPacks
                 "Запись и перенос значений параметров; проектные общие параметры; файл общих параметров (ФОП).",
             Tools = new[]
             {
-                "set_parameters", "remap_parameter_values", "list_project_parameters",
+                "set_parameters", "remap_parameter_values", "list_project_parameters", "get_parameter_usage",
                 "add_project_shared_parameter", "rebind_project_parameter",
                 "remove_project_parameter", "set_shared_parameter_file"
             }

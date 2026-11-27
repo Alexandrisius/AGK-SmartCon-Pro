@@ -3311,6 +3311,30 @@
         "find_families_with_parameter"
       ],
       "kind": "read"
+    },
+    {
+      "id": "r412",
+      "query": "Какие спецификации и фильтры видов используют параметр Марка?",
+      "expectedTools": [
+        "get_parameter_usage"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r413",
+      "query": "Матрица влияния: где используются все параметры с префиксом ADSK_ — спецификации и фильтры",
+      "expectedTools": [
+        "get_parameter_usage"
+      ],
+      "kind": "read"
+    },
+    {
+      "id": "r414",
+      "query": "Аудит перед миграцией: какие параметры с префиксом ADSK реально лежат в документах полусотни семейств",
+      "expectedTools": [
+        "get_family_parameters"
+      ],
+      "kind": "read"
     }
   ]
 }

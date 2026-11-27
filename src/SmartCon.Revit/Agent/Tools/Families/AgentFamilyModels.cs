@@ -453,20 +453,28 @@ internal sealed class ProjectFamilySnapshot
                 continue;
             }
 
-            var typeName = symbol.Name;
-            if (!string.IsNullOrEmpty(typeName) && !symbols.ContainsKey(typeName!))
-                symbols.Add(typeName!, symbol);
+            // Type names are keyed TRIMMED on both sides: a vendor family with
+            // a whitespace-only type name (" ") used to fail every read-back
+            // with a false "type is missing" — Revit may normalize the name on
+            // load-back while the expectation keeps the raw family-document
+            // spelling (v16 pilot, D1). Two types that differ ONLY by edge
+            // spaces collapse into one key (the first wins) — pathological
+            // models only; the read-back would read the first one's value.
+            var typeName = symbol.Name?.Trim();
+            if (typeName is not null && !symbols.ContainsKey(typeName))
+                symbols.Add(typeName, symbol);
         }
 
         return new ProjectFamilySnapshot(symbols);
     }
 
-    public bool HasType(string typeName) => _symbols.ContainsKey(typeName);
+    public bool HasType(string typeName) =>
+        _symbols.ContainsKey(Normalize(typeName));
 
     public bool TryRead(string typeName, string parameterName, out FamilyValueSnapshot value)
     {
         value = default;
-        if (!_symbols.TryGetValue(typeName, out var symbol))
+        if (!_symbols.TryGetValue(Normalize(typeName), out var symbol))
             return false;
 
         var parameter = symbol.LookupParameter(parameterName);
@@ -479,11 +487,13 @@ internal sealed class ProjectFamilySnapshot
 
     public bool HasParameter(string typeName, string parameterName)
     {
-        if (!_symbols.TryGetValue(typeName, out var symbol))
+        if (!_symbols.TryGetValue(Normalize(typeName), out var symbol))
             return false;
 
         return symbol.LookupParameter(parameterName) is not null;
     }
+
+    private static string Normalize(string typeName) => typeName.Trim();
 }
 
 /// <summary>Parsed create request with resolved spec metadata.</summary>

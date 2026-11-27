@@ -86,4 +86,40 @@ public sealed class AgentCategoryResolverAliasTests
 
         Assert.Equal(AgentCategoryResolver.AliasMatchKind.None, match.Kind);
     }
+
+    [Fact]
+    public void ReadArgument_StringifiedJsonArray_IsFlattened()
+    {
+        // Live-run LLM quirk (v15): the model sent the array as ONE JSON string
+        // and every valid name inside became a single unknown category.
+        using var document = System.Text.Json.JsonDocument.Parse(
+            "{\"category\":\"[\\\"Оборудование\\\",\\\"OST_Walls\\\"]\"}");
+        var names = AgentCategoryResolver.ReadArgument(document.RootElement);
+
+        Assert.Equal(new[] { "Оборудование", "OST_Walls" }, names);
+    }
+
+    [Fact]
+    public void ReadArgument_PlainStringAndArray_BothWork()
+    {
+        using var single = System.Text.Json.JsonDocument.Parse("{\"category\":\"Оборудование\"}");
+        Assert.Equal(new[] { "Оборудование" },
+            AgentCategoryResolver.ReadArgument(single.RootElement));
+
+        using var array = System.Text.Json.JsonDocument.Parse(
+            "{\"category\":[\"A\",\"B\"]}");
+        Assert.Equal(new[] { "A", "B" },
+            AgentCategoryResolver.ReadArgument(array.RootElement));
+    }
+
+    [Fact]
+    public void ReadArgument_InvalidJsonBracketString_StaysLiteral()
+    {
+        // A broken "[..." string is not a category either, but it must not
+        // throw: the resolver treats it literally and reports it unknown.
+        using var document = System.Text.Json.JsonDocument.Parse(
+            "{\"category\":\"[not json\"}");
+        Assert.Equal(new[] { "[not json" },
+            AgentCategoryResolver.ReadArgument(document.RootElement));
+    }
 }

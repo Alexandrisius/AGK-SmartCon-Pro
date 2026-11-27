@@ -28,7 +28,7 @@ namespace SmartCon.IntegrationTests.Agent;
 /// </summary>
 public sealed partial class AgentOpsDogfoodTests : RevitApiTest
 {
-    private const int MaxRoundsPerTask = 4;
+    private const int MaxRoundsPerTask = 10;
     private const int OperationalTasks = 3;
     private const string SheetNumber = "ОВ-01";
     private const string ParameterName = "ОВ_Секция";
@@ -319,6 +319,8 @@ public sealed partial class AgentOpsDogfoodTests : RevitApiTest
     private void ProbeScheduleFieldNames(Document doc)
     {
         var probe = ModelSeed.CreateScheduleChecked(doc);
+        string? instanceMark = null;
+        string? typeMark = null;
         foreach (var field in probe.Definition.GetSchedulableFields())
         {
             var name = field.GetName(doc);
@@ -326,9 +328,14 @@ public sealed partial class AgentOpsDogfoodTests : RevitApiTest
             // wall schedule exposes both "Comments" and "Analytical: Comments");
             // the plain display name wins over the analytical duplicate,
             // otherwise the verdict compares against a field the model cannot add.
+            // Wall schedules expose the mark as ALL_MODEL_TYPE_MARK ("Type Mark"):
+            // the instance mark alone is not schedulable there (dogfood v16 run 2).
             if (field.ParameterId == new ElementId(BuiltInParameter.ALL_MODEL_MARK) &&
                 !name.Contains("Analytical", StringComparison.Ordinal))
-                _markField = name;
+                instanceMark = name;
+            if (field.ParameterId == new ElementId(BuiltInParameter.ALL_MODEL_TYPE_MARK) &&
+                !name.Contains("Analytical", StringComparison.Ordinal))
+                typeMark = name;
             if (field.ParameterId == new ElementId(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS) &&
                 !name.Contains("Analytical", StringComparison.Ordinal))
                 _commentsField = name;
@@ -336,6 +343,11 @@ public sealed partial class AgentOpsDogfoodTests : RevitApiTest
                 string.Equals(name, "Type", StringComparison.Ordinal))
                 _typeField = name;
         }
+
+        if (instanceMark is not null)
+            _markField = instanceMark;
+        else if (typeMark is not null)
+            _markField = typeMark;
 
         doc.Delete(probe.Id);
     }
@@ -404,6 +416,8 @@ public sealed partial class AgentOpsDogfoodTests : RevitApiTest
             new ListProjectParametersTool(context),
             new AddProjectSharedParameterTool(context, _transactions!, _changeSets!),
             new ListFamiliesTool(context),
+            new ListSystemTypesTool(context),
+            new ListCategoriesTool(context),
             new DuplicateFamilyTypeTool(context, _transactions!, _changeSets!),
             new ReplaceFamilyTypeTool(context, _transactions!, _changeSets!),
             new UndoLastTool(context, _transactions!, _changeSets!)

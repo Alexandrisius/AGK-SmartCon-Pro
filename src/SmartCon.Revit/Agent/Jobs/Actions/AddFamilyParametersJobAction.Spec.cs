@@ -29,6 +29,17 @@ public sealed partial class AddFamilyParametersJobAction
 
         public List<long>? CategoryIds { get; set; }
 
+        /// <summary>
+        /// Category NAMES (display name, OST_* or id) — the same selector the
+        /// agent already uses on set_parameters; resolved into ids before the
+        /// family match (v16 live run, D3: the key used to be rejected).
+        /// </summary>
+        [JsonPropertyName("categoryNames")]
+        public List<string>? CategoryNames { get; set; }
+
+        [JsonPropertyName("categories")]
+        public List<string>? Categories { get; set; }
+
         public int? Limit { get; set; }
     }
 

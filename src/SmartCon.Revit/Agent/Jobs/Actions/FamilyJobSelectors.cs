@@ -15,6 +15,31 @@ namespace SmartCon.Revit.Agent.Jobs.Actions;
 /// </summary>
 internal static class FamilyJobSelectors
 {
+    /// <summary>
+    /// categoryNames and its alias categories may both arrive; set_parameters
+    /// UNIONS them, so the family jobs do too instead of silently dropping the
+    /// second list (validator v16, P3).
+    /// </summary>
+    internal static IReadOnlyList<string>? MergeCategoryNameAliases(
+        IReadOnlyList<string>? categoryNames,
+        IReadOnlyList<string>? categories)
+    {
+        if (categoryNames is not { Count: > 0 })
+            return categories;
+        if (categories is not { Count: > 0 })
+            return categoryNames;
+
+        var merged = new List<string>(categoryNames);
+        var seen = new HashSet<string>(categoryNames, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in categories)
+        {
+            if (seen.Add(name))
+                merged.Add(name);
+        }
+
+        return merged;
+    }
+
     internal sealed class FamilySelection
     {
         public bool Success => ErrorCode is null;
@@ -35,6 +60,7 @@ internal static class FamilyJobSelectors
         IReadOnlyList<string>? familyNames,
         string? nameContains,
         IReadOnlyList<long>? categoryIds,
+        IReadOnlyList<string>? categoryNames,
         int? limit)
     {
         if (limit.HasValue && limit.Value <= 0)
@@ -42,6 +68,41 @@ internal static class FamilyJobSelectors
             return Error(
                 JobErrorCodes.InvalidSpec,
                 "select.limit must be greater than zero. [Action: pass a positive limit or omit it]");
+        }
+
+        // Category NAMES resolve exactly like the set_parameters selector:
+        // display name, OST_* enum or id string, arrays included (v16 D3).
+        var unknownCategoryNames = new List<string>();
+        if (categoryNames is { Count: > 0 })
+        {
+            var resolved = SmartCon.Revit.Agent.Tools.AgentCategoryResolver.Resolve(
+                document, categoryNames, unknownCategoryNames);
+            if (resolved.Count == 0)
+            {
+                // Empty/whitespace names are dropped without entering `unknown`,
+                // so SuggestSuffix(unknown[0]) used to throw (validator v16, P2-4).
+                var detail = unknownCategoryNames.Count > 0
+                    ? "unknown categories " + string.Join(", ", unknownCategoryNames) +
+                      SmartCon.Revit.Agent.Tools.AgentCategoryResolver.SuggestSuffix(
+                          document, unknownCategoryNames[0])
+                    : "no recognizable category names (empty or whitespace-only entries)";
+                return Error(
+                    JobErrorCodes.InvalidSpec,
+                    "select.categoryNames: " + detail +
+                    " [Action: pass names from list_categories]");
+            }
+
+            var merged = categoryIds?.ToList() ?? new List<long>();
+            foreach (var id in resolved)
+            {
+                var idValue = id.GetValue();
+                if (!merged.Contains(idValue))
+                    merged.Add(idValue);
+            }
+
+            // Keep going with the valid names; the dropped ones surface as
+            // warnings below (same policy as list_families).
+            categoryIds = merged;
         }
 
         var hasSelector = familyIds is { Count: > 0 }
@@ -127,6 +188,14 @@ internal static class FamilyJobSelectors
         }
 
         var warnings = new List<string>();
+        if (unknownCategoryNames.Count > 0)
+        {
+            warnings.Add(
+                "select.categoryNames ignored unknown categories: " +
+                string.Join(", ", unknownCategoryNames) +
+                " [Action: pass names from list_categories]");
+        }
+
         foreach (var unmatched in pendingNames.OrderBy(name => name, StringComparer.Ordinal))
         {
             warnings.Add(

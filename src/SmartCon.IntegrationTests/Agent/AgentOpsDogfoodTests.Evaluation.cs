@@ -79,10 +79,13 @@ public sealed partial class AgentOpsDogfoodTests
                         missing.Add(expected);
                 }
 
+                // Collect EVERY unmet criterion: the first-failure verdict hid the
+                // sort/placement gaps behind "still itemized" (dogfood triage v16).
+                var problems = new List<string>();
                 if (missing.Count > 0)
-                    return new TaskVerdict(false, detail + "; нет полей: " + string.Join(", ", missing));
+                    problems.Add("нет полей: " + string.Join(", ", missing));
                 if (definition.IsItemized)
-                    return new TaskVerdict(false, detail + "; спецификация осталась itemized");
+                    problems.Add("осталась itemized (нужно itemized:false)");
 
                 var sortField = definition.GetSortGroupFields().FirstOrDefault();
                 var sortName = sortField is null
@@ -90,27 +93,35 @@ public sealed partial class AgentOpsDogfoodTests
                     : definition.GetField(sortField.FieldId).GetName();
                 if (sortField is null || !string.Equals(sortName, _typeField,
                         StringComparison.OrdinalIgnoreCase))
-                    return new TaskVerdict(false, detail + "; сортировка не по полю «" + _typeField +
-                                             "» (сейчас " + (sortName ?? "нет") + ")");
-                if (sortField.SortOrder != ScheduleSortOrder.Ascending)
-                    return new TaskVerdict(false, detail + "; сортировка не по возрастанию");
+                    problems.Add("сортировка не по полю «" + _typeField + "» (сейчас " +
+                                 (sortName ?? "нет") + ")");
+                else if (sortField.SortOrder != ScheduleSortOrder.Ascending)
+                    problems.Add("сортировка не по возрастанию");
 
                 var placement = FindScheduleOnSheet(schedule.Id);
                 if (placement is null)
-                    return new TaskVerdict(false, detail + "; спецификация не размещена на " + SheetNumber);
+                {
+                    problems.Add("спецификация не размещена на " + SheetNumber);
+                }
+                else
+                {
+                    var (xMm, yMm) = placement.Value;
+                    if (Math.Abs(xMm - 50) > 15 || Math.Abs(yMm - (_sheetHeightMm - 50)) > 20)
+                        problems.Add("точка размещения (" +
+                                     Mm(xMm) + "; " + Mm(yMm) + ") мм ≠ 50 мм от левого " +
+                                     "верхнего угла (лист " + Mm(_sheetWidthMm) + "×" +
+                                     Mm(_sheetHeightMm) + ", ожидается (50; " +
+                                     Mm(_sheetHeightMm - 50) + "))");
+                }
 
-                var (xMm, yMm) = placement.Value;
-                if (Math.Abs(xMm - 50) > 15 || Math.Abs(yMm - (_sheetHeightMm - 50)) > 20)
-                    return new TaskVerdict(false, detail + "; точка размещения (" +
-                                             Mm(xMm) + "; " + Mm(yMm) + ") мм ≠ 50 мм от левого " +
-                                             "верхнего угла (лист " + Mm(_sheetWidthMm) + "×" +
-                                             Mm(_sheetHeightMm) + ", ожидается (50; " +
-                                             Mm(_sheetHeightMm - 50) + "))");
+                if (problems.Count > 0)
+                    return new TaskVerdict(false, detail + "; " + string.Join("; ", problems));
 
+                var (placedX, placedY) = placement!.Value;
                 return new TaskVerdict(true, detail + "; «Ведомость стен» (" + fieldNames.Count +
                                              " полей, не itemized, сортировка по «" + sortName +
-                                             "» asc) на " + SheetNumber + " @ (" + Mm(xMm) + "; " +
-                                             Mm(yMm) + ") мм");
+                                             "» asc) на " + SheetNumber + " @ (" + Mm(placedX) + "; " +
+                                             Mm(placedY) + ") мм");
             }
             case 1:
             {

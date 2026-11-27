@@ -119,6 +119,7 @@ public sealed class AgentToolCardsTests
         "get_job_status",
         "cancel_job",
         "get_job_report",
+        "get_parameter_usage",
         "rollback_job",
         "retry_failed_items",
         "list_mep_systems",
@@ -155,7 +156,7 @@ public sealed class AgentToolCardsTests
     [Fact]
     public void Catalog_HasExactlyOneCardPerExistingTool()
     {
-        Assert.Equal(142, AgentToolCards.Count);
+        Assert.Equal(143, AgentToolCards.Count);
 
         var actual = AgentToolCards.All
             .Select(card => card.ToolName)

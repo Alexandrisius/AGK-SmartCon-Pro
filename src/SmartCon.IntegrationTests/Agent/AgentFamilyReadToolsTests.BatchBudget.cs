@@ -6,7 +6,7 @@ using SmartCon.Revit.Agent.Tools.Read;
 namespace SmartCon.IntegrationTests.Agent;
 
 /// <summary>
-/// The get_family_parameters batch (up to 20 families) must keep EVERY
+/// The get_family_parameters batch must keep EVERY
 /// requested family inside the context budget: a 20-family batch used to be
 /// halved to 10 by the generic result trimmer, and the model re-read the same
 /// ids (live case 2, rounds 4-7).

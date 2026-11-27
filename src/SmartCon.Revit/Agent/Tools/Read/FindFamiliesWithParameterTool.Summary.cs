@@ -133,6 +133,7 @@ public sealed partial class FindFamiliesWithParameterTool
             ["unverified"] = stats?.Unverified,
             ["limit"] = stats?.Limit,
             ["offset"] = stats?.Offset,
+            ["nextVerificationOffset"] = stats?.Truncated == true ? stats?.NextOffset : null,
             ["truncated"] = stats?.Truncated,
             ["note"] =
                 "Verification opens each candidate family document and matches the parameter by " +

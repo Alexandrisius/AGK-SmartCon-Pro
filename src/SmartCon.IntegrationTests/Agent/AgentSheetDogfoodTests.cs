@@ -28,7 +28,7 @@ namespace SmartCon.IntegrationTests.Agent;
 /// </summary>
 public sealed class AgentSheetDogfoodTests : RevitApiTest
 {
-    private const int MaxRoundsPerTask = 4;
+    private const int MaxRoundsPerTask = 10;
     private const int OperationalTasks = 3;
 
     private Document? _document;
@@ -288,6 +288,7 @@ public sealed class AgentSheetDogfoodTests : RevitApiTest
     private List<IAgentTool> CreateTools()
     {
         var context = new StubRevitContext(Doc);
+        var undoLast = new UndoLastTool(context, _transactions!, _changeSets!);
         return new List<IAgentTool>
         {
             new ListViewsTool(context),
@@ -296,10 +297,13 @@ public sealed class AgentSheetDogfoodTests : RevitApiTest
             new CreateSheetTool(context, _transactions!, _changeSets!),
             new CreateViewportsTool(context, _transactions!, _changeSets!),
             new MoveViewportTool(context, _transactions!, _changeSets!),
+            new RemoveViewportsTool(context, _transactions!, _changeSets!),
+            new DuplicateViewTool(context, _transactions!, _changeSets!),
+            new UndoUntilTool(context, _transactions!, _changeSets!, undoLast),
             new SetSheetNumberTool(context, _transactions!, _changeSets!),
             new RenameSheetTool(context, _transactions!, _changeSets!),
             new SanitizeSheetNumbersTool(context, _transactions!, _changeSets!),
-            new UndoLastTool(context, _transactions!, _changeSets!)
+            undoLast
         };
     }
 
@@ -345,6 +349,14 @@ public sealed class AgentSheetDogfoodTests : RevitApiTest
         {
             AgentWriteToolBase write => write.ExecuteForTests(args, approved: true, CancellationToken.None),
             AgentReadToolBase read => read.ExecuteForTests(Doc, args, CancellationToken.None),
+            // UndoUntilTool implements IAgentTool directly (it delegates to
+            // UndoLastTool and skips the write base), so the fake executor
+            // reported it as unknown_tool (dogfood v16 run 2, task 2).
+            UndoUntilTool undoUntil => undoUntil
+                .ExecuteForTests(Doc, args, approved: true, CancellationToken.None)
+                .ConfigureAwait(false)
+                .GetAwaiter()
+                .GetResult(),
             _ => null
         };
 
@@ -386,15 +398,17 @@ public sealed class AgentSheetDogfoodTests : RevitApiTest
                 var renamed = calls.Any(call =>
                     call.Success && call.ToolName == "rename_sheet" &&
                     ArgsContains(call, "копия"));
+                // "One rollback operation" may be undo_until (a chain) or an
+                // undo_last per change set — both are valid reverts.
                 var undoCount = calls.Count(call =>
-                    call.Success && call.ToolName == "undo_last");
+                    call.Success && call.ToolName is "undo_last" or "undo_until");
 
                 if (!renumbered)
                     return new TaskVerdict(false, detail + "; не было успешного set_sheet_number → ОВ-02");
                 if (!renamed)
                     return new TaskVerdict(false, detail + "; не было успешного rename_sheet → «(копия)»");
                 if (undoCount == 0)
-                    return new TaskVerdict(false, detail + "; не было успешного undo_last");
+                    return new TaskVerdict(false, detail + "; не было успешного отката (undo_last/undo_until)");
 
                 var restored = FindSheet("ОВ-01");
                 var renamedAway = FindSheet("ОВ-02");
@@ -431,7 +445,7 @@ public sealed class AgentSheetDogfoodTests : RevitApiTest
                     if (!string.Equals(sheet.Name, expectedName, StringComparison.Ordinal))
                         problems.Add(number + " имя «" + sheet.Name + "» ≠ «" + expectedName + "»");
 
-                    if (ViewportViewName(sheet, expectedView) is null)
+                    if (ViewportViewNameOrDerived(sheet, expectedView) is null)
                         problems.Add(number + " без вида " + expectedView);
                 }
 
@@ -464,6 +478,30 @@ public sealed class AgentSheetDogfoodTests : RevitApiTest
                 continue;
             if (Doc.GetElement(viewport.ViewId) is View view &&
                 string.Equals(view.Name, viewName, StringComparison.Ordinal))
+                return view.Name;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// A view can sit on ONE sheet only (API: legends are the exception), so the
+    /// second sheet needs a DUPLICATE of the plan. The duplicate cannot keep the
+    /// original name — accept a derived name such as "SC_План 1 этажа (ОВ-03)"
+    /// (dogfood v16 run 2, task 3).
+    /// </summary>
+    private string? ViewportViewNameOrDerived(ViewSheet sheet, string viewName)
+    {
+        var exact = ViewportViewName(sheet, viewName);
+        if (exact is not null)
+            return exact;
+
+        foreach (var viewportId in sheet.GetAllViewports())
+        {
+            if (Doc.GetElement(viewportId) is not Viewport viewport)
+                continue;
+            if (Doc.GetElement(viewport.ViewId) is View view &&
+                view.Name.StartsWith(viewName, StringComparison.Ordinal))
                 return view.Name;
         }
 

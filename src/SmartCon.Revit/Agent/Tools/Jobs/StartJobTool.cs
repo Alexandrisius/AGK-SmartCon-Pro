@@ -62,7 +62,7 @@ public sealed class StartJobTool : IAgentTool
             "familyUniqueIds": { "type": "array", "items": { "type": "string" } },
             "familyNames": { "type": "array", "items": { "type": "string" }, "maxItems": 200, "description": "Family names to include; stable across reloads (preferred over familyIds which change on every reload). set_parameters: any-of — one job over several families" },
             "categoryIds": { "type": "array", "items": { "type": "integer" } },
-            "categoryNames": { "type": "array", "items": { "type": "string" }, "description": "set_parameters also accepts the alias \"categories\"" },
+            "categoryNames": { "type": "array", "items": { "type": "string" }, "description": "Category display names, OST_* enum names or ids; set_parameters and the family jobs (add_family_parameter, map_family_parameters) accept them; the alias \"categories\" works on the same actions" },
             "typeIds": { "type": "array", "items": { "type": "integer" } },
             "familyName": { "type": "string" },
             "typeName": { "type": "string" },

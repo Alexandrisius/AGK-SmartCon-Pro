@@ -177,6 +177,21 @@ public sealed class CreateScheduleTool : AgentWriteToolBase
         var appliedName = schedule.Name;
         var readBackFields = AgentScheduleWriteHelper.CurrentFieldNames(definition);
 
+        // The schedule itself is a valid change, so the call stays successful —
+        // but "0 of N fields added" must be unmistakable: the unconditional
+        // self-report below used to make it look like a full success (dogfood
+        // v16, Ops-1).
+        outcome.Data["fieldsRequested"] = fields.Count;
+        outcome.Data["fieldsAdded"] = addedFields.Count;
+        if (fields.Count > 0 && addedFields.Count == 0)
+        {
+            outcome.Data["allFieldsFailed"] = true;
+            outcome.Warnings.Add(
+                "The schedule was created WITHOUT the requested fields: 0 of " + fields.Count +
+                " matched. [Action: pick field names from availableFields[], then add them " +
+                "with add_schedule_field or re-create the schedule]");
+        }
+
         outcome.Batch.Changed.Add(new WriteItemReport
         {
             Id = scheduleId,

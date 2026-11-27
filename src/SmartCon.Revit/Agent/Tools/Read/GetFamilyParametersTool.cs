@@ -12,7 +12,7 @@ namespace SmartCon.Revit.Agent.Tools.Read;
 /// Reads the parameters of a family document with type scope: definition
 /// metadata (instance/type, shared GUID, storage, formula, lookup tables,
 /// canSetValue/canSetFormula) and values per family type. The batch form
-/// (<c>familyIds</c>, up to 20) reads several families in one call - the
+/// (<c>familyIds</c>, up to 50) reads several families in one call - the
 /// benchmark kept losing rounds to one-by-one calls over family lists.
 /// </summary>
 public sealed class GetFamilyParametersTool : AgentReadToolBase
@@ -50,12 +50,16 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "parameters[] is flat: address a row with " +
             "parameters.byId[id] or parameters.byName[name], a type value with " +
             "valuesByType.byName[typeName]. " +
-            "familyIds (array, up to 20) reads several families in ONE call and returns " +
+            "familyIds (array, up to 50) reads several families in ONE call and returns " +
             "families[] with the same per-family payload (nameContains/scope/limits apply " +
             "to every family); a batch that exceeds the context budget keeps EVERY family " +
             "as compact rows (name, guid, storage, instance flag, counts; compact=true) " +
             "instead of dropping families - formulas and values then need the single-family " +
-            "form. " +
+            "form. compact=true asks for those compact rows explicitly. " +
+            "parameterNamePrefix filters every family's parameter list to names with that " +
+            "prefix (case-insensitive) — the cheap one-call ФОП audit ('which family " +
+            "documents actually embed the definitions') without paging unfiltered " +
+            "parameters. " +
             "isShared/nestedFamilies[] report the family's own shared flag and its nested " +
             "subfamilies with theirs: a SHARED nested family is scheduled as a separate row " +
             "and its parameters must be shared too, while a geometric nesting needs nothing " +
@@ -63,7 +67,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             "Opens the family document in the background; the Family Editor is never shown.",
         Risk = AgentToolRisk.Read,
         SupportsDryRun = false,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":20,""description"":""Batch: read several families in one call; each entry gets the same payload as the single-family form. In a batch includeValues defaults to FALSE (metadata only — values are the timeout hot spot); pass includeValues=true explicitly to read per-type values""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""description"":""Per-type values: true for a single family (default), false for a batch (default) — one parameter's values: get_family_parameter_values""},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{" + DocumentIdPropertyJson + @"""familyId"":{""type"":""integer""},""familyIds"":{""type"":""array"",""items"":{""type"":""integer""},""minItems"":1,""maxItems"":50,""description"":""Batch: read several families in one call; each entry gets the same payload as the single-family form. In a batch includeValues defaults to FALSE (metadata only — values are the timeout hot spot); pass includeValues=true explicitly to read per-type values""},""compact"":{""type"":""boolean"",""default"":false,""description"":""Return compact parameter rows (name, guid, storage, instance flag, counts) without formulas/values — the ФОП-audit shape a large batch falls back to anyway""},""parameterNamePrefix"":{""type"":""string"",""description"":""Keep only parameters whose name starts with this prefix (case-insensitive) — e.g. a vendor or ФОП prefix; turns a 50-family batch into a one-call audit of which family documents embed these definitions""},""familyUniqueId"":{""type"":""string""},""familyName"":{""type"":""string""},""nameContains"":{""type"":""string""},""scope"":{""type"":""string"",""enum"":[""all"",""instance"",""type""],""default"":""all""},""includeValues"":{""type"":""boolean"",""description"":""Per-type values: true for a single family (default), false for a batch (default) — one parameter's values: get_family_parameter_values""},""maxValuesPerParameter"":{""type"":""integer"",""default"":20,""maximum"":100},""limit"":{""type"":""integer"",""default"":100,""maximum"":500},""offset"":{""type"":""integer"",""default"":0}},""additionalProperties"":false}"
     };
 
     protected override ToolResult Execute(Document doc, JsonElement args, CancellationToken ct)
@@ -88,6 +92,18 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             return ToolResult.Fail(
                 failure ?? "family_open_failed", familyMessage);
 
+        if (AgentJson.GetBool(args, "compact", false))
+        {
+            // CompactBatch builds short rows only for payloads marked ok
+            // (the batch path sets it while collecting); without the flag the
+            // single-family compact reply was the FULL payload with a
+            // "compact":true envelope (validator v16, P1-2).
+            payload["ok"] = true;
+            return CompactBatch(
+                new List<object?> { payload }, 1, 1, 0,
+                "Family '" + family.Name + "'");
+        }
+
         var json = AgentJson.Serialize(payload);
 
         // One gentle nudge when the single-family result is large: the model
@@ -95,7 +111,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         if (json.GetRawText().Length > LargeResultHintChars
             && familyMessage.IndexOf("familyIds", StringComparison.Ordinal) < 0)
         {
-            familyMessage += " NOTE: reading several families? Pass familyIds (up to 20) " +
+            familyMessage += " NOTE: reading several families? Pass familyIds (up to 50) " +
                              "to read them all in one call.";
         }
 
@@ -177,9 +193,12 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         // same ids. When the full batch does not fit, every family is kept as a
         // COMPACT row (parameter name, guid, storage, instance flag, counts);
         // formulas and values stay one single-family call away.
-        if (AgentJson.Serialize(batchPayload).GetRawText().Length <= BatchTargetCharacters)
+        if (!AgentJson.GetBool(args, "compact", false)
+            && AgentJson.Serialize(batchPayload).GetRawText().Length <= BatchTargetCharacters)
+        {
             return ToolResult.Ok(
                 AgentJson.Serialize(batchPayload), baseMessage + ".");
+        }
 
         return CompactBatch(families, familyIds.Count, okCount, failedCount, baseMessage);
     }
@@ -317,6 +336,11 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
         }
 
         var nameContains = AgentJson.GetString(args, "nameContains");
+        // Prefix filter: the one-call ФОП audit shape (v16 C1) — keeps only
+        // parameters whose name starts with the prefix, so a 50-family batch
+        // answers "which documents embed these definitions" without unfiltered
+        // parameter dumps.
+        var namePrefix = AgentJson.GetString(args, "parameterNamePrefix")?.Trim();
         var maxValues = AgentPaging.NormalizeLimit(
             AgentJson.GetInt(args, "maxValuesPerParameter", DefaultMaxValues),
             DefaultMaxValues,
@@ -398,6 +422,15 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                     continue;
                 }
 
+                if (!string.IsNullOrWhiteSpace(namePrefix)
+                    && !SmartCon.Core.Services.Agent.AgentFamilyText.NormalizeForMatch(parameter.Definition.Name)
+                        .StartsWith(
+                            SmartCon.Core.Services.Agent.AgentFamilyText.NormalizeForMatch(namePrefix!),
+                            StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
                 filtered.Add(parameter);
             }
 
@@ -438,6 +471,7 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                 ["parametersTotalInFamily"] = manager.GetParameters().Count,
                 ["matchedCount"] = filtered.Count,
                 ["nameContains"] = string.IsNullOrWhiteSpace(nameContains) ? null : nameContains,
+                ["parameterNamePrefix"] = string.IsNullOrWhiteSpace(namePrefix) ? null : namePrefix,
                 ["typeCount"] = types.Count,
                 ["types"] = typeNames,
                 ["typesTruncated"] = types.Count > typeNames.Count,

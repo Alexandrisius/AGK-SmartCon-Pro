@@ -356,6 +356,81 @@ public sealed partial class AgentFamilyJobBatchTests : RevitApiTest
         TryDeleteDatabase(databasePath);
     }
 
+    /// <summary>
+    /// D3 (v16): the family-job selector accepts categoryNames exactly like
+    /// set_parameters does — through the REAL spec layer (AllowedKeys +
+    /// SelectSpec), so dropping the key would fail here, not in a direct
+    /// FamilyJobSelectors call.
+    /// </summary>
+    [Test]
+    public async Task Batch_ToolPath_CategoryNamesSelector_ResolvesLikeSetParameters()
+    {
+        if (!SeedFamilies())
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        var family = _seeds
+            .Select(seed => Doc.GetElement(SmartCon.Core.Compatibility.ElementIdCompat.Create(seed.FamilyId)))
+            .OfType<Autodesk.Revit.DB.Family>()
+            .First();
+        var categoryName = family.FamilyCategory!.Name;
+
+        using var host = CreateHost();
+        var start = Pump(() => host.Executor.ExecuteAsync(
+            "start_job",
+            Parse(new
+            {
+                action = "map_family_parameters",
+                dryRun = true,
+                spec = new
+                {
+                    select = new { categoryNames = new[] { categoryName } },
+                    mappings = new[]
+                    {
+                        new
+                        {
+                            source = new { name = FamilySeed.WidthParam },
+                            target = new { name = FamilySeed.HeightParam }
+                        }
+                    }
+                }
+            }),
+            CancellationToken.None));
+        await Assert.That(start.Success).IsTrue();
+        await Assert.That(start.Data!.Value.GetProperty("state").GetString())
+            .IsEqualTo("PreviewReady");
+        await Assert.That(start.Data.Value.GetProperty("willChange").GetInt32())
+            .IsEqualTo(FamilyCount);
+        await Assert.That(start.Data.Value.GetProperty("failed").GetInt32()).IsEqualTo(0);
+
+        // A blank name is a guided refusal, not an ArgumentOutOfRangeException
+        // (validator v16, P2-4).
+        var blank = Pump(() => host.Executor.ExecuteAsync(
+            "start_job",
+            Parse(new
+            {
+                action = "map_family_parameters",
+                dryRun = true,
+                spec = new
+                {
+                    select = new { categoryNames = new[] { " " } },
+                    mappings = new[]
+                    {
+                        new
+                        {
+                            source = new { name = FamilySeed.WidthParam },
+                            target = new { name = FamilySeed.HeightParam }
+                        }
+                    }
+                }
+            }),
+            CancellationToken.None));
+        await Assert.That(blank.Success).IsFalse();
+        await Assert.That(blank.ErrorCode).IsEqualTo("job_spec_invalid");
+        await Assert.That(blank.Message!.Contains("categoryNames", StringComparison.Ordinal)).IsTrue();
+    }
+
     private ProductionAgentHost CreateHost()
     {
         var host = ProductionAgentHost.Create(Doc);

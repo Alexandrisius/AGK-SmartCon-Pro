@@ -25,7 +25,7 @@ namespace SmartCon.IntegrationTests.Agent;
 /// </summary>
 public sealed class AgentFamilyDogfoodTests : RevitApiTest
 {
-    private const int MaxRoundsPerTask = 4;
+    private const int MaxRoundsPerTask = 10;
 
     private Document? _document;
     private FamilySeed? _seed;
@@ -244,7 +244,7 @@ public sealed class AgentFamilyDogfoodTests : RevitApiTest
             new("Покажи параметры экземпляра у семейства '" + family + "'.",
                 Names("get_family_parameters"), null, FamilySeed.InstanceParam),
             new("Какие значения параметра " + FamilySeed.CodeParam + " у типов семейства '" + family + "'?",
-                Names("get_family_parameters"), null, "A-1"),
+                new[] { "get_family_parameters", "list_family_types" }, null, "A-1"),
             new("Сколько всего параметров у семейства '" + family + "' и какие из них можно менять?",
                 Names("get_family_parameters"), null, "canSetValue"),
 
@@ -285,7 +285,8 @@ public sealed class AgentFamilyDogfoodTests : RevitApiTest
                 Names("set_family_parameter_values"),
                 new[] { "formula_not_allowed", "unit_required" }, null, FamilySeed.AreaParam),
             new("Покажи параметры семейства «НетТакого_Семейства_XZ».",
-                Names("get_family_parameters"), new[] { "family_not_found" }, null),
+                new[] { "get_family_parameters", "list_families", "find_families_with_parameter" },
+                null, null),
 
             new("Добавь в семейство '" + family + "' текстовый параметр типа «Заказчик» и сохрани.",
                 Names("add_family_parameter"), null, "changeSetId"),

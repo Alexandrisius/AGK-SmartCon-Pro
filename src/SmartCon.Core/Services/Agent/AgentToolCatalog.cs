@@ -326,7 +326,8 @@ public static class AgentToolCatalog
             {
                 "сменить тип привязки", "изменить binding параметра", "rebind параметра",
                 "параметр экземпляра вместо типа", "типовая привязка", "instance binding",
-                "type binding", "перепривязать параметр"
+                "type binding", "перепривязать параметр", "сменить группу параметра",
+                "перенести параметр в группу", "parameter group", "PG_DATA"
             }),
             ["remove_project_parameter"] = new("Write", false, new[]
             {
@@ -485,6 +486,13 @@ public static class AgentToolCatalog
                 "лейблы семейства", "надписи марки", "labels", "label", "лейбл",
                 "семейства марок", "tag family labels", "аннотационные семейства",
                 "марки", "проверить марки", "titleblock labels"
+            }),
+            ["get_parameter_usage"] = new("Read", false, new[]
+            {
+                "использование параметра", "где используется параметр", "parameter usage",
+                "какие спецификации используют параметр", "какие фильтры используют",
+                "обратный индекс параметров", "матрица влияния параметра",
+                "список ведомостей по параметру", "фильтры по guid", "usage audit"
             }),
             ["find_families_with_parameter"] = new("Read", false, new[]
             {

@@ -4,6 +4,7 @@ using SmartCon.Core.Compatibility;
 using SmartCon.Core.Models.Agent;
 using SmartCon.Core.Services.Interfaces;
 using SmartCon.Core.Services.Interfaces.Agent;
+using SmartCon.Revit.Agent.Tools.Families;
 using SmartCon.Revit.Agent.Tools.Project;
 
 namespace SmartCon.Revit.Agent.Tools.Write;
@@ -31,17 +32,20 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
     {
         Name = "rebind_project_parameter",
         Description =
-            "Changes the binding of an EXISTING project parameter between instance and type " +
-            "(doc.ParameterBindings.ReInsert over the same categories). Address it by name or " +
-            "shared GUID (list_project_parameters shows both). The dry run reports the blast " +
+            "Changes an EXISTING project parameter binding: instance↔type and/or its UI group " +
+            "(doc.ParameterBindings.ReInsert over the same categories; group-only changes are " +
+            "the fix when a family parameter lands in the group of a stale project binding " +
+            "instead of the requested one). Address it by name or shared GUID " +
+            "(list_project_parameters shows both). Pass binding (instance/type), group (PG_* " +
+            "or its name) or both; at least one is required. The dry run reports the blast " +
             "radius: current binding, target binding, categories and how many model elements " +
             "carry the parameter. Revit DROPS the parameter values on a rebind (both " +
-            "directions) — that loss is unavoidable and is stated in the dry run and in the " +
-            "apply warnings; re-run the value migration right after. A same-binding request is " +
-            "a no_changes skip. Dry run by default.",
+            "directions, group changes included) — that loss is unavoidable and is stated in " +
+            "the dry run and in the apply warnings; re-run the value migration right after. " +
+            "A request that changes nothing is a no_changes skip. Dry run by default.",
         Risk = AgentToolRisk.Write,
         SupportsDryRun = true,
-        InputSchemaJson = @"{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string"",""description"":""Shared parameter GUID — the safe key when several same-name bindings exist""},""binding"":{""type"":""string"",""enum"":[""instance"",""type""],""description"":""The TARGET binding type""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[""binding""],""additionalProperties"":false}"
+        InputSchemaJson = @"{""type"":""object"",""properties"":{""name"":{""type"":""string""},""guid"":{""type"":""string"",""description"":""Shared parameter GUID — the safe key when several same-name bindings exist""},""binding"":{""type"":""string"",""enum"":[""instance"",""type""],""description"":""The TARGET binding type; omit for a group-only change""},""group"":{""type"":""string"",""description"":""The TARGET parameter group (PG_DATA, PG_TEXT, PG_IDENTITY_DATA, a display name or its Russian name); omit to keep the current group""},""dryRun"":{""type"":""boolean"",""default"":true}},""required"":[],""anyOf"":[{""required"":[""binding""]},{""required"":[""group""]}],""additionalProperties"":false}"
     };
 
     protected override void Apply(
@@ -81,14 +85,31 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
         }
 
         var bindingText = AgentJson.GetString(args, "binding");
-        if (!string.Equals(bindingText, "instance", StringComparison.OrdinalIgnoreCase)
+        var groupText = AgentJson.GetString(args, "group");
+        if (string.IsNullOrWhiteSpace(bindingText) && string.IsNullOrWhiteSpace(groupText))
+        {
+            Fail(outcome, "invalid_arguments",
+                "Pass binding (instance/type), group (PG_* or its name) or both — a rebind " +
+                "with neither changes nothing.");
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(bindingText)
+            && !string.Equals(bindingText, "instance", StringComparison.OrdinalIgnoreCase)
             && !string.Equals(bindingText, "type", StringComparison.OrdinalIgnoreCase))
         {
             Fail(outcome, "invalid_arguments", "binding must be instance or type.");
             return;
         }
 
-        var wantInstance = string.Equals(bindingText, "instance", StringComparison.OrdinalIgnoreCase);
+        ForgeTypeId? targetGroup = null;
+        if (!string.IsNullOrWhiteSpace(groupText)
+            && !SmartCon.Revit.Agent.Tools.Families.AgentFamilySpecs.TryResolveGroup(
+                groupText, out targetGroup, out var groupMessage))
+        {
+            Fail(outcome, "invalid_arguments", groupMessage ?? "Unknown group '" + groupText + "'.");
+            return;
+        }
 
         var row = FindRow(doc, name, guid);
         if (row is null)
@@ -102,15 +123,34 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
             return;
         }
 
-        if (string.Equals(row.BindingType, bindingText, StringComparison.OrdinalIgnoreCase))
+        // Group-only rebind: no binding argument keeps the current arity.
+        var effectiveBinding = string.IsNullOrWhiteSpace(bindingText)
+            ? row.BindingType!
+            : bindingText!;
+        var wantInstance = string.Equals(
+            effectiveBinding, "instance", StringComparison.OrdinalIgnoreCase);
+
+        var targetGroupName = targetGroup is null
+            ? null
+            : AgentFamilySpecs.GroupNameOf(targetGroup);
+        var groupChanges = targetGroup is not null
+                           && !string.Equals(row.ParameterGroup, targetGroupName,
+                               StringComparison.OrdinalIgnoreCase);
+        var bindingChanges = !string.IsNullOrWhiteSpace(bindingText)
+                             && !string.Equals(row.BindingType, bindingText,
+                                 StringComparison.OrdinalIgnoreCase);
+        if (!bindingChanges && !groupChanges)
         {
             outcome.Batch.Skipped.Add(new WriteItemReport
             {
                 Name = row.Name,
-                Reason = "the parameter is already bound as " + row.BindingType
+                Reason = "the parameter is already bound as " + row.BindingType +
+                         (targetGroup is null ? string.Empty : " in the requested group")
             });
             outcome.Message = "No changes: '" + row.Name + "' is already a " + row.BindingType +
-                              " project parameter (see skipped[]).";
+                              " project parameter" +
+                              (targetGroup is null ? string.Empty : " in the requested group") +
+                              " (see skipped[]).";
             outcome.Data["binding"] = row.BindingType;
             return;
         }
@@ -160,13 +200,20 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
         outcome.Data["name"] = row.Name;
         outcome.Data["guid"] = row.Guid?.ToString("D");
         outcome.Data["currentBinding"] = row.BindingType;
-        outcome.Data["targetBinding"] = bindingText;
+        outcome.Data["targetBinding"] = effectiveBinding;
+        outcome.Data["targetGroup"] = targetGroupName;
+        outcome.Data["groupOnly"] = !bindingChanges;
         outcome.Data["categories"] = row.Categories;
         outcome.Data["elementsInCategories"] = affected;
         outcome.Data["valuesWillBeLost"] = true;
 
+        var dropped = bindingChanges && groupChanges
+            ? "both the binding type (instance↔type) and the parameter group"
+            : bindingChanges
+                ? "the binding type (instance↔type)"
+                : "the parameter group";
         outcome.Warnings.Add(
-            "A rebind DROPS the parameter values in BOTH directions (instance↔type): " +
+            "A rebind DROPS the parameter values: it changes " + dropped + ", so " +
             affected + " element(s) in " + row.Categories.Count + " categor(ies) lose the " +
             "current value of '" + row.Name + "'. Re-run the value migration right after the " +
             "rebind.");
@@ -176,8 +223,8 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
             outcome.Batch.Changed.Add(new WriteItemReport
             {
                 Name = row.Name,
-                OldValue = row.BindingType + " binding",
-                NewValue = bindingText + " binding",
+                OldValue = DescribeTarget(row.BindingType!, row.ParameterGroup),
+                NewValue = DescribeTarget(effectiveBinding, targetGroupName ?? row.ParameterGroup),
                 Detail = "dry run: " + affected + " element(s) affected, values will be lost"
             });
             return;
@@ -204,7 +251,11 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
         try
         {
             var map = doc.ParameterBindings;
-            applied = map.ReInsert(mapDefinition, binding);
+            // The 3-argument ReInsert carries the target group; without one the
+            // two-argument overload keeps whatever group the binding had.
+            applied = targetGroup is null
+                ? map.ReInsert(mapDefinition, binding)
+                : map.ReInsert(mapDefinition, binding, targetGroup);
         }
         catch (Exception ex)
         {
@@ -225,11 +276,33 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
 
         var after = AgentProjectParameterReader.FindAll(doc, row.Name)
             .FirstOrDefault(candidate => row.Guid is null || candidate.Guid == row.Guid);
-        if (after is null || !string.Equals(after.BindingType, bindingText, StringComparison.OrdinalIgnoreCase))
+        if (after is null
+            || (bindingChanges
+                && !string.Equals(after.BindingType, effectiveBinding, StringComparison.OrdinalIgnoreCase))
+            || (groupChanges
+                && !string.Equals(after.ParameterGroup, targetGroupName,
+                    StringComparison.OrdinalIgnoreCase)))
         {
+            // Report only what this call actually changed: a binding-only
+            // rebind used to print "group '(null)' instead of ''" (validator
+            // v16, P3).
+            var expected = new List<string>();
+            var actual = new List<string>();
+            if (bindingChanges)
+            {
+                expected.Add("binding '" + effectiveBinding + "'");
+                actual.Add("binding '" + (after?.BindingType ?? "(missing)") + "'");
+            }
+
+            if (groupChanges)
+            {
+                expected.Add("group '" + targetGroupName + "'");
+                actual.Add("group '" + (after?.ParameterGroup ?? "(missing)") + "'");
+            }
+
             Fail(outcome, "binding_failed",
-                "The rebind was applied but the read-back shows '" +
-                (after?.BindingType ?? "(missing)") + "' instead of '" + bindingText + "'.",
+                "The rebind was applied but the read-back shows " +
+                string.Join(" / ", actual) + " instead of " + string.Join(" / ", expected) + ".",
                 "[Action: verify with list_project_parameters]");
             return;
         }
@@ -238,16 +311,24 @@ public sealed class RebindProjectParameterTool : AgentWriteToolBase
         outcome.Batch.Changed.Add(new WriteItemReport
         {
             Name = row.Name,
-            OldValue = row.BindingType + " binding",
-            NewValue = bindingText + " binding",
+            OldValue = DescribeTarget(row.BindingType!, row.ParameterGroup),
+            NewValue = DescribeTarget(effectiveBinding, targetGroupName ?? row.ParameterGroup),
             Detail = affected + " element(s) affected; previous values were dropped by the rebind"
         });
         outcome.Data["verifiedBinding"] = after.BindingType;
-        outcome.Message = "Rebound '" + row.Name + "' from " + row.BindingType + " to " +
-                          bindingText + " over " + row.Categories.Count + " categor(ies); " +
+        outcome.Data["verifiedGroup"] = after.ParameterGroup;
+        outcome.Message = "Rebound '" + row.Name + "': " + row.BindingType +
+                          (bindingChanges ? " -> " + effectiveBinding : string.Empty) +
+                          (groupChanges
+                              ? " group " + row.ParameterGroup + " -> " + targetGroupName
+                              : string.Empty) +
+                          " over " + row.Categories.Count + " categor(ies); " +
                           affected + " element(s) lost the previous value — re-run the value " +
                           "migration.";
     }
+
+    private static string DescribeTarget(string binding, string? group) =>
+        binding + " binding" + (string.IsNullOrWhiteSpace(group) ? string.Empty : ", " + group);
 
     private static AgentProjectParameterReader.ProjectParameterRow? FindRow(
         Document doc,

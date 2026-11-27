@@ -36,7 +36,7 @@ public static partial class AgentToolPackSkills
 - Revit однопоточен: джоба живёт в ExternalEvent-контексте; прогресс виден только через опрос статуса.
 
 ### Аргументы (start_job)
-- `spec.select` — селектор, состав ЗАВИСИТ от action: `rename_views` — `viewIds/viewTypes/types/levelIds/folders/template*` и др.; `set_parameters` — `elementIds/categoryIds/categoryNames/categories/levelIds/typeIds/familyName/familyNames/typeName/nameContains/conditions[]/logic/systemName/includeSubComponents/limit`; семейные — `familyIds/familyNames (стабильнее id)/typeNames`. Точный список допустимых ключей для твоего action вернёт отказ `job_spec_invalid`.
+- `spec.select` — селектор, состав ЗАВИСИТ от action: `rename_views` — `viewIds/viewTypes/types/levelIds/folders/template*` и др.; `set_parameters` — `elementIds/categoryIds/categoryNames/categories/levelIds/typeIds/familyName/familyNames/typeName/nameContains/conditions[]/logic/systemName/includeSubComponents/limit`; семейные — `familyIds/familyNames (стабильнее id)/typeNames/categoryIds/categoryNames (алиас categories)`. Точный список допустимых ключей для твоего action вернёт отказ `job_spec_invalid`.
 - `spec.rename` — `find/replace/prefix/suffix/setName` (`{n}`,`{name}`,`{index}`) и `numbering{start,step,padding,format}`; у видов `excludeSheets` по умолчанию true.
 - `spec.mappings` — источник→цель, `mode: values|formula`, `typeNames` (≤100), `createTarget:true` — цель создать из ФОП (definition в файле не откатывается).
 - `spec.replacements` — `replace_family_parameter`: `{source:{name|guid}, target:{name|guid}}` (≤50); цель — существующий definition из ФОП, scope/значения/формулы сохраняются.

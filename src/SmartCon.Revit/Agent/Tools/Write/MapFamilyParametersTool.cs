@@ -34,7 +34,7 @@ public sealed partial class MapFamilyParametersTool : AgentFamilyWriteToolBase
             "Transfers (maps) a source family parameter to a target parameter inside a family: " +
             "mode='values' copies the value of every family type (clearing a target formula " +
             "first), mode='formula' copies the source formula. This is the family-level path for " +
-            "moving a family to customer shared parameters (ФОП/KRTRS) so values and formulas " +
+            "moving a family to customer shared parameters (ФОП) so values and formulas " +
             "survive a reload. A source parameter with no value in a type is skipped as " +
             "sourceValueEmpty (it never overwrites a filled target). Detects instance/type scope " +
             "conflicts and spec mismatches; reports per parameter and per type. Copies TYPE " +

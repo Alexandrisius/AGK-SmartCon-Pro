@@ -29,6 +29,13 @@ public sealed partial class ReplaceFamilyParameterJobAction
 
         public List<long>? CategoryIds { get; set; }
 
+        /// <summary>Category names (display/OST_*/id) — resolved like set_parameters (v16 D3).</summary>
+        [JsonPropertyName("categoryNames")]
+        public List<string>? CategoryNames { get; set; }
+
+        [JsonPropertyName("categories")]
+        public List<string>? Categories { get; set; }
+
         public int? Limit { get; set; }
     }
 

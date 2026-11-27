@@ -16,12 +16,16 @@ public static partial class AgentToolCards
             ToolName = "duplicate_family_type",
             Pack = "families",
             Purpose =
-                "Дублирование типоразмера семейства в проекте: независимая копия типа с теми же " +
-                "значениями параметров. Гварды: type_not_copyable, type_name_taken, " +
+                "Дублирование типоразмера в проекте: независимая копия типа с теми же " +
+                "значениями параметров. Работает и с СИСТЕМНЫМИ типами (стены, трубы): " +
+                "typeName + categoryName (OST_*/имя из list_categories), точный список — " +
+                "list_system_types(nameContains:). Гварды: type_not_copyable, type_name_taken, " +
                 "type_name_invalid.",
             WhenToUse =
                 "Когда нужен независимый вариант типоразмера: изменить параметры копии, не трогая " +
-                "исходный тип и его экземпляры. Цель — familyTypeId или familyName + typeName.",
+                "исходный тип и его экземпляры. Цель — familyTypeId или familyName + typeName; " +
+                "для системного типа — typeName + categoryName (instanceCount подскажет " +
+                "list_system_types).",
             WhenNotToUse =
                 "Когда нужно поменять значения существующего типа — set_family_parameter_values; " +
                 "когда нужно переименовать тип — rename_family_type; когда тип надо удалить — " +
@@ -29,7 +33,7 @@ public static partial class AgentToolCards
             Examples = new[]
             {
                 "Сделай копию типоразмера 1200x2100 с именем 1200x2100_тест",
-                "Дублируй тип Тип1 семейства KR_SHAR",
+                "Продублируй тип стены — сначала list_system_types(categoryName:\"Walls\")",
                 "Создай независимый вариант типоразмера для правки параметров",
                 "Скопируй типоразмер под новым именем"
             },
@@ -37,7 +41,8 @@ public static partial class AgentToolCards
             {
                 "дублировать тип", "копия типоразмера", "duplicate family type", "duplicate type",
                 "копировать типоразмер", "новый тип на основе", "сделать копию типа",
-                "дубль типоразмера", "независимый вариант типа", "create type copy"
+                "дубль типоразмера", "независимый вариант типа", "create type copy",
+                "копия типа стены", "скопировать системный тип"
             },
             NegativeExamples = new[]
             {

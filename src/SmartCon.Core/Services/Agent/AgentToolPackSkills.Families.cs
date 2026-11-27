@@ -16,9 +16,8 @@ public static partial class AgentToolPackSkills
 - Проектные привязки (`add_project_shared_parameter`) — только по явному запросу: замораживают
   значения, выключают формулы; уровень всегда выбирает пользователь.
 - **Модель vs аннотация**: «по всем семействам» = загружаемые МОДЕЛЬНЫЕ семейства модельных
-  категорий (оборудование, фитинги…), которые формируют модель и попадают в спецификации.
-  Марки/аннотации/титульники — оформление без данных: только по явной просьбе, в отчёте
-  отдельным блоком, не в счётчике миграции.
+  категорий (формируют модель и спецификации). Марки/аннотации/титульники — оформление
+  без данных: только по явной просьбе, отдельным блоком, не в счётчике миграции.
 
 ### Карта тулов
 - Чтение: `list_families`, `list_family_types`, `get_family_parameters`,
@@ -38,20 +37,22 @@ public static partial class AgentToolPackSkills
 - Типы и файлы: `duplicate_family_type`, `rename_family_type`, `replace_family_type` (bulk),
   `load_family` (.rfa), `purge_families` (destructive, confirmNames), `delete_family_types`.
 - `blastRadius` в каждом write — показывайте радиус загрузки.
+- Семейные джобы: в `select` категории — `categoryIds` ИЛИ `categoryNames`/`categories`
+  (имя/OST_*/id). Аудит «что лежит в документах N семейств»: `get_family_parameters
+  (familyIds[])` ≤50 за вызов + `parameterNamePrefix:""<префикс>""` + `compact:true`.
 
 ### Три уровня, которые нельзя путать
 - **Семейство** (`familyId`/`familyName`) → **тип** (`FamilySymbol`: параметры типа) →
   **экземпляр** (`FamilyInstance`: `scope:instance`; `scope:type` — весь тип).
 
 ### Кухня Revit
-- `Document.EditFamily` — независимая копия без редактора; нельзя в транзакции, для
-  системных/in-place и при открытом Family Editor.
-- Документ семейства — отдельный `Document` (I-03b): транзакции на нём, не на проекте.
-- Правится только `FamilyManager.CurrentType`; без типов значения задавать некуда (имена
-  уникальны).
+- `Document.EditFamily` — копия без редактора; нельзя в транзакции, для системных/in-place
+  и при открытом Family Editor.
+- Документ семейства — отдельный `Document` (I-03b): транзакции на нём.
+- Правится только `FamilyManager.CurrentType`; без типов значения задавать некуда.
 - После правки семейство **загружается заново**: `familyId`/`familyUniqueId` меняются
   (`previousFamilyId`), дальше адресуйте по `familyName`.
-- Перезагрузка не переименовывает типы проекта: переименованный в семействе тип — дубль
+- Перезагрузка не переименовывает типы проекта: переименованный тип — дубль
   (`rename_family_type`; дубль удаляет `delete_family_types`).
 - `Document.Delete(FamilySymbol)` удаляет тип **и все экземпляры** — это `force=true`.
 - `duplicate_family_type` — независимая копия; `rename_family_type` не трогает экземпляры;
@@ -60,16 +61,16 @@ public static partial class AgentToolPackSkills
   `typeName + categoryName` или id из `list_system_types`.
 - `load_family` — .rfa по пути: дубль имени → `family_already_loaded`; `overwrite=true` не
   откатывается.
-- `purge_families`: кандидат — без размещённых экземпляров; in-place — отдельно.
+- `purge_families`: кандидат — без размещённых экземпляров; in-place отдельно.
 - `FamilyManager.Set` пишет во внутренних единицах; `SetValueString` парсит строку в единицах
   документа; `Set` отказывает под формулой.
 - `FamilyParameter.Formula` — только чтение; `SetFormula` ставит/снимает; цикл — invalid formula.
 - Диалект формул: имена регистрозависимы, `<=`/`>=` нет (`NOT(a > b)`), условие — `IF(cond, t, f)`,
   округление — `round/roundup/rounddown`; единицы только одинаковые.
 - Добавление: обычный (`name` + `storageType`) и **shared** (по `guid`; `createDefinition=true`
-  создаёт определение в ФОП); определение shared фиксируется при первой загрузке.
-- Built-in имена («Код по классификатору») отклоняются (`parameter_name_taken`) — пишите built-in.
-- `createDefinition=true` пишет вне транзакции семейства: при откате определение в ФОП останется.
+  создаёт определение в ФОП); shared-определение фиксируется при загрузке.
+- Built-in имена («Код по классификатору») отклоняются (`parameter_name_taken`).
+- `createDefinition=true` пишет вне транзакции семейства: откат джобы ФОП не вернёт.
 - `map_family_parameters`: source/target одного scope и размерности (`scope_mismatch`/
   `spec_mismatch`), без конверсии; `values` снимает формулу target; `createTarget:true` — цель из ФОП.
   Пустой источник — skip `sourceValueEmpty:true`.
@@ -95,16 +96,15 @@ public static partial class AgentToolPackSkills
 - После записи — read-back (`get_family_parameters(includeValues=true)`).
 
 ### Форма get_family_parameters
-- Несколько семейств — один вызов `get_family_parameters(familyIds:[…])` (до 20, ответ `families[]`).
+- Несколько семейств — один вызов `get_family_parameters(familyIds:[…])` (до 50, `families[]`); `parameterNamePrefix`+`compact` — аудит определений в 50 семействах за вызов.
 - `parameters[]` — плоский массив: `id`, `name`, `scope`, `isShared`, `guid`, `storageType`,
   `formula`, `canSetValue`.
 - `valuesByType[]` — `typeName`, `value` (внутренние единицы), `displayValue` (с единицей), `unit`,
   `hasValue`.
 - `isShared`/`nestedFamilies[]`/`sharedNestedCount`: **общее вложенное** семейство идёт в
-  спецификации отдельной строкой и его параметры обязаны быть общими; геометрическая
-  вложенность ничего не требует.
+  спецификации отдельной строкой, его параметры обязаны быть общими; геометрия — нет.
 - Тул читает **документ семейства** (FamilyManager): Проектный общий параметр в ответе
-  отсутствует — читайте его `list_family_types(familyId, parameterNames, valueScope:type)`.
+  отсутствует — его читает `list_family_types(familyId, parameterNames, valueScope:type)`.
 - Read-back параметра: `get_family_parameter_values` (формула + значения).
 - Миграция ФОП: привязка проекта перекрывает scope/группу (`projectBinding` в ответе
   `add_family_parameter`); instance-значения размещённых экземпляров и удаление пустых
@@ -112,10 +112,11 @@ public static partial class AgentToolPackSkills
   существующие типовые уходят в `typeScopedParameters`, `missingParameters` — только
   реально отсутствующие.
 - **Scope в `find_families_with_parameter`**: `family+project` без проверки — ПРЕДПОЛОЖЕНИЕ
-  по GUID-биндингу проекта (биндинг показывает параметр на всей категории, даже если семейство
-  его не содержит — непортированные выглядели «уже портированными»). `verifyFamilyScope:true`
-  (умолчание) открывает документы семейств и понижает до `project` (≤25 за вызов, дальше
-  `verificationOffset`); строки несут `scopeVerification`. Миграцию планируйте по
+  по GUID-биндингу (биндинг покрывает всю категорию, даже без параметра в семействе —
+  непортированные выглядели «уже портированными»). `verifyFamilyScope:true` (умолчание)
+  открывает документы семейств и понижает до `project`; пасс ограничен `verificationLimit=25`
+  И `verificationSeconds=120` (~1 с на тяжёлое .rfa); при `truncated:true` — `verificationOffset`
+  = `scopeVerification.nextVerificationOffset`. Миграцию планируйте по
   `parameterScope:""family+""` с верификацией.
 
 ### Рецепты

@@ -68,9 +68,42 @@ internal static class AgentFamilyTypeResolver
             return systemType;
 
         errorCode = "type_not_found";
-        message = "Category '" + category.Name + "' has no system type named '" + typeName +
-                  "'. Use list_system_types to see its types.";
+        // A bare "use list_system_types" was a dead end when that tool was not in
+        // the caller's set (dogfood v16, Ops-3): show the names right here.
+        var available = AvailableSystemTypeNames(doc, category.Id, 12);
+        message = "Category '" + category.Name + "' has no system type named '" + typeName + "'." +
+                  (available.Count > 0
+                      ? " Available: " + string.Join(", ", available) +
+                        (available.Count >= 12 ? " (first 12)" : string.Empty) + "."
+                      : string.Empty) +
+                  " [Action: pass one of these names (or a type id) as typeName]";
         return null;
+    }
+
+    internal static List<string> AvailableSystemTypeNames(
+        Document doc,
+        ElementId categoryId,
+        int limit)
+    {
+        var names = new List<string>();
+        foreach (var element in new FilteredElementCollector(doc)
+                     .WhereElementIsElementType()
+                     .OfClass(typeof(ElementType)))
+        {
+            if (element is not ElementType type || type is FamilySymbol)
+                continue;
+
+            if (type.Category is null || type.Category.Id != categoryId)
+                continue;
+
+            if (!names.Contains(type.Name, StringComparer.OrdinalIgnoreCase))
+                names.Add(type.Name);
+            if (names.Count >= limit)
+                break;
+        }
+
+        names.Sort(StringComparer.OrdinalIgnoreCase);
+        return names;
     }
 
     internal static Category? ResolveCategory(

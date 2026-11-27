@@ -33,7 +33,7 @@ public sealed partial class AddFamilyParametersJobAction : RevitJobActionBase
         new()
         {
             Path = "select",
-            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "limit" }
+            AllowedKeys = new[] { "familyIds", "familyUniqueIds", "familyNames", "nameContains", "categoryIds", "categoryNames", "categories", "limit" }
         },
         new()
         {
@@ -70,7 +70,7 @@ public sealed partial class AddFamilyParametersJobAction : RevitJobActionBase
             return ExpansionFail(
                 JobErrorCodes.InvalidSpec,
                 "add_family_parameter requires {select:{familyIds|familyUniqueIds|familyNames|" +
-                "nameContains|categoryIds, limit?}, parameters:[{name, storageType, group?, " +
+                "nameContains|categoryIds|categoryNames, limit?}, parameters:[{name, storageType, group?, " +
                 "isInstance?, isShared?, createDefinition?, guid?, initialValue?, unit?, formula?}]}");
         }
 
@@ -97,6 +97,8 @@ public sealed partial class AddFamilyParametersJobAction : RevitJobActionBase
             select.FamilyNames,
             select.NameContains,
             select.CategoryIds,
+            FamilyJobSelectors.MergeCategoryNameAliases(
+                select.CategoryNames, select.Categories),
             select.Limit);
         if (!selection.Success)
         {

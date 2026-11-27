@@ -124,6 +124,14 @@ public sealed partial class FindFamiliesWithParameterTool
         public int Limit { get; init; }
 
         public int Offset { get; init; }
+
+        /// <summary>
+        /// Where the next verification pass must continue: every candidate this
+        /// pass actually touched. SkippedByOffset already counts the offset
+        /// prefix (it is min(offset, candidates.Count)), so adding Offset again
+        /// would skip a whole page (validator v16, P1-1).
+        /// </summary>
+        public int NextOffset => SkippedByOffset + Verified + Failed;
     }
 
     private sealed class ParameterNameAggregate

@@ -84,7 +84,8 @@ public static partial class AgentToolPackSkills
 - Значения ячеек — форматированный текст; числа — из параметров (`query_elements`).
 - «Сделай спецификацию по X и помести на лист»: `create_schedule` → `add_schedule_field` (если
   полей мало) → `set_schedule_filter` → `set_schedule_sort` → `place_schedule_on_sheet`; каждый
-  шаг dry-run → apply, после apply — read-back.
+  шаг dry-run → apply, после apply — read-back. Итог по типам / «без деталировки» — не
+  сортировка, а `create_schedule(itemized:false)`; `set_schedule_sort` деталировку не меняет.
 - Фильтров ≤8 (`filter_limit_exceeded`), только AND — для «ИЛИ» отдельные спеки.
 - Паттерн правки наборов: `get_schedule_definition` → измени → передай ПОЛНЫЙ набор
   (`set_schedule_filter`/`set_schedule_field_order` заменяют целиком).
