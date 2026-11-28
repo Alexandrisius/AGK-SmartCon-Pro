@@ -126,6 +126,20 @@ public sealed partial class MapFamilyParametersJobAction
             }
         }
 
+        // Formula-transfer proof (live v18 wave 7: the reports carried no
+        // per-unit sign the formula moved): a formula target whose
+        // project-side values matched the source is PROVEN live — a dead
+        // formula would diverge on any type difference. The report surfaces
+        // FormulaTransferred from this list.
+        if (expected.FormulaTargets is { Count: > 0 })
+        {
+            actual.FormulaTransferred = expected.FormulaTargets
+                .Where(targetName => !mismatches.Any(mismatch =>
+                    mismatch.IndexOf(
+                        "target '" + targetName + "'", StringComparison.Ordinal) >= 0))
+                .ToList();
+        }
+
         if (checkedTargets == 0)
         {
             if (skippedUnverifiable > 0)

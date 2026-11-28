@@ -126,7 +126,12 @@ public sealed partial class JobRunner
                 "run start_job with dryRun=true first and apply with the returned previewDigest"));
         }
 
-        if (!string.Equals(job.Spec.Action, spec.Action, StringComparison.OrdinalIgnoreCase))
+        // An apply may omit the action: the stored preview carries it (live v18:
+        // a forgotten action failed invalid_arguments halfway through the case).
+        var effectiveAction = string.IsNullOrWhiteSpace(spec.Action)
+            ? job.Spec.Action
+            : spec.Action;
+        if (!string.Equals(job.Spec.Action, effectiveAction, StringComparison.OrdinalIgnoreCase))
         {
             return JobStartResult.Fail(JobErrors.PreviewMismatch());
         }

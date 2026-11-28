@@ -60,6 +60,24 @@ public sealed partial class JobRunner
                         ActualJson = verification.ActualJson
                     });
                 }
+                else if (verification.ActualJson is not null
+                         && verification.ActualJson.IndexOf(
+                             "formulaTransferred", StringComparison.Ordinal) >= 0)
+                {
+                    // The formula-transfer proof must reach the report (live v18
+                    // wave 7: verified units never persisted the verification
+                    // ActualJson, so the formulaTransferred list was invisible;
+                    // JobJson is camelCase). NotVerifiable MUST ride along:
+                    // JobItemUpdate defaults it to 0 and the update would wipe
+                    // the stored count (Completed instead of CompletedUnverified).
+                    corrections.Add(new JobItemUpdate
+                    {
+                        Seq = item.Seq,
+                        State = item.State,
+                        NotVerifiable = item.NotVerifiable,
+                        ActualJson = verification.ActualJson
+                    });
+                }
 
                 continue;
             }

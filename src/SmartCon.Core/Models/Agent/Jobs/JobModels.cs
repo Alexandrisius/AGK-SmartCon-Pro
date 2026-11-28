@@ -251,6 +251,11 @@ public sealed class JobUnitPreview
 
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
+    /// <summary>SOURCE parameter names of this unit that are formula-driven
+    /// (aggregated over every unit into JobPreview.FormulaDrivenSources —
+    /// the capped warning list alone misled the live migration's formula pass).</summary>
+    public IReadOnlyList<string> FormulaDrivenSources { get; init; } = Array.Empty<string>();
+
     public bool Success => ErrorCode is null;
 }
 

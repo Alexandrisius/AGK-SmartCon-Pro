@@ -504,6 +504,26 @@ public sealed partial class JobRunner
             }
         }
 
+        // The structural formula aggregate runs over EVERY unit, independent of
+        // the 15-line warning cap: the live migration built its formula pass
+        // from the first unit's warnings (mappings 1/4/6/8) and lost the two
+        // size_lookup formulas whose flags lived in units deeper in the list.
+        var formulaDrivenSources = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in items)
+        {
+            var itemPreview = JobJson.Deserialize<JobUnitPreview>(item.PreviewJson);
+            if (itemPreview is null)
+            {
+                continue;
+            }
+
+            foreach (var source in itemPreview.FormulaDrivenSources)
+            {
+                formulaDrivenSources.TryGetValue(source, out var unitCount);
+                formulaDrivenSources[source] = unitCount + 1;
+            }
+        }
+
         if (items.Count > JobOptions.LargeJobThreshold)
         {
             warnings.Add(
@@ -526,6 +546,9 @@ public sealed partial class JobRunner
             FailedCount = failed,
             Sample = sample,
             Warnings = warnings,
+            FormulaDrivenSources = formulaDrivenSources.Count > 0
+                ? formulaDrivenSources
+                : null,
             SelectorHash = selectorHash,
             SpecHash = specHash,
             Digest = digest,

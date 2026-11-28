@@ -76,7 +76,8 @@ public sealed partial class MapFamilyParametersJobAction
                     Ops = plan.UndoOps
                 }),
                 Label = session.FamilyName,
-                Warnings = previewWarnings
+                Warnings = previewWarnings,
+                FormulaDrivenSources = plan.FormulaDrivenSources
             };
         }
         finally

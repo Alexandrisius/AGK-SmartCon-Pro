@@ -26,6 +26,15 @@ public sealed class JobPreview
 
     public IReadOnlyList<string> Warnings { get; init; } = Array.Empty<string>();
 
+    /// <summary>
+    /// Formula-driven SOURCE parameter names aggregated across EVERY unit (name
+    /// → unit count), independent of the capped 15-line warning list: the live
+    /// migration lost two size_lookup formulas because the model built its
+    /// formula pass from the first unit's warnings (mappings 1/4/6/8) while
+    /// units 9/10 flags lived deeper in the list. Null when no unit has one.
+    /// </summary>
+    public IReadOnlyDictionary<string, int>? FormulaDrivenSources { get; init; }
+
     /// <summary>Hash of the sorted frozen unit keys + args: detects selection drift.</summary>
     public required string SelectorHash { get; init; }
 

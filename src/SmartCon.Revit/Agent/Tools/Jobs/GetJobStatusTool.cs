@@ -152,7 +152,8 @@ public sealed class GetJobStatusTool : IAgentTool
             includeSample,
             JobToolPayloads.History(recent),
             failedItems,
-            skippedItems);
+            skippedItems,
+            includeWarnings: false);
         var totals = JobToolPayloads.Totals(job);
         var summary = totals.Done + " done, " + totals.Skipped + " skipped, " +
                       totals.Failed + " failed, " + totals.Mismatch + " mismatch";

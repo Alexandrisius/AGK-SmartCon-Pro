@@ -58,6 +58,14 @@ internal class AddFamilyParameterRequest
     public bool IsShared { get; set; }
 
     /// <summary>
+    /// Inherit the scope from THIS family's source parameter (by name) instead
+    /// of a fixed isInstance: the vendor library mixes type- and instance-scope
+    /// parameters of the same name, and one fixed flag fragmented the migration
+    /// into 17 signature groups (live v18 wave 7).
+    /// </summary>
+    public string? MatchInstanceSource { get; set; }
+
+    /// <summary>
     /// When true and the shared definition does not exist, it is created in the
     /// active shared parameter file. Default false: a typo must not pollute the
     /// customer's ФОП (external file, not rollback-able).

@@ -76,6 +76,16 @@ public sealed partial class MapFamilyParametersJobAction
         /// </summary>
         [JsonPropertyName("formulaUnit")]
         public string? FormulaUnit { get; set; }
+
+        /// <summary>
+        /// Escape hatch to keep an INTENTIONAL static snapshot of a
+        /// formula-driven source: without it mode=values auto-escalates to
+        /// formula_repointed (the owner rule: duplicates live the same
+        /// formulas — a silent snapshot is the failure mode of the live
+        /// migration).
+        /// </summary>
+        [JsonPropertyName("formulaSnapshot")]
+        public bool FormulaSnapshot { get; set; }
     }
 
     public sealed class MapFamilyParameterRef
@@ -107,6 +117,16 @@ public sealed partial class MapFamilyParametersJobAction
 
         /// <summary>Targets this unit would create when createTarget mappings are present.</summary>
         public List<FamilyMapCreateState>? WouldCreateTargets { get; set; }
+
+        /// <summary>Targets whose live formula the apply must have set (mode
+        /// formula/formula_repointed): the verify reads them back into
+        /// FormulaTransferred so the report proves the formula moved.</summary>
+        public List<string>? FormulaTargets { get; set; }
+
+        /// <summary>FormulaTargets whose project-side values matched the source
+        /// after load-back — the independent proof the formula lives (a dead
+        /// formula would diverge on any type value difference).</summary>
+        public List<string>? FormulaTransferred { get; set; }
     }
 
     private sealed class FamilyMapTypeState
@@ -186,6 +206,10 @@ public sealed partial class MapFamilyParametersJobAction
 
         /// <summary>Per-mapping skips (skipIfSourceMissing): shown in the unit preview/apply result.</summary>
         public List<string> Warnings { get; } = new();
+
+        /// <summary>Formula-driven SOURCE names among this unit's mappings: the
+        /// per-unit feed of JobPreview.FormulaDrivenSources.</summary>
+        public List<string> FormulaDrivenSources { get; set; } = new();
 
         public FamilyMapState Expected { get; set; } = new();
 

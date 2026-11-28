@@ -57,7 +57,7 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
         _store = new SqliteAgentJobStore(_database);
         _runner = new JobRunner(
             _store,
-            new IJobAction[] { new MapFamilyParametersJobAction() },
+            new IJobAction[] { new MapFamilyParametersJobAction(), new AddFamilyParametersJobAction() },
             _transactions);
     }
 
@@ -994,7 +994,7 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
     }
 
     [Test]
-    public async Task FamilyJob_ValuesOnFormulaSource_WarnsInPreview()
+    public async Task FamilyJob_ValuesOnFormulaSource_AutoEscalatesAndCarriesFormula()
     {
         if (!SeedFamilies(1))
         {
@@ -1003,10 +1003,11 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
 
         UseSharedParameterFile();
 
-        // Live migration run: every computed field was mapped with mode=values
-        // ("a snapshot for a future stage") and the duplicates never
-        // recalculated. The preview must name the snapshot consequence while
-        // the mapping can still be re-planned as formula_repointed.
+        // Live migration run: the model planned a values snapshot for every
+        // computed field. The job no longer depends on the model choosing the
+        // mode: mode=values on a formula-driven source AUTO-ESCALATES to
+        // formula_repointed, so the duplicate recalculates; the report also
+        // carries FormulaTransferred (the proof the formula lives).
         var seed = _seeds[0];
         var familyElement = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
         await Assert.That(familyElement).IsNotNull();
@@ -1051,6 +1052,152 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
 
         var previewItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
         await Assert.That(previewItems[0].PreviewJson!.Contains("FORMULA-DRIVEN")).IsTrue();
+        await Assert.That(previewItems[0].PreviewJson!.Contains("auto-escalated")).IsTrue();
+        // The structural aggregate lives on the preview ENVELOPE (jobs.preview_json),
+        // built across EVERY unit — the formula pass is built from it.
+        var previewData = JobJson.Deserialize<JobPreview>(
+            (await Store.GetAsync(jobId, CancellationToken.None))!.PreviewJson)!;
+        if (previewData.FormulaDrivenSources is null
+            || !previewData.FormulaDrivenSources.ContainsKey(FamilySeed.WidthParam))
+        {
+            throw new InvalidOperationException(
+                "formulaDrivenSources missing in the preview envelope: " +
+                (previewData.FormulaDrivenSources is null
+                    ? "<null>"
+                    : string.Join(", ", previewData.FormulaDrivenSources.Select(
+                        pair => pair.Key + "=" + pair.Value))) +
+                "; unit json: " + previewItems[0].PreviewJson);
+        }
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        var applyItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        if (result.State != JobState.Completed)
+        {
+            throw new InvalidOperationException(
+                "JOB ENDED " + result.State + ": " +
+                string.Join(" | ", applyItems.Select(item =>
+                    item.State + " " + item.ErrorCode + " " + item.ErrorDetail)) +
+                "; actual: " + (applyItems[0].ActualJson ?? "<null>"));
+        }
+
+        await Assert.That(applyItems[0].ActualJson!.Contains("formulaTransferred")).IsTrue();
+
+        // Read-back: the created target IS formula-driven with the source
+        // formula (the references stayed, this mapping had no other pairs).
+        familyElement = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
+        await Assert.That(familyElement).IsNotNull();
+        using (var readBack = AgentFamilySession.Open(Doc, familyElement!, setupOutcome))
+        {
+            await Assert.That(readBack).IsNotNull();
+            var target = AgentFamilyReader.FindParameter(
+                readBack!.FamilyDoc.FamilyManager, "ЦельСрез", null, null, out _, out _);
+            await Assert.That(target).IsNotNull();
+            if (!AgentFamilyReader.IsFormulaDriven(target!)
+                || target.Formula != FamilySeed.HeightParam + " * 2")
+            {
+                var sourceParameter = AgentFamilyReader.FindParameter(
+                    readBack.FamilyDoc.FamilyManager, FamilySeed.WidthParam, null, null, out _, out _);
+                throw new InvalidOperationException(
+                    "READ-BACK target '" + target.Definition.Name + "': IsDeterminedByFormula=" +
+                    target.IsDeterminedByFormula + ", formula='" + target.Formula +
+                    "', sourceFormula='" + sourceParameter?.Formula + "'");
+            }
+        }
+    }
+
+    [Test]
+    public async Task FamilyJob_AddMatchInstanceSource_OneJobAcrossScopes()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+
+        // Live v18 wave 7: the vendor library mixes type/instance scope for the
+        // same parameter names, and a fixed isInstance fragmented the migration
+        // into 17 signature groups. matchInstanceSource inherits the scope from
+        // THIS family's source parameter — ONE job covers everything.
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"parameters\":[" +
+            "{\"name\":\"ЦельТипСкоуп\",\"storageType\":\"text\",\"matchInstanceSource\":\"" + FamilySeed.WidthParam + "\"}," +
+            "{\"name\":\"ЦельЭкземпляр\",\"storageType\":\"text\",\"matchInstanceSource\":\"" + FamilySeed.InstanceParam + "\"}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "add_family_parameter",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        if (!preview.Success)
+        {
+            throw new InvalidOperationException(
+                "PREVIEW FAILED: " + preview.Error?.Code + ": " + preview.Error?.Message);
+        }
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewData = JobJson.Deserialize<JobPreview>((await Store.GetAsync(jobId, CancellationToken.None))!.PreviewJson)!;
+        await Assert.That(previewData.FailedCount).IsEqualTo(0);
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "add_family_parameter",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        var applyItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        if (result.State is not (JobState.Completed or JobState.CompletedUnverified))
+        {
+            throw new InvalidOperationException(
+                "JOB ENDED " + result.State + ": " +
+                string.Join(" | ", applyItems.Select(item =>
+                    item.State + " " + item.ErrorCode + " " + item.ErrorDetail)));
+        }
+
+        // The type-scope duplicate sits on the project symbol; the instance one
+        // does not (project symbols carry type parameters only).
+        var seed = _seeds[0];
+        await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, "ЦельТипСкоуп")).IsNotNull();
+        await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, "ЦельЭкземпляр")).IsNull();
+
+        // And the instance-scope duplicate really exists in the family doc.
+        var familyElement = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
+        await Assert.That(familyElement).IsNotNull();
+        var outcome = new WriteOutcome();
+        using (var session = AgentFamilySession.Open(Doc, familyElement!, outcome))
+        {
+            await Assert.That(session).IsNotNull();
+            var instanceTarget = AgentFamilyReader.FindParameter(
+                session!.FamilyDoc.FamilyManager, "ЦельЭкземпляр", null, null, out _, out _);
+            await Assert.That(instanceTarget).IsNotNull();
+            await Assert.That(instanceTarget!.IsInstance).IsTrue();
+        }
     }
 
     [Test]

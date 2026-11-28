@@ -51,6 +51,10 @@ public sealed partial class MapFamilyParametersJobAction
         var plan = new FamilyMapPlan();
         var expectedByType = new Dictionary<string, List<FamilyMapValueState>>(StringComparer.Ordinal);
         var actualByType = new Dictionary<string, List<FamilyMapValueState>>(StringComparer.Ordinal);
+        var familyParameterNames = manager.GetParameters()
+            .Cast<FamilyParameter>()
+            .Select(parameter => parameter.Definition.Name)
+            .ToList();
 
         for (var index = 0; index < mappings.Count; index++)
         {
@@ -106,6 +110,33 @@ public sealed partial class MapFamilyParametersJobAction
                 return null;
             }
 
+            // Live migration run (wave 6 follow-up): the model planned a
+            // values snapshot for formula-driven pairs because the flag it
+            // trusted was unreliable. The job no longer depends on the model
+            // getting mode right: a formula-driven source auto-escalates to
+            // formula_repointed unless the caller asked for an intentional
+            // snapshot (formulaSnapshot:true). Detection uses
+            // AgentFamilyReader.IsFormulaDriven (IsDeterminedByFormula OR the
+            // formula string) — the raw string alone missed parameters whose
+            // formula Revit does not expose.
+            var sourceFormulaDriven = AgentFamilyReader.IsFormulaDriven(source);
+            if (mode == "values" && sourceFormulaDriven && !mapping.FormulaSnapshot)
+            {
+                plan.Warnings.Add(
+                    label + "source '" + source.Definition.Name +
+                    "' is FORMULA-DRIVEN — mode=values auto-escalated to formula_repointed so the " +
+                    "duplicate recalculates (a static snapshot is an intentional exception: pass " +
+                    "formulaSnapshot:true to keep it).");
+                mode = "formula_repointed";
+            }
+
+            if (sourceFormulaDriven)
+            {
+                // The structural aggregate (independent of the capped warning
+                // list): the model builds its formula pass from this list.
+                plan.FormulaDrivenSources.Add(source.Definition.Name);
+            }
+
             var target = FindParameter(manager, targetRef, out var targetMessage);
             if (target is null)
             {
@@ -140,6 +171,7 @@ public sealed partial class MapFamilyParametersJobAction
                     label,
                     plan,
                     repointPairs,
+                    familyParameterNames,
                     expectedByType,
                     actualByType,
                     ct);
@@ -176,7 +208,9 @@ public sealed partial class MapFamilyParametersJobAction
 
             if (mode == "values")
             {
-                if (!string.IsNullOrWhiteSpace(source.Formula))
+                // Reaching this branch with a formula-driven source means the
+                // mapping asked for an intentional snapshot explicitly.
+                if (AgentFamilyReader.IsFormulaDriven(source))
                 {
                     plan.Warnings.Add(FormulaSnapshotWarning(label, source.Definition.Name));
                 }
@@ -251,6 +285,20 @@ public sealed partial class MapFamilyParametersJobAction
             var formula = source.Formula;
             if (string.IsNullOrWhiteSpace(formula))
             {
+                if (sourceFormulaDriven && !mapping.FormulaSnapshot)
+                {
+                    // IsDeterminedByFormula=true, but the API exposes no formula
+                    // string: a silent values snapshot here is exactly the live
+                    // failure this wave fixes, so the unit fails instead and
+                    // the model decides (re-save the family or accept a snapshot).
+                    error = label + "source '" + source.Definition.Name + "' is formula-driven " +
+                            "(IsDeterminedByFormula=true), but Revit does not expose its formula string " +
+                            "via the API. [Action: re-save the family in the Family Editor and run the " +
+                            "preview again, or pass formulaSnapshot:true on this mapping to keep an " +
+                            "intentional values snapshot]";
+                    return null;
+                }
+
                 if (mode == "formula_repointed")
                 {
                     // Honest instead of silent: the source value is manual, so
@@ -276,7 +324,7 @@ public sealed partial class MapFamilyParametersJobAction
             if (mode == "formula_repointed")
             {
                 var buildError = BuildRepointedFormula(
-                    label, mapping, source, target, repointPairs, plan.Warnings, out formula);
+                    label, mapping, source, target, repointPairs, familyParameterNames, plan.Warnings, out formula);
                 if (buildError is not null)
                 {
                     error = buildError;
@@ -369,6 +417,18 @@ public sealed partial class MapFamilyParametersJobAction
             plan.Expected.WouldCreateTargets = plan.Creates.ToList();
         }
 
+        // The verify turns these into FormulaTransferred (the report-level
+        // proof the formula actually moved) — derived from the applied entries.
+        var formulaTargets = plan.Entries
+            .Where(entry => string.Equals(entry.Mode, "formula", StringComparison.Ordinal))
+            .Select(entry => entry.TargetName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        plan.Expected.FormulaTargets = formulaTargets.Count > 0 ? formulaTargets : null;
+        plan.FormulaDrivenSources = plan.FormulaDrivenSources
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
         return plan;
     }
 
@@ -389,6 +449,7 @@ public sealed partial class MapFamilyParametersJobAction
         string label,
         FamilyMapPlan plan,
         IReadOnlyList<KeyValuePair<string, string>> repointPairs,
+        IReadOnlyList<string> familyParameterNames,
         Dictionary<string, List<FamilyMapValueState>> expectedByType,
         Dictionary<string, List<FamilyMapValueState>> actualByType,
         CancellationToken ct)
@@ -398,11 +459,39 @@ public sealed partial class MapFamilyParametersJobAction
         var mode = string.IsNullOrWhiteSpace(mapping.Mode)
             ? "values"
             : mapping.Mode!.Trim().ToLowerInvariant();
+
+        // Same auto-escalation as the regular path: a formula-driven source
+        // never lands as a silent values snapshot.
+        var sourceFormulaDriven = AgentFamilyReader.IsFormulaDriven(source);
+        if (mode == "values" && sourceFormulaDriven && !mapping.FormulaSnapshot)
+        {
+            plan.Warnings.Add(
+                label + "source '" + source.Definition.Name +
+                "' is FORMULA-DRIVEN — mode=values auto-escalated to formula_repointed so the " +
+                "created duplicate recalculates (pass formulaSnapshot:true to keep an intentional " +
+                "snapshot).");
+            mode = "formula_repointed";
+        }
+
+        if (sourceFormulaDriven)
+        {
+            plan.FormulaDrivenSources.Add(source.Definition.Name);
+        }
+
         var formula = mode is "formula" or "formula_repointed" ? source.Formula : null;
         if (mode is "formula" or "formula_repointed")
         {
             if (string.IsNullOrWhiteSpace(formula))
             {
+                if (sourceFormulaDriven && !mapping.FormulaSnapshot)
+                {
+                    return label + "source '" + source.Definition.Name + "' is formula-driven " +
+                           "(IsDeterminedByFormula=true), but Revit does not expose its formula string " +
+                           "via the API. [Action: re-save the family in the Family Editor and run the " +
+                           "preview again, or pass formulaSnapshot:true on this mapping to keep an " +
+                           "intentional values snapshot]";
+                }
+
                 return label + "the source parameter has no formula, so mode=" + mode + " has nothing " +
                        "to copy. [Action: use mode=values to transfer the per-type values instead]";
             }
@@ -412,7 +501,7 @@ public sealed partial class MapFamilyParametersJobAction
                 // The created target inherits the source spec, so there is no
                 // mismatch to wrap — only the reference rewrite.
                 var buildError = BuildRepointedFormula(
-                    label, mapping, source, null, repointPairs, plan.Warnings, out formula);
+                    label, mapping, source, null, repointPairs, familyParameterNames, plan.Warnings, out formula);
                 if (buildError is not null)
                 {
                     return buildError;
@@ -611,6 +700,7 @@ public sealed partial class MapFamilyParametersJobAction
         FamilyParameter source,
         FamilyParameter? target,
         IReadOnlyList<KeyValuePair<string, string>> repointPairs,
+        IReadOnlyList<string> familyParameterNames,
         List<string> warnings,
         out string formula)
     {
@@ -619,6 +709,7 @@ public sealed partial class MapFamilyParametersJobAction
         // The mapping's own source→target pair must not be rewritten: a
         // formula referencing its own parameter would become self-circular.
         var ownName = source.Definition.Name;
+        var targetName = target?.Definition.Name ?? mapping.Target!.Name!.Trim();
         var pairsForThis = repointPairs
             .Where(pair => !string.Equals(pair.Key, ownName, StringComparison.OrdinalIgnoreCase))
             .ToList();
@@ -634,6 +725,25 @@ public sealed partial class MapFamilyParametersJobAction
         else
         {
             warnings.Add(label + "formula kept as-is: no mapped source references inside.");
+        }
+
+        // The bridge to the future ADSK removal: every family parameter the
+        // final formula still references is a live dependency the operator
+        // must know about (live feedback: the report carried no per-unit
+        // "target depends on source X" line).
+        var finalFormula = formula;
+        var bridged = familyParameterNames
+            .Where(name => !string.Equals(name, ownName, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(name, targetName, StringComparison.OrdinalIgnoreCase)
+                && AgentFormulaRepointer.ReferencesParameter(finalFormula, name))
+            .Take(4)
+            .ToList();
+        if (bridged.Count > 0)
+        {
+            warnings.Add(
+                label + "the target formula still references unmapped parameter(s): " +
+                string.Join(", ", bridged) + " — the duplicate follows them until they are " +
+                "removed (keep the sources or remap them before deleting).");
         }
 
         if (AgentFormulaRepointer.ReferencesParameter(formula, ownName))

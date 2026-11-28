@@ -24,7 +24,8 @@ internal static class JobToolPayloads
         bool includeSample = false,
         object? recentJobs = null,
         IReadOnlyList<JobItem>? failedItems = null,
-        IReadOnlyList<JobItem>? skippedItems = null)
+        IReadOnlyList<JobItem>? skippedItems = null,
+        bool includeWarnings = true)
     {
         var preview = Preview(job);
         var totals = Totals(job);
@@ -92,7 +93,14 @@ internal static class JobToolPayloads
             // get_job_report round just to learn it was duplicates (S.47, #532).
             skippedByReason = SkippedReasons(skippedItems),
             failedUnits = includeSample ? FailedUnits(failedItems, MaxFailedUnits) : null,
-            warnings = preview?.Warnings,
+            // Long-poll statuses no longer re-emit the full per-unit warning
+            // list (live v18: 17 mapping skips duplicated in every status
+            // answer). The STATUS payload carries the count plus the
+            // structural formula aggregate; the full list stays one
+            // get_job_report(includeItems=true) away.
+            warningCount = preview?.Warnings.Count,
+            formulaDrivenSources = preview?.FormulaDrivenSources,
+            warnings = includeWarnings ? preview?.Warnings : null,
             recentJobs,
             next = NextHint(job)
         };

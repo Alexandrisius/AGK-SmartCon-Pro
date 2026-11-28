@@ -296,13 +296,18 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
             payload = new Dictionary<string, object?>
             {
                 ["compact"] = true,
+                // Loud, not silent: the live migration missed the formula audit
+                // because the degradation was one phrase deep in the message.
+                ["degradedToCompact"] = true,
                 ["families"] = BuildCompactRows(families, shown),
                 ["familyCount"] = familyCount,
                 ["okCount"] = okCount,
                 ["failedCount"] = failedCount,
-                ["hint"] = "Compact rows: parameter name, guid, storage, spec, group, " +
-                           "instance flag, type count. For formulas, values and lookup " +
-                           "tables call get_family_parameters with a single familyId."
+                ["hint"] = "COMPACT degradation (the batch exceeded the context budget). Rows keep " +
+                           "parameter name, guid, storage, spec, group, instance flag, type count — " +
+                           "and the formula string on every formula-driven row (isDeterminedByFormula:" +
+                           "true), so the formula audit survives the degradation. For per-type values " +
+                           "call get_family_parameters with a single familyId."
             };
             if (AgentJson.Serialize(payload).GetRawText().Length <= BatchTargetCharacters
                 || shown <= MinShownParameters)
@@ -315,7 +320,9 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
 
         var stillLarge = AgentJson.Serialize(payload).GetRawText().Length > BatchTargetCharacters;
         var shownCount = CountShownParameters(payload);
-        var messageText = baseMessage + ". COMPACT rows for every family: parameter name, " +
+        var messageText = "COMPACT DEGRADATION: the batch exceeded the context budget, so every family " +
+                          "is a compact row (formulas ride along on formula-driven rows; per-type " +
+                          "values do not). " + baseMessage + ": parameter name, " +
                           "guid, storage, instance flag" +
                           (shownCount.HasValue
                               ? ", " + shownCount.Value + " parameter(s) per family shown"
@@ -366,7 +373,18 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
                         // compatible BEFORE any write (live v17, 2.2).
                         ["spec"] = parameter.Spec,
                         ["group"] = parameter.Group,
-                        ["isInstance"] = parameter.IsInstance
+                        ["isInstance"] = parameter.IsInstance,
+                        // The formula audit must survive the compact
+                        // degradation: the formula string rides along on
+                        // formula-driven rows only (name + formula cover the
+                        // migration matrix without per-type values).
+                        ["isDeterminedByFormula"] = parameter.IsDeterminedByFormula,
+                        ["formula"] = parameter.IsDeterminedByFormula
+                            && !string.IsNullOrEmpty(parameter.Formula)
+                            ? (parameter.Formula!.Length <= 160
+                                ? parameter.Formula
+                                : parameter.Formula.Substring(0, 160) + "…")
+                            : null
                     })
                     .ToList()
             };

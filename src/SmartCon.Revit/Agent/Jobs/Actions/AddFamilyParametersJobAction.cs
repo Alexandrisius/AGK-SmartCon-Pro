@@ -45,7 +45,7 @@ public sealed partial class AddFamilyParametersJobAction : RevitJobActionBase
             AllowedKeys = new[]
             {
                 "name", "storageType", "group", "isInstance", "isShared",
-                "guid", "initialValue", "unit", "formula"
+                "matchInstanceSource", "guid", "initialValue", "unit", "formula"
             }
         }
     };
@@ -72,7 +72,8 @@ public sealed partial class AddFamilyParametersJobAction : RevitJobActionBase
                 JobErrorCodes.InvalidSpec,
                 "add_family_parameter requires {select:{familyIds|familyUniqueIds|familyNames|" +
                 "nameContains|categoryIds|categoryNames, limit?}, parameters:[{name, storageType, group?, " +
-                "isInstance?, isShared?, createDefinition?, guid?, initialValue?, unit?, formula?}]}");
+                "isInstance?/matchInstanceSource?, isShared?, createDefinition?, guid?, initialValue?, " +
+                "unit?, formula?}]}");
         }
 
         var parameters = spec.Parameters!;

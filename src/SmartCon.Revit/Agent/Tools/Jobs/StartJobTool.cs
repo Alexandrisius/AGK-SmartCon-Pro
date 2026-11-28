@@ -227,7 +227,8 @@ public sealed class StartJobTool : IAgentTool
     "allowLargeJobs": { "type": "boolean", "default": false, "description": "Required to apply/resume more than 200 units; a preview cannot grant it." },
     "includeSample": { "type": "boolean", "description": "Default true for preview, false for apply/resume; set false to omit the preview sample." }
   },
-  "required": ["action"],
+  "required": [],
+  "description": "action is required for preview; an APPLY may omit it — the runner resolves the action from the stored preview by previewDigest.",
   "additionalProperties": false
 }
 """;
@@ -267,7 +268,11 @@ public sealed class StartJobTool : IAgentTool
     {
         var dryRun = AgentJson.GetBool(args, "dryRun", true);
         var action = AgentJson.GetString(args, "action") ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(action))
+        var applyDigest = AgentJson.GetString(args, "previewDigest");
+        // An apply may omit the action: the runner resolves it from the stored
+        // preview by digest (live v18: a forgotten action failed invalid_arguments
+        // halfway through the case, with no rollback available).
+        if (string.IsNullOrWhiteSpace(action) && !(!dryRun && !string.IsNullOrWhiteSpace(applyDigest)))
         {
             return ToolResult.Fail("invalid_arguments", "action is required");
         }

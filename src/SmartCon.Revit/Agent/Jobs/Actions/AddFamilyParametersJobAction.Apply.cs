@@ -88,6 +88,35 @@ public sealed partial class AddFamilyParametersJobAction
         foreach (var request in parameters)
         {
             var name = request.Name!.Trim();
+
+            // matchInstanceSource (live v18 wave 7): the vendor library mixes
+            // type- and instance-scope parameters of the same name, so one
+            // fixed isInstance fragmented the migration into 17 signature
+            // groups. The scope inherits from the SOURCE parameter of THIS
+            // family — exactly the map_action semantics ("the duplicate scope
+            // repeats the source").
+            var isInstance = request.IsInstance;
+            var matchSource = request.MatchInstanceSource?.Trim();
+            if (!string.IsNullOrEmpty(matchSource))
+            {
+                // IsNullOrEmpty does not narrow nullable on net48: explicit !.
+                var sourceParameter = FindByName(manager, matchSource!);
+                if (sourceParameter is null)
+                {
+                    plan.Entries.Add(new AddFamilyPlanEntry
+                    {
+                        Name = name,
+                        Action = "skip",
+                        Reason = "matchInstanceSource: no parameter named '" + matchSource + "' in this " +
+                                 "family, so the scope could not be inherited. [Action: check the " +
+                                 "source name with get_family_parameters, or set isInstance explicitly]"
+                    });
+                    continue;
+                }
+
+                isInstance = sourceParameter.IsInstance;
+            }
+
             var existing = FindByName(manager, name);
             if (existing is not null)
             {
@@ -141,7 +170,7 @@ public sealed partial class AddFamilyParametersJobAction
                 Name = name,
                 StorageType = request.StorageType,
                 Group = request.Group,
-                IsInstance = request.IsInstance,
+                IsInstance = isInstance,
                 IsShared = request.IsShared,
                 Formula = formula
             });
