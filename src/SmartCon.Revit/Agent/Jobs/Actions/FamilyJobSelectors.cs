@@ -163,7 +163,9 @@ internal static class FamilyJobSelectors
             // instance (live v18: «migrate all families» silently grew to the
             // whole library and alphabet put an unplaced 273-type family at
             // the head of the queue for 44 minutes — the placed ones stayed
-            // in the interrupted tail).
+            // in the interrupted tail). A SHARED nested family qualifies: its
+            // instances live inside the hosts, but they are real project
+            // elements and the collector returns them (nested instances count).
             if (placedOnly && !PlacedFamilyIds(document).Contains(family.Id.GetValue()))
             {
                 continue;
@@ -208,7 +210,28 @@ internal static class FamilyJobSelectors
             families.RemoveRange(value, families.Count - value);
         }
 
+        // Counted AFTER the limit cut, so the warning never inflates the count
+        // for a page the job will not run.
+        var sharedSelected = families.Count(family =>
+            family.get_Parameter(BuiltInParameter.FAMILY_SHARED)?.AsInteger() == 1);
+
         var warnings = new List<string>();
+        if (sharedSelected > 0)
+        {
+            // Live migration run: a shared nested family was reported as
+            // "not migrated" although the unit that owns the project-side
+            // definition had succeeded — the model misread the embedded copy
+            // inside the host document (nestedFamilies[]) for the project
+            // state. State the semantics plainly, at selection time.
+            warnings.Add(
+                sharedSelected + " selected family/families are SHARED (they may be nested inside host " +
+                "families and schedule as separate rows, and they may also be placed top-level). They " +
+                "migrate as ordinary units — one reload updates every host, and loading a host references " +
+                "the project definition (never a stale embedded copy). Truly non-shared nested families " +
+                "are not project families at all: they never appear in list_families and cannot be " +
+                "migrated from the project — migrate their hosts or handle them in the Family Editor.");
+        }
+
         if (unknownCategoryNames.Count > 0)
         {
             warnings.Add(

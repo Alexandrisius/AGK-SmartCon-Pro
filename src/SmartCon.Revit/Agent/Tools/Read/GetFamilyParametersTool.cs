@@ -25,11 +25,15 @@ public sealed class GetFamilyParametersTool : AgentReadToolBase
     private const int LargeResultHintChars = 20000;
 
     /// <summary>
-    /// Batch size the compact rows aim at: the orchestrator result budget minus
-    /// room for the envelope and the message.
+    /// Batch size the compact rows aim at: the orchestrator result budget for
+    /// THIS tool minus room for the envelope and the message. The migration run
+    /// (v18 wave 6) raised the get_family_parameters budget to the family-matrix
+    /// value, so the self-check must count against the SAME number — a fixed
+    /// 40k target compacted a 41-family batch down to 5 parameters per family
+    /// while the envelope budget still had room.
     /// </summary>
-    private const int BatchTargetCharacters =
-        ToolResultBudget.DefaultMaxCharacters - 800;
+    private static int BatchTargetCharacters =>
+        ToolResultBudget.MaxCharactersFor("get_family_parameters") - 800;
 
     private const int MinShownParameters = 5;
 

@@ -161,6 +161,19 @@ public sealed partial class FindFamiliesWithParameterTool
 
         public int PlacedInstanceCount { get; set; }
 
+        /// <summary>Instances placed directly in the project (SuperComponent
+        /// null). Always collected: the migration plan must see the nested-only
+        /// shared families, whose instances live inside host families.</summary>
+        public int DirectInstanceCount { get; set; }
+
+        /// <summary>Instances nested inside host family instances (SuperComponent
+        /// set): the shared nested family's own rows in schedules.</summary>
+        public int NestedInstanceCount { get; set; }
+
+        /// <summary>BuiltInParameter.FAMILY_SHARED of the project family element;
+        /// null only for families seen solely through the instance pass.</summary>
+        public bool? IsSharedFamily { get; set; }
+
         public HashSet<string> SharedGuids { get; } = new(StringComparer.Ordinal);
 
         public HashSet<string> SharedParameterNames { get; } =

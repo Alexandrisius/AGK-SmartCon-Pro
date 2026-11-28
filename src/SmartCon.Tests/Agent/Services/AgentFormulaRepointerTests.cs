@@ -89,6 +89,24 @@ public sealed class AgentFormulaRepointerTests
     }
 
     [Fact]
+    public void Repoint_SizeLookupKeepsTableAndColumnLiterals()
+    {
+        // Live migration feedback: "lookup tables do not transfer with map!" —
+        // they do: the table name and the column stay QUOTED LITERALS (data),
+        // only the parameter reference inside size_lookup is re-authored, and
+        // the tables live in the family document untouched.
+        var result = AgentFormulaRepointer.Repoint(
+            "size_lookup(\"LT_Массы\", \"Масса\", 0 kg, ADSK_Диаметр условный)",
+            Pairs,
+            out var replaced);
+
+        Assert.Equal(
+            "size_lookup(\"LT_Массы\", \"Масса\", 0 kg, KRTRS_Диаметр условный)",
+            result);
+        Assert.Single(replaced);
+    }
+
+    [Fact]
     public void WrapWithUnit_UsesExplicitConstants()
     {
         // Autodesk: divide by an explicit unit to strip the dimension, multiply

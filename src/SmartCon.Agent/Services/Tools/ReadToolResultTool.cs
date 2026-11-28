@@ -61,7 +61,7 @@ public sealed class ReadToolResultTool : IAgentTool
             var selection = AgentResultPath.Project(
                 blob.ResultJson, path, project, out var projectError);
             if (selection is null)
-                return ToolResult.Fail("invalid_arguments", projectError!);
+                return ToolResult.Fail("invalid_arguments", PathError(projectError, blob.ResultJson));
 
             content = AgentResultPath.ToText(selection);
         }
@@ -73,7 +73,7 @@ public sealed class ReadToolResultTool : IAgentTool
         {
             var resolved = ResolvePath(blob.ResultJson, path!, out var pathError);
             if (resolved is null)
-                return ToolResult.Fail("invalid_arguments", pathError!);
+                return ToolResult.Fail("invalid_arguments", PathError(pathError, blob.ResultJson));
 
             content = resolved;
         }
@@ -155,6 +155,19 @@ public sealed class ReadToolResultTool : IAgentTool
     {
         var node = AgentResultPath.Resolve(json, path, out error);
         return error is null ? AgentResultPath.ToText(node) : null;
+    }
+
+    /// <summary>The not-found error carries the keys the caller CAN address:
+    /// the stored results are envelope-wrapped, so a path without the envelope
+    /// root ("families.name" instead of "data.families") used to read as a bare
+    /// "not found" with no hint where the data actually lives.</summary>
+    private static string PathError(string? error, string resultJson)
+    {
+        var hint = AgentResultPath.RootsHint(resultJson);
+        return (error ?? "The path was not found.")
+               + (hint.Length > 0 ? " " + hint : string.Empty)
+               + " [Action: prefix the path with the envelope root (e.g. path:\"data.families\") " +
+                 "and project relative to that root]";
     }
 
     private static string? GetString(JsonElement args, string property)

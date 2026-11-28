@@ -21,12 +21,24 @@ public sealed partial class ReplaceFamilyParameterJobAction
         JobUnitPreview preview)
     {
         var expected = Parse<List<FamilyReplaceEntryState>>(preview.ExpectedJson);
-        if (expected is null || expected.Count == 0)
+        if (expected is null)
         {
             return new JobUnitVerification
             {
                 Verified = false,
                 MismatchReason = "The preview carries no expected state. [Action: run the preview again]"
+            };
+        }
+
+        if (expected.Count == 0)
+        {
+            // Same false-done-guard shape as the map action: an all-skipped unit
+            // carries an EMPTY expected list, and the final re-verification must
+            // read that as an honest no-op (the unit stays Skipped), not a mismatch.
+            return new JobUnitVerification
+            {
+                Verified = true,
+                ActualJson = Value("nothing was planned for this family (every entry was skipped)")
             };
         }
 

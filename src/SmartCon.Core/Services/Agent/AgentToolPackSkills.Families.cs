@@ -103,20 +103,18 @@ public static partial class AgentToolPackSkills
 - `valuesByType[]` — `typeName`, `value` (внутренние единицы), `displayValue` (с единицей), `unit`,
   `hasValue`.
 - `isShared`/`nestedFamilies[]`/`sharedNestedCount`: **общее вложенное** семейство идёт в
-  спецификации отдельной строкой, его параметры обязаны быть общими; геометрия — нет.
+  спецификации отдельной строкой; геометрическое вложение — нет.
 - Тул читает **документ семейства** (FamilyManager): Проектный общий параметр в ответе
   отсутствует — его читает `list_family_types(familyId, parameterNames, valueScope:type)`.
 - Read-back параметра: `get_family_parameter_values` (формула + значения).
-- Миграция ФОП: привязка проекта перекрывает scope/группу (`projectBinding` у
-  add_family_parameter); instance-значения экземпляров и удаление пустых привязок — пак
-  params. Instance-проверка — `list_family_types(valueScope:instance)`: типовые уходят в
-  `typeScopedParameters`, `missingParameters` — реально отсутствующие.
+- Миграция ФОП: привязка проекта перекрывает scope/группу (`projectBinding`);
+  instance-значения/пустые привязки — пак params. Instance-проверка —
+  `list_family_types(valueScope:instance)`.
 - **Scope в `find_families_with_parameter`**: `family+project` без проверки — ПРЕДПОЛОЖЕНИЕ
-  по GUID-биндингу (биндинг покрывает всю категорию без параметра в семействе —
-  непортированные выглядели портированными). `verifyFamilyScope:true` (умолчание)
-  открывает документы семейств и понижает до `project`; пасс ограничен `verificationLimit=25`
-  И `verificationSeconds=120` (~1 с на тяжёлое .rfa); при `truncated:true` — `verificationOffset`
-  = `scopeVerification.nextVerificationOffset`. Миграцию планируйте по
+  по GUID-биндингу (непортированные выглядели портированными). `verifyFamilyScope:true`
+  (умолчание) открывает документы семейств и понижает до `project`; пасс ограничен
+  `verificationLimit=25` И `verificationSeconds=120`; при `truncated:true` —
+  `verificationOffset=scopeVerification.nextVerificationOffset`. Миграция — по
   `parameterScope:""family+""` с верификацией.
 
 ### Рецепты
@@ -141,14 +139,16 @@ public static partial class AgentToolPackSkills
 9. «Массовая правка по десяткам/сотням семейств» — `start_job(action:""map_family_parameters"")`
    (до 200 family units); поштучный тул — для 1–5 семейств.
 10. «Переведи семейство на ФОП заказчика» (семейный путь по умолчанию):
-   отбор ЦЕЛИ — `list_families(summary:true)`/`find_families_with_parameter(includeInstanceParameters:
-   true, parameterScope:""family+"")` — берём загружаемые модельные семейства с размещёнными
-   экземплярами (марки/титульники — отдельно, только по просьбе) →
+   отбор ЦЕЛИ — `find_families_with_parameter(includeInstanceParameters:true,
+   parameterScope:""family+"")` — модельные семейства с размещёнными экземплярами, ВКЛЮЧАЯ
+   вложенные ОБЩИЕ (familyIsShared — обычные Family проекта: один reload обновляет всех;
+   не-Общие вложения из проекта недостижимы) (марки — отдельно, только по просьбе) →
    `list_shared_parameters(nameContains:""<часть имени ФОП>"")` → `add_family_parameter(items:[{name,
    storageType, isShared:true, createDefinition:true, group:""PG_DATA""}, …])` ОДНИМ вызовом →
-   `start_job(action:""map_family_parameters"")` с `createTarget:true` (mode formula для
-   вычисляемых, mode values для текстовых) → read-back. Спецификация берёт поля-семейные
-   параметры; проектные привязки не нужны.
+   `start_job(action:""map_family_parameters"")` с `createTarget:true`; mode ПО КАЖДОЙ ПАРЕ:
+   формульный источник → `formula_repointed` (формула переносится на цели; createTarget в той же
+   джобе; lookup-таблицы не трогаются), иначе `values` (срез — превью предупредит) → read-back.
+   Спецификация берёт поля-семейные параметры; проектные привязки не нужны.
 11. «Сколько семейств на PREFIX_/BP_/BIM_»: `find_families_with_parameter(parameterName:""PREFIX_"",
    match:""prefix"", includeInstanceParameters:true, compact:true, summary:true)` → `byPrefix`,
    `familiesWithoutAnyShared`; перенос — `replace_family_parameter` (не `map_family_parameters`:

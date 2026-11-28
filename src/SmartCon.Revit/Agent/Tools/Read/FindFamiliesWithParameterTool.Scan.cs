@@ -66,6 +66,7 @@ public sealed partial class FindFamiliesWithParameterTool
                 continue;
 
             var scan = GetOrCreate(outcome.Families, family);
+            scan.IsSharedFamily ??= family.get_Parameter(BuiltInParameter.FAMILY_SHARED)?.AsInteger() == 1;
             var seenParameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (Parameter parameter in symbol.Parameters)
             {
@@ -135,8 +136,51 @@ public sealed partial class FindFamiliesWithParameterTool
                 outcome,
                 ct);
         }
+        else
+        {
+            // Direct/nested instance counts stay available WITHOUT the heavy
+            // parameter scan: the migration plan needs to see nested-only SHARED
+            // families (flanges, bolts — their instances live inside host
+            // families, so a "placed" filter or an eyeballed family list misses
+            // them), and one reload of such a family updates every host.
+            CollectInstanceBreakdown(doc, categoryIds, outcome, ct);
+        }
 
         return outcome;
+    }
+
+    /// <summary>
+    /// One light collector pass classifying each placed instance as direct
+    /// (SuperComponent null) or nested inside a host instance — without reading
+    /// any parameter. The per-instance parameter scan does the same counts when
+    /// <c>includeInstanceParameters</c> is on.
+    /// </summary>
+    private static void CollectInstanceBreakdown(
+        Document doc,
+        HashSet<long>? categoryIds,
+        ScanOutcome outcome,
+        CancellationToken ct)
+    {
+        foreach (var element in new FilteredElementCollector(doc).OfClass(typeof(FamilyInstance)))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (element is not FamilyInstance instance)
+                continue;
+
+            var family = instance.Symbol?.Family;
+            if (family is null)
+                continue;
+
+            outcome.FamiliesSeen.Add(family.Id.GetValue());
+            if (!MatchesCategory(family, categoryIds))
+                continue;
+
+            var scan = GetOrCreate(outcome.Families, family);
+            if (instance.SuperComponent is null)
+                scan.DirectInstanceCount++;
+            else
+                scan.NestedInstanceCount++;
+        }
     }
 
     private static void ScanPlacedInstances(
@@ -169,6 +213,10 @@ public sealed partial class FindFamiliesWithParameterTool
 
             var scan = GetOrCreate(outcome.Families, family);
             scan.PlacedInstanceCount++;
+            if (instance.SuperComponent is null)
+                scan.DirectInstanceCount++;
+            else
+                scan.NestedInstanceCount++;
 
             var seenParameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (Parameter parameter in instance.Parameters)

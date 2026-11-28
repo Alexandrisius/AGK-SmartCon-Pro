@@ -266,6 +266,36 @@ internal static class AgentResultPath
     private static JsonNode? Clone(JsonNode? node) =>
         node is null ? null : JsonNode.Parse(node.ToJsonString(TextOptions));
 
+    /// <summary>
+    /// The keys the caller can actually address, for error messages: the live
+    /// session asked for "families.name" with no path and got a bare "not
+    /// found" — the stored result is envelope-wrapped and the working root was
+    /// "data.families", which the error never mentioned.
+    /// </summary>
+    internal static string RootsHint(string json)
+    {
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject root)
+                return string.Empty;
+
+            var hint = "Top-level keys: " + string.Join(", ", KeysOf(root)) + ".";
+            if (root.TryGetPropertyValue("data", out var data) && data is JsonObject dataObject)
+            {
+                hint += " Inside 'data': " + string.Join(", ", KeysOf(dataObject)) + ".";
+            }
+
+            return hint;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
+
+    private static IEnumerable<string> KeysOf(JsonObject obj) =>
+        obj.Select(pair => pair.Key).Take(12);
+
     /// <summary>The resolved value as text: a JSON string as itself, anything else as JSON.</summary>
     internal static string ToText(JsonNode? node) =>
         node is null

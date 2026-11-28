@@ -142,6 +142,21 @@ public sealed partial class MapFamilyParametersJobAction
                 };
             }
 
+            if (expected.Types.Count == 0 && mismatches.Count == 0)
+            {
+                // Live v18 final migration run: a family without a single source
+                // parameter skipped every mapping (skipIfSourceMissing) — nothing
+                // was written. The false-done guard (FinalizeJob re-verifies Done
+                // AND Skipped units) then turned the empty expected state into a
+                // false job_mismatch, and retry_failed_items could never pick it.
+                // "Nothing to check" is not "wrong" — the unit stays Skipped.
+                return new JobUnitVerification
+                {
+                    Verified = true,
+                    ActualJson = Json(actual)
+                };
+            }
+
             // Fail closed — but the real reasons ride along (live v18: the
             // type-space families hit the fail-closed text and hid the actual
             // "type is missing" line, so correct data looked broken).

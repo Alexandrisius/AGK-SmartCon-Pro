@@ -176,6 +176,11 @@ public sealed partial class MapFamilyParametersJobAction
 
             if (mode == "values")
             {
+                if (!string.IsNullOrWhiteSpace(source.Formula))
+                {
+                    plan.Warnings.Add(FormulaSnapshotWarning(label, source.Definition.Name));
+                }
+
                 if (!AgentFamilySpecs.SameSpec(source.Definition, target.Definition))
                 {
                     error = SpecMismatchError(label, source, target);
@@ -484,6 +489,14 @@ public sealed partial class MapFamilyParametersJobAction
                    "with scope='" + existingScope + "', or choose another target name]";
         }
 
+        // The snapshot warning rides AFTER every skip-able validation: a
+        // mapping that ends up skipped (skipIfSourceMissing) must not also
+        // carry a values-snapshot warning for work that will never happen.
+        if (mode == "values" && !string.IsNullOrWhiteSpace(source.Formula))
+        {
+            plan.Warnings.Add(FormulaSnapshotWarning(label, source.Definition.Name));
+        }
+
         // J-04: the add op is recorded before any write; Apply rebuilds this plan
         // before opening the transaction, so the op reaches persistUndo first.
         plan.UndoOps.Add(new FamilyUndoOperation
@@ -569,6 +582,18 @@ public sealed partial class MapFamilyParametersJobAction
         UnitTyped,
         NonArithmetic
     }
+
+    /// <summary>The honest preview warning for a values-mode mapping whose
+    /// source is formula-driven (live migration run: the model chose values for
+    /// every computed field calling it "a snapshot for future stages" — the
+    /// duplicates never recalculated). The skill prefers formula_repointed for
+    /// exactly these pairs: it re-authors the formula over the target names and
+    /// works with createTarget in the SAME job; the lookup tables live in the
+    /// family document and are never touched by the mapping.</summary>
+    private static string FormulaSnapshotWarning(string label, string sourceName) =>
+        label + "source '" + sourceName + "' is FORMULA-DRIVEN — mode=values copies a snapshot, so the " +
+        "duplicate will NOT recalculate on type changes. [Action: use mode=formula_repointed for this " +
+        "pair to carry the formula (it works with createTarget in the same job), or keep values knowingly]";
 
     /// <summary>
     /// Builds the formula for mode=formula_repointed: the source formula with

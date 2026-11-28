@@ -929,6 +929,380 @@ public sealed partial class AgentFamilyJobTests : RevitApiTest
         await Assert.That(suppressor.WhitelistMatches).IsGreaterThan(0);
     }
 
+    [Test]
+    public async Task FamilyJob_NoOpUnit_IsSkippedNotMismatch()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+
+        // Live v18 final migration run: a family with no source parameters
+        // skipped every mapping (skipIfSourceMissing) — nothing was written.
+        // The false-done guard (FinalizeJob re-verifies Done AND Skipped units)
+        // turned the empty expected state into a false job_mismatch: the job
+        // ended CompletedWithFailures and retry_failed_items could never pick
+        // the unit. An honest no-op must stay Skipped and the job Completed.
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"НетТакогоПараметра\"},\"target\":{\"name\":\"ЦельNoOp\"}," +
+            "\"createTarget\":true,\"skipIfSourceMissing\":true}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        await Assert.That(previewRecord!.State).IsEqualTo(JobState.PreviewReady);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord.PreviewJson)!;
+        await Assert.That(previewData.WillChangeCount).IsEqualTo(0);
+
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        var applyItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(applyItems.Count(item => item.State == JobItemState.Skipped)).IsEqualTo(1);
+        await Assert.That(applyItems.Count(item => item.State == JobItemState.Mismatch)).IsEqualTo(0);
+
+        var seed = _seeds[0];
+        await Assert.That(seed.GetProjectParameter(FamilySeed.Type1, "ЦельNoOp")).IsNull();
+    }
+
+    [Test]
+    public async Task FamilyJob_ValuesOnFormulaSource_WarnsInPreview()
+    {
+        if (!SeedFamilies(1))
+        {
+            Skip.Test("Family template or family document creation is unavailable");
+        }
+
+        UseSharedParameterFile();
+
+        // Live migration run: every computed field was mapped with mode=values
+        // ("a snapshot for a future stage") and the duplicates never
+        // recalculated. The preview must name the snapshot consequence while
+        // the mapping can still be re-planned as formula_repointed.
+        var seed = _seeds[0];
+        var familyElement = Doc.GetElement(ElementIdCompat.Create(seed.FamilyId)) as Autodesk.Revit.DB.Family;
+        await Assert.That(familyElement).IsNotNull();
+        var setupOutcome = new WriteOutcome();
+        using (var setup = AgentFamilySession.Open(Doc, familyElement!, setupOutcome))
+        {
+            await Assert.That(setup).IsNotNull();
+            var manager = setup!.FamilyDoc.FamilyManager;
+            using (var seedFormula = new Transaction(setup.FamilyDoc, "Seed source formula"))
+            {
+                seedFormula.Start();
+                manager.SetFormula(
+                    AgentFamilyReader.FindParameter(manager, FamilySeed.WidthParam, null, null, out _, out _)!,
+                    FamilySeed.HeightParam + " * 2");
+                seedFormula.Commit();
+            }
+
+            // The session closes the family document without saving on Dispose;
+            // load the formula back into the project or the job will not see it.
+            await Assert.That(setup.TryLoadBack(setupOutcome)).IsTrue();
+        }
+
+        var spec =
+            "{\"select\":{\"nameContains\":\"" + FamilyPrefix + "\"},\"mappings\":[" +
+            "{\"source\":{\"name\":\"" + FamilySeed.WidthParam + "\"},\"target\":{\"name\":\"ЦельСрез\"}," +
+            "\"createTarget\":true,\"mode\":\"values\"}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewItems = await Store.LoadAllItemsAsync(jobId, CancellationToken.None);
+        await Assert.That(previewItems[0].PreviewJson!.Contains("FORMULA-DRIVEN")).IsTrue();
+    }
+
+    [Test]
+    public async Task FamilyJob_NestedSharedFamily_MigratesAsUnit()
+    {
+        // Live migration feedback: shared nested families (flanges, bolts, nuts)
+        // schedule as separate rows but stayed out of the migration plan. A
+        // shared nested family IS an ordinary project family: it resolves
+        // through the placedOnly selector (its instances live inside hosts) and
+        // migrates like any unit — one reload updates every host (Autodesk
+        // forum + help; pinned here end to end).
+        const string nestedName = "SC_NestedShared";
+        const string hostName = "SC_NestedHost";
+        const string nestedWidth = "Влож_Ширина";
+        const string nestedHeight = "Влож_Высота";
+        var template = SampleFiles.FindFamilyTemplate(Application);
+        if (template is null)
+        {
+            Skip.Test("В установленном Revit нет подходящего .rft шаблона семейства");
+        }
+
+        var directory = Path.Combine(Path.GetTempPath(), "SmartConFamilyTests");
+        Directory.CreateDirectory(directory);
+        // A Guid suffix keeps parallel hosts (R25 + net48) and a locked file of
+        // a crashed previous run from hard-failing the seed.
+        var runSuffix = Guid.NewGuid().ToString("N")[..8];
+        var nestedPath = Path.Combine(directory, nestedName + "_" + runSuffix + ".rfa");
+        var hostPath = Path.Combine(directory, hostName + "_" + runSuffix + ".rfa");
+        foreach (var path in new[] { nestedPath, hostPath })
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
+        var nestedFamilyName = nestedName;
+        Autodesk.Revit.DB.Family? loadedNestedOut = null;
+        Document? familyDoc = null;
+        try
+        {
+            // 1. The nested family B (no shared flag yet: the flag flips on the
+            //    nested copy inside the host, see the transaction below).
+            familyDoc = Application.NewFamilyDocument(template);
+            using (var nestedTransaction = new Transaction(familyDoc, "Seed nested family"))
+            {
+                nestedTransaction.Start();
+                var nestedManager = familyDoc.FamilyManager;
+                var nestedWidthParameter = nestedManager.AddParameter(
+                    nestedWidth, GroupTypeId.General, SpecTypeId.Length, false);
+                var nestedHeightParameter = nestedManager.AddParameter(
+                    nestedHeight, GroupTypeId.General, SpecTypeId.Length, false);
+                // A fresh template document has NO current type (FamilySeed does
+                // the same dance): NewType creates one and makes it current.
+                if (nestedManager.CurrentType is null)
+                {
+                    nestedManager.NewType("ВложТип");
+                }
+
+                nestedManager.Set(nestedWidthParameter, 500.0 / 304.8);
+                nestedManager.Set(nestedHeightParameter, 300.0 / 304.8);
+                nestedTransaction.Commit();
+            }
+
+            familyDoc.SaveAs(nestedPath, new SaveAsOptions { OverwriteExistingFile = true });
+            familyDoc.Close(false);
+            familyDoc = null;
+
+            // 2. The host family document with B nested inside. The Tammik
+            //    nested-family recipe and the Autodesk nested-generation thread
+            //    load the .rfa by path with LoadFamily(filename, out family)
+            //    into a receiver opened FROM FILE: a NewFamilyDocument receiver
+            //    refuses the load (measured), the Document-overload nests
+            //    EMPTY into a family document (measured), and
+            //    LoadFamily(String) alone returns false there (measured).
+            var hostSeedDoc = Application.NewFamilyDocument(template);
+            hostSeedDoc.SaveAs(hostPath, new SaveAsOptions { OverwriteExistingFile = true });
+            hostSeedDoc.Close(false);
+            familyDoc = Application.OpenDocumentFile(hostPath);
+            var nestedLoaded = false;
+            using (var loadNestedTransaction = new Transaction(familyDoc, "Load nested family"))
+            {
+                loadNestedTransaction.Start();
+                nestedLoaded = familyDoc.LoadFamily(nestedPath, out var loadedNested);
+                loadNestedTransaction.Commit();
+                loadedNestedOut = loadedNested;
+            }
+
+            await Assert.That(nestedLoaded).IsTrue();
+            await Assert.That(loadedNestedOut).IsNotNull();
+
+            Autodesk.Revit.DB.FamilySymbol? nestedSymbol = null;
+            foreach (var element in new FilteredElementCollector(familyDoc)
+                         .OfClass(typeof(Autodesk.Revit.DB.FamilySymbol)))
+            {
+                if (element is Autodesk.Revit.DB.FamilySymbol candidate
+                    && candidate.LookupParameter(nestedWidth) is not null)
+                {
+                    nestedSymbol = candidate;
+                    break;
+                }
+            }
+
+            await Assert.That(nestedSymbol).IsNotNull();
+            nestedFamilyName = nestedSymbol!.Family.Name;
+
+            using (var nestTransaction = new Transaction(familyDoc, "Nest shared family"))
+            {
+                nestTransaction.Start();
+                // No Family.IsShared in the API: the built-in parameter is the
+                // only way to mark the family Shared (forum-confirmed). The
+                // flag flips on the nested copy inside the host document.
+                nestedSymbol.Family
+                    .get_Parameter(BuiltInParameter.FAMILY_SHARED)!
+                    .Set(1);
+                nestedSymbol.Activate();
+                familyDoc.Regenerate();
+                familyDoc.FamilyCreate.NewFamilyInstance(
+                    new XYZ(0, 0, 0), nestedSymbol,
+                    Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+                nestTransaction.Commit();
+            }
+
+            familyDoc.SaveAs(hostPath, new SaveAsOptions { OverwriteExistingFile = true });
+            familyDoc.Close(false);
+            familyDoc = null;
+        }
+        finally
+        {
+            if (familyDoc is not null && familyDoc.IsValidObject)
+            {
+                AgentFamilyDocCloser.Close(familyDoc);
+            }
+        }
+
+        // 3b. Load the host into the project: the SHARED nested family comes
+        //     along as an ordinary project family.
+        var hostLoaded = false;
+        Autodesk.Revit.DB.Family? loadedHostFamily = null;
+        using (var loadTransaction = new Transaction(Doc, "Load nested host"))
+        {
+            loadTransaction.Start();
+            hostLoaded = Doc.LoadFamily(hostPath, out loadedHostFamily);
+            loadTransaction.Commit();
+        }
+
+        await Assert.That(hostLoaded).IsTrue();
+        await Assert.That(loadedHostFamily).IsNotNull();
+
+        // 4. Place a host instance: the nested shared family's instances live
+        //    inside host instances — that is the whole point of the test. The
+        //    loaded family reference itself addresses the host (the file name
+        //    carries a run suffix, so a name lookup would need normalization).
+        Autodesk.Revit.DB.FamilySymbol? hostSymbol = null;
+        foreach (var symbolId in loadedHostFamily!.GetFamilySymbolIds())
+        {
+            hostSymbol = Doc.GetElement(symbolId) as Autodesk.Revit.DB.FamilySymbol;
+            break;
+        }
+
+        await Assert.That(hostSymbol).IsNotNull();
+        using (var placeTransaction = new Transaction(Doc, "Place host instance"))
+        {
+            placeTransaction.Start();
+            hostSymbol!.Activate();
+            Doc.Regenerate();
+            Doc.Create.NewFamilyInstance(
+                new XYZ(0, 0, 0), hostSymbol,
+                Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+            placeTransaction.Commit();
+        }
+
+        // 5. The placedOnly selector must resolve the nested shared family —
+        //    it has NO direct instances; every instance lives inside hosts.
+        var selection = FamilyJobSelectors.Resolve(
+            Doc,
+            null,
+            null,
+            new[] { nestedFamilyName },
+            null,
+            null,
+            null,
+            null,
+            placedOnly: true);
+        await Assert.That(selection.Success).IsTrue();
+        await Assert.That(selection.Families.Count).IsEqualTo(1);
+        await Assert.That(selection.Families[0].Name).IsEqualTo(nestedFamilyName);
+        await Assert.That(
+            selection.Warnings.Any(warning => warning.Contains("SHARED", StringComparison.Ordinal)))
+            .IsTrue();
+
+        // 6. And it migrates as an ordinary unit.
+        var spec =
+            "{\"select\":{\"familyNames\":[\"" + nestedFamilyName + "\"]},\"mappings\":[" +
+            "{\"source\":{\"name\":\"" + nestedWidth + "\"},\"target\":{\"name\":\"" + nestedHeight + "\"}}]}";
+
+        var preview = Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Preview,
+                SpecJson = spec,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        await Assert.That(preview.Success).IsTrue();
+        var jobId = preview.Job!.JobId;
+        Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+
+        var previewRecord = await Store.GetAsync(jobId, CancellationToken.None);
+        var previewData = JobJson.Deserialize<JobPreview>(previewRecord!.PreviewJson)!;
+        Runner.Start(
+            new JobSpec
+            {
+                DocumentId = DocumentId,
+                Action = "map_family_parameters",
+                Mode = JobMode.Apply,
+                SpecJson = spec,
+                PreviewDigest = previewData.Digest,
+                Options = Options(batchSize: 1)
+            },
+            Doc);
+
+        var result = Runner.RunToCompletion(Doc, TimeSpan.FromMinutes(5));
+        await Assert.That(result.State).IsEqualTo(JobState.Completed);
+
+        // 7. Read-back through the PROJECT symbol of the nested shared family:
+        //    the value followed the target parameter.
+        Autodesk.Revit.DB.Family? nestedProjectFamily = null;
+        foreach (var element in new FilteredElementCollector(Doc).OfClass(typeof(Autodesk.Revit.DB.Family)))
+        {
+            if (element is Autodesk.Revit.DB.Family candidate
+                && string.Equals(candidate.Name, nestedFamilyName, StringComparison.OrdinalIgnoreCase))
+            {
+                nestedProjectFamily = candidate;
+                break;
+            }
+        }
+
+        await Assert.That(nestedProjectFamily).IsNotNull();
+        var nestedTypeSymbol = Doc.GetElement(
+            nestedProjectFamily!.GetFamilySymbolIds().First()) as FamilySymbol;
+        await Assert.That(nestedTypeSymbol).IsNotNull();
+        var widthValue = nestedTypeSymbol!.LookupParameter(nestedWidth)?.AsDouble();
+        var heightValue = nestedTypeSymbol.LookupParameter(nestedHeight)?.AsDouble();
+        await Assert.That(widthValue).IsNotNull();
+        await Assert.That(heightValue).IsNotNull();
+        await Assert.That(Math.Abs(widthValue!.Value - heightValue!.Value) < 1e-9).IsTrue();
+    }
+
     private bool SeedFamilies(int count)
     {
         for (var index = 1; index <= count; index++)
